@@ -1,2 +1,26 @@
-devices.yaml
+# Generated dashboard (has user-specific cluster URI / database ID)
 oee-dashboard.json
+
+# Simulator runtime config (contains connection strings)
+simulator/FabricOEESimulator/simulator.yaml
+
+# .NET build outputs
+simulator/FabricOEESimulator/bin/
+simulator/FabricOEESimulator/obj/
+
+# IDE / editor
+.vs/
+.vscode/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# OS
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+
+# Logs
+*.log

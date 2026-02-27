@@ -1,10 +1,13 @@
 # OEE Manufacturing Dashboard — Microsoft Fabric Tutorial
 
-Build a real-time **Overall Equipment Effectiveness (OEE)** dashboard in Microsoft Fabric using the MQTTSimulator as your data source. By the end of this tutorial you will have:
+Build a real-time **Overall Equipment Effectiveness (OEE)** dashboard in Microsoft Fabric that models **true production-line OEE** — parts flow sequentially through ordered stations, faults cascade starvation and blocking via bounded buffers, and maintenance work orders gate machine recovery. By the end of this tutorial you will have:
 
-- 10 simulated machines streaming telemetry into Fabric Eventstream
-- A KQL Database (Eventhouse) storing and querying machine events
-- A Real-Time Dashboard showing live OEE by line, by machine type, and per shift
+- 30 simulated machines across 5 production lines streaming telemetry into Fabric Eventstream
+- Part-level tracking with unique IDs flowing through each station
+- Cascading fault behavior — a downed machine starves downstream and blocks upstream
+- Maintenance work orders that must be resolved before a machine can resume
+- A KQL Database (Eventhouse) storing machine, part, and maintenance events
+- A 4-page Real-Time Dashboard showing live OEE, line deep-dive, maintenance, and quality
 - Activator alerts firing when a machine enters a Fault state
 
 ---
@@ -12,57 +15,118 @@ Build a real-time **Overall Equipment Effectiveness (OEE)** dashboard in Microso
 ## Architecture
 
 ```
-MQTTSimulator
-  (14 devices: 10 machine + 4 maintenance CMMS)
+.NET Simulator (5 production lines, 30 stations)
+  Parts flow: Station 1 → [Buffer] → Station 2 → [Buffer] → ... → Station N
+  Events: machine_telemetry | part_event | maintenance_event
        │
-       │  HTTP REST  (Event Hub Protocol)
+       │  Event Hub Protocol
        ▼
 Fabric Eventstream
   [Custom App source]
        │
-       ├──[Filter: event_type = 'machine_telemetry']
-       │         │
-       │         ▼
-       │   Eventhouse — KQL Database
-       │     [MachineEvents]      ←── joins ── [MachineMaster]
-       │     [ProductionSchedule] ←── reference (planned parts)
+       ├──[Query: event_type = 'machine_telemetry'] ──► MachineEvents table
        │
-       └──[Filter: event_type = 'maintenance_event']
-                 │
-                 ▼
-           Eventhouse — KQL Database
-             [MaintenanceEvents]
-                 │
-                 └── joins MachineEvents → MTTR, open fault detection
+       ├──[Query: event_type = 'part_event']         ──► PartEvents table
+       │
+       └──[Query: event_type = 'maintenance_event']  ──► MaintenanceEvents table
 
-KQL Database → Real-Time Dashboard  (OEE, MTTR, schedule adherence)
-KQL Database → Activator  (fault + unacknowledged maintenance alerts)
+Eventhouse — KQL Database
+  [StationMaster]       ← reference (per-station ideal cycle times)
+  [LineMaster]          ← reference (line metadata)
+  [ProductionSchedule]  ← reference (planned targets)
+
+KQL Database → OEE_5min Materialized View
+KQL Database → Real-Time Dashboard (4 pages)
+KQL Database → Activator (fault + maintenance alerts)
 ```
 
 **OEE = Availability × Performance × Quality**
 
-| Component | Formula |
-|-----------|---------|
-| Availability | Running messages ÷ total messages (per window) |
-| Performance | ideal\_cycle\_time (from MachineMaster) ÷ avg(actual\_cycle\_time) — when Running |
-| Quality | 1 − (sum(rejected\_parts) ÷ sum(total\_parts)) |
+| Component | Per-Station Formula | Notes |
+|-----------|-------------------|-------|
+| Availability | Running / (Running + Fault + Maintenance) | Starved/Blocked excluded (not the station's fault) |
+| Performance | ideal_cycle_time / avg(actual_cycle_time) | Only when Running |
+| Quality | 1 − (rejected_parts / total_parts_processed) | Per station or end-of-line |
 
-**Design principle:** The simulator sends only raw machine signals. `ideal_cycle_time` is engineering reference data stored in `MachineMaster`. `shift` is derived from the event timestamp in KQL. A single Eventstream fans out to two KQL tables via `event_type` routing.
+**Design principles:**
+- The simulator sends only raw machine signals. `ideal_cycle_time` is engineering reference data stored in `StationMaster`.
+- `shift` is derived from the event timestamp in KQL.
+- A single Eventstream fans out to **three** KQL tables via `event_type` routing.
+- Parts carry unique IDs and full station-by-station history for traceability.
 
 ---
 
-## Machine Fleet
+## Production Lines
 
-| Device IDs | Machine Type | Line | Expected OEE | Report Interval |
-|------------|-------------|------|-------------|----------------|
-| cnc-mill-001/002/003 | CNC-Mill | Line-A | ~88% | 30s |
-| press-001/002 | Hydraulic-Press | Line-A | ~45% | 10s |
-| robot-001/002/003 | Assembly-Robot | Line-B | ~92% | 15s |
-| packaging-001/002 | Packaging-Line | Line-B | ~55% | 5s |
-| maint-cnc-line-a | Maintenance (CNC) | Line-A | — | 180s |
-| maint-press-line-a | Maintenance (Press) | Line-A | — | 90s |
-| maint-robot-line-b | Maintenance (Robot) | Line-B | — | 240s |
-| maint-pkg-line-b | Maintenance (Packaging) | Line-B | — | 90s |
+### Line-A: Precision Machining (5 stations)
+Purpose: Raw bar stock → precision-machined automotive shaft
+
+| Pos | Machine Type | Ideal Cycle (s) | Fault % | Reject % |
+|-----|-------------|-----------------|---------|---------|
+| 1 | CNC-Lathe | 40 | 0.5 | 2 |
+| 2 | CNC-Mill | 45 | 0.8 | 3 |
+| 3 | Surface-Grinder | 35 | 0.3 | 2 |
+| 4 | Deburring-Station | 15 | 0.2 | 1 |
+| 5 | CMM-Inspection | 60 | 0.4 | 5 |
+
+### Line-B: Sheet Metal Forming (4 stations)
+Purpose: Sheet metal → stamped/formed housing
+
+| Pos | Machine Type | Ideal Cycle (s) | Fault % | Reject % |
+|-----|-------------|-----------------|---------|---------|
+| 1 | Blanking-Press | 8 | 0.6 | 2 |
+| 2 | Hydraulic-Press | 12 | 1.5 | 4 |
+| 3 | Trimming-Station | 10 | 0.4 | 2 |
+| 4 | Quality-Inspection | 20 | 0.2 | 3 |
+
+### Line-C: Welding & Assembly (6 stations)
+Purpose: Components → welded and assembled subassembly
+
+| Pos | Machine Type | Ideal Cycle (s) | Fault % | Reject % |
+|-----|-------------|-----------------|---------|---------|
+| 1 | Component-Loader | 10 | 0.1 | 0 |
+| 2 | Welding-Robot | 25 | 0.7 | 3 |
+| 3 | Weld-Inspection | 30 | 0.5 | 4 |
+| 4 | Fastening-Station | 15 | 0.3 | 1 |
+| 5 | Assembly-Robot | 20 | 0.4 | 2 |
+| 6 | Leak-Test | 25 | 0.6 | 3 |
+
+### Line-D: Surface Treatment (7 stations)
+Purpose: Raw part → painted and coated finished part
+
+| Pos | Machine Type | Ideal Cycle (s) | Fault % | Reject % |
+|-----|-------------|-----------------|---------|---------|
+| 1 | Surface-Prep | 20 | 0.3 | 1 |
+| 2 | Chemical-Wash | 30 | 0.4 | 1 |
+| 3 | Primer-Application | 25 | 0.5 | 3 |
+| 4 | Paint-Booth | 40 | 0.8 | 4 |
+| 5 | Curing-Oven | 90 | 0.6 | 2 |
+| 6 | Coating-Inspection | 15 | 0.2 | 3 |
+| 7 | Final-Packaging | 10 | 0.1 | 0 |
+
+### Line-E: Electronics Assembly (8 stations)
+Purpose: Bare PCB → tested and coated electronics module
+
+| Pos | Machine Type | Ideal Cycle (s) | Fault % | Reject % |
+|-----|-------------|-----------------|---------|---------|
+| 1 | PCB-Loader | 5 | 0.1 | 0 |
+| 2 | SMT-Placement | 15 | 0.6 | 3 |
+| 3 | Reflow-Oven | 45 | 0.4 | 2 |
+| 4 | AOI-Inspection | 10 | 0.3 | 4 |
+| 5 | Through-Hole-Insert | 20 | 0.5 | 2 |
+| 6 | Wave-Solder | 35 | 0.7 | 3 |
+| 7 | Functional-Test | 30 | 0.3 | 5 |
+| 8 | Conformal-Coat | 25 | 0.4 | 2 |
+
+**Totals:** 5 lines, 30 machines, ~150 potential fault types, part-level tracking
+
+### How Cascading Works
+
+- **Station N faults** → maintenance work order created → machine enters Maintenance state
+- **Downstream cascade:** Station N+1 input buffer drains → N+1 becomes Idle-Starved → N+2 → ... → line output stops
+- **Upstream cascade:** Station N-1 output buffer fills → N-1 becomes Idle-Blocked → N-2 → ... → raw material intake stops
+- **Recovery:** WO resolved → Station N resumes → buffers refill → cascade unwinds naturally
+- Buffer capacity (default 5 parts) determines how long downstream can continue before starvation
 
 ---
 
@@ -70,7 +134,8 @@ KQL Database → Activator  (fault + unacknowledged maintenance alerts)
 
 - Microsoft Fabric capacity (F2 or higher) with Real-Time Intelligence enabled
 - A Fabric workspace with contributor access
-- Docker installed (to run the simulator container)
+- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) installed (to build and run the simulator)
+- OR [Docker](https://docs.docker.com/get-docker/) installed (to run the pre-built container)
 
 ---
 
@@ -79,37 +144,63 @@ KQL Database → Activator  (fault + unacknowledged maintenance alerts)
 1. Open your Fabric workspace and select **+ New item → Eventstream**.
 2. Name it **`manufacturing-telemetry`** and click **Create**.
 3. In the Eventstream canvas, click **+ Add source → Custom endpoint**.
-4. Name the source **`mqtt-simulator`** and click **Add**.
+4. Name the source **`oee-simulator`** and click **Add**.
 5. Click **Publish** (top toolbar) to save and activate the Eventstream. The **Keys** tab is only visible after the Eventstream has been published.
-6. After publishing, click the **`mqtt-simulator`** source node on the canvas and open the **Keys** tab. Copy the **Connection string–primary key** (the full `Endpoint=sb://...;EntityPath=...` string). This single value contains everything the simulator needs, including the entity path.
+6. After publishing, click the **`oee-simulator`** source node on the canvas and open the **Keys** tab. Copy the **Connection string–primary key** (the full `Endpoint=sb://...;EntityPath=...` string).
 
 ---
 
-## Step 2 — Configure the Simulator
+## Step 2 — Configure and Run the Simulator
 
-1. Copy the sample configuration file and insert your connection string:
+### Option A — Run with .NET (recommended for development)
+
+1. Navigate to the simulator directory:
 
 ```bash
-cp devices.sample.yaml devices.yaml
+cd simulator/FabricOEESimulator
+cp simulator.sample.yaml simulator.yaml
 ```
 
-2. Open `devices.yaml` and replace the placeholder broker connection with the credentials copied in Step 1:
+2. Open `simulator.yaml` and configure the broker with the Eventstream connection string from Step 1:
 
 ```yaml
-brokers:
-  manufacturing-eventhub:
-    type: EventHub
-    connection: "Endpoint=sb://<your-namespace>.servicebus.windows.net/;SharedAccessKeyName=...;SharedAccessKey=...;EntityPath=es_..."
+broker:
+  type: EventHub
+  connection: "Endpoint=sb://<your-namespace>.servicebus.windows.net/;SharedAccessKeyName=...;SharedAccessKey=...;EntityPath=es_..."
 ```
 
-All 14 devices already reference this named broker — no other changes are needed.
+3. Run the simulator:
 
-**Test the simulator:**
 ```bash
-docker run -v "$(pwd)/devices.yaml:/app/devices.yaml" ghcr.io/howardginsburg/mqttsimulator:latest
+dotnet run
 ```
 
-You should see a live monitoring console displaying all 14 devices — each row shows the device ID, connection status, last message time, and message count updating in real time.
+You should see a live Spectre.Console table showing all 5 lines with 30 stations — each row shows the station's status (Running/Starved/Blocked/Fault/Maintenance), buffer levels, and parts processed.
+
+### Option B — Run with Docker
+
+1. Create a `simulator.yaml` file from the sample and configure as above.
+
+2. Build and run:
+
+```bash
+cd simulator
+docker build -t oee-simulator .
+docker run -it --rm -v "$(pwd)/FabricOEESimulator/simulator.yaml:/app/simulator.yaml" oee-simulator
+```
+
+> **Note:** The `-it` flags are required — the simulator uses [Spectre.Console](https://spectreconsole.net/) for its interactive UI and will exit immediately without a TTY.
+
+### Console Sink (no Fabric required)
+
+For local testing without Fabric, leave the broker type as `Console`:
+
+```yaml
+broker:
+  type: Console
+```
+
+This logs all telemetry events to the log file without sending to any external service.
 
 ---
 
@@ -117,119 +208,237 @@ You should see a live monitoring console displaying all 14 devices — each row 
 
 1. In your Fabric workspace, select **+ New item → Eventhouse**.
 2. Name it **`ManufacturingEH`** and click **Create**. A KQL Database named `ManufacturingEH` is created automatically.
-3. Open the KQL Database and run the following in the **Explore your data** query window to create the tables and ingestion mapping:
+3. Open the KQL Database and run the following in the **Explore your data** query window to create the tables and ingestion mappings:
 
 ```kql
 // ---------------------------------------------------------------------------
-// MachineEvents — raw machine telemetry routed from Eventstream
+// MachineEvents — periodic station telemetry (every 10s per station)
 // ---------------------------------------------------------------------------
 .create table MachineEvents (
-    event_type:       string,
-    device_id:        string,
-    machine_type:     string,
-    machine_status:   string,
-    actual_cycle_time:real,
-    total_parts:      long,
-    rejected_parts:   long,
-    line_id:          string,
-    timestamp:        datetime
+    event_type:          string,
+    device_id:           string,
+    machine_type:        string,
+    machine_status:      string,
+    idle_reason:         string,
+    line_id:             string,
+    station_position:    int,
+    actual_cycle_time:   real,
+    input_buffer_count:  int,
+    output_buffer_count: int,
+    buffer_capacity:     int,
+    total_parts_processed: long,
+    rejected_parts:      long,
+    current_part_id:     string,
+    timestamp:           datetime
 )
 
 .create table MachineEvents ingestion json mapping 'MachineEventsMapping'
 '['
+'  {"column":"event_type",          "path":"$.event_type",          "datatype":"string"},'
+'  {"column":"device_id",           "path":"$.device_id",           "datatype":"string"},'
+'  {"column":"machine_type",        "path":"$.machine_type",        "datatype":"string"},'
+'  {"column":"machine_status",      "path":"$.machine_status",      "datatype":"string"},'
+'  {"column":"idle_reason",         "path":"$.idle_reason",         "datatype":"string"},'
+'  {"column":"line_id",             "path":"$.line_id",             "datatype":"string"},'
+'  {"column":"station_position",    "path":"$.station_position",    "datatype":"int"},'
+'  {"column":"actual_cycle_time",   "path":"$.actual_cycle_time",   "datatype":"real"},'
+'  {"column":"input_buffer_count",  "path":"$.input_buffer_count",  "datatype":"int"},'
+'  {"column":"output_buffer_count", "path":"$.output_buffer_count", "datatype":"int"},'
+'  {"column":"buffer_capacity",     "path":"$.buffer_capacity",     "datatype":"int"},'
+'  {"column":"total_parts_processed","path":"$.total_parts_processed","datatype":"long"},'
+'  {"column":"rejected_parts",      "path":"$.rejected_parts",      "datatype":"long"},'
+'  {"column":"current_part_id",     "path":"$.current_part_id",     "datatype":"string"},'
+'  {"column":"timestamp",           "path":"$.timestamp",           "datatype":"datetime"}'
+']'
+
+// ---------------------------------------------------------------------------
+// PartEvents — per-part per-station transitions (entered/completed/rejected)
+// ---------------------------------------------------------------------------
+.create table PartEvents (
+    event_type:       string,
+    part_id:          string,
+    line_id:          string,
+    station_position: int,
+    machine_type:     string,
+    action:           string,
+    cycle_time:       real,
+    quality_pass:     bool,
+    timestamp:        datetime
+)
+
+.create table PartEvents ingestion json mapping 'PartEventsMapping'
+'['
 '  {"column":"event_type",       "path":"$.event_type",       "datatype":"string"},'
-'  {"column":"device_id",        "path":"$.deviceId",         "datatype":"string"},'
-'  {"column":"machine_type",     "path":"$.machine_type",     "datatype":"string"},'
-'  {"column":"machine_status",   "path":"$.machine_status",   "datatype":"string"},'
-'  {"column":"actual_cycle_time","path":"$.actual_cycle_time","datatype":"real"},'
-'  {"column":"total_parts",      "path":"$.total_parts",      "datatype":"long"},'
-'  {"column":"rejected_parts",   "path":"$.rejected_parts",   "datatype":"long"},'
+'  {"column":"part_id",          "path":"$.part_id",          "datatype":"string"},'
 '  {"column":"line_id",          "path":"$.line_id",          "datatype":"string"},'
+'  {"column":"station_position", "path":"$.station_position", "datatype":"int"},'
+'  {"column":"machine_type",     "path":"$.machine_type",     "datatype":"string"},'
+'  {"column":"action",           "path":"$.action",           "datatype":"string"},'
+'  {"column":"cycle_time",       "path":"$.cycle_time",       "datatype":"real"},'
+'  {"column":"quality_pass",     "path":"$.quality_pass",     "datatype":"bool"},'
 '  {"column":"timestamp",        "path":"$.timestamp",        "datatype":"datetime"}'
 ']'
 
 // ---------------------------------------------------------------------------
-// MaintenanceEvents — CMMS technician feed routed from the same Eventstream
+// MaintenanceEvents — work order lifecycle (Created/Acknowledged/InProgress/Resolved)
 // ---------------------------------------------------------------------------
 .create table MaintenanceEvents (
-    event_type:     string,
-    machine_type:   string,
-    line_id:        string,
-    technician_id:  string,
-    issue_type:     string,
-    action:         string,
-    timestamp:      datetime
+    event_type:       string,
+    work_order_id:    string,
+    device_id:        string,
+    machine_type:     string,
+    line_id:          string,
+    station_position: int,
+    issue_type:       string,
+    action:           string,
+    technician_id:    string,
+    timestamp:        datetime
 )
 
 .create table MaintenanceEvents ingestion json mapping 'MaintenanceEventsMapping'
 '['
-'  {"column":"event_type",    "path":"$.event_type",    "datatype":"string"},'
-'  {"column":"machine_type",  "path":"$.machine_type",  "datatype":"string"},'
-'  {"column":"line_id",       "path":"$.line_id",       "datatype":"string"},'
-'  {"column":"technician_id", "path":"$.technician_id", "datatype":"string"},'
-'  {"column":"issue_type",    "path":"$.issue_type",    "datatype":"string"},'
-'  {"column":"action",        "path":"$.action",        "datatype":"string"},'
-'  {"column":"timestamp",     "path":"$.timestamp",     "datatype":"datetime"}'
+'  {"column":"event_type",       "path":"$.event_type",       "datatype":"string"},'
+'  {"column":"work_order_id",    "path":"$.work_order_id",    "datatype":"string"},'
+'  {"column":"device_id",        "path":"$.device_id",        "datatype":"string"},'
+'  {"column":"machine_type",     "path":"$.machine_type",     "datatype":"string"},'
+'  {"column":"line_id",          "path":"$.line_id",          "datatype":"string"},'
+'  {"column":"station_position", "path":"$.station_position", "datatype":"int"},'
+'  {"column":"issue_type",       "path":"$.issue_type",       "datatype":"string"},'
+'  {"column":"action",           "path":"$.action",           "datatype":"string"},'
+'  {"column":"technician_id",    "path":"$.technician_id",    "datatype":"string"},'
+'  {"column":"timestamp",        "path":"$.timestamp",        "datatype":"datetime"}'
 ']'
+```
+
+4. Create the reference data tables:
+
+```kql
+// ---------------------------------------------------------------------------
+// LineMaster — production line metadata
+// ---------------------------------------------------------------------------
+.set-or-replace LineMaster <|
+    datatable(line_id:string, line_name:string, purpose:string, station_count:int)
+    [
+        "Line-A", "Precision Machining",   "Raw bar stock → machined shaft",              5,
+        "Line-B", "Sheet Metal Forming",    "Sheet metal → stamped housing",               4,
+        "Line-C", "Welding & Assembly",     "Components → welded subassembly",             6,
+        "Line-D", "Surface Treatment",      "Raw part → painted and coated finished part", 7,
+        "Line-E", "Electronics Assembly",   "Bare PCB → tested electronics module",        8,
+    ]
 
 // ---------------------------------------------------------------------------
-// MachineMaster — engineering reference data (not from devices)
-// Enriches MachineEvents with ideal_cycle_time, manufacturer info, etc.
+// StationMaster — per-station engineering reference data
 // ---------------------------------------------------------------------------
-.set-or-replace MachineMaster <|
+.set-or-replace StationMaster <|
     datatable(
-        machine_type:string,
-        ideal_cycle_time:real,
-        manufacturer:string,
-        install_year:int,
-        maintenance_interval_hours:real
+        line_id:string, station_position:int, machine_type:string,
+        ideal_cycle_time:real, manufacturer:string, install_year:int,
+        buffer_capacity:int
     )
     [
-        "CNC-Mill",        45.0, "Haas",          2018, 500.0,
-        "Hydraulic-Press",  8.0, "Schuler",        2015, 250.0,
-        "Assembly-Robot",  20.0, "FANUC",          2021, 1000.0,
-        "Packaging-Line",   3.0, "Bosch-Rexroth",  2019, 300.0,
+        "Line-A", 1, "CNC-Lathe",            40.0, "Haas",          2018, 5,
+        "Line-A", 2, "CNC-Mill",             45.0, "Haas",          2019, 5,
+        "Line-A", 3, "Surface-Grinder",      35.0, "Okamoto",       2020, 5,
+        "Line-A", 4, "Deburring-Station",    15.0, "Rösler",        2021, 5,
+        "Line-A", 5, "CMM-Inspection",       60.0, "Zeiss",         2022, 5,
+        "Line-B", 1, "Blanking-Press",        8.0, "Schuler",       2015, 5,
+        "Line-B", 2, "Hydraulic-Press",      12.0, "Schuler",       2016, 5,
+        "Line-B", 3, "Trimming-Station",     10.0, "Trumpf",        2017, 5,
+        "Line-B", 4, "Quality-Inspection",   20.0, "Keyence",       2020, 5,
+        "Line-C", 1, "Component-Loader",     10.0, "FANUC",         2019, 5,
+        "Line-C", 2, "Welding-Robot",        25.0, "ABB",           2019, 5,
+        "Line-C", 3, "Weld-Inspection",      30.0, "Yaskawa",       2020, 5,
+        "Line-C", 4, "Fastening-Station",    15.0, "Atlas Copco",   2021, 5,
+        "Line-C", 5, "Assembly-Robot",       20.0, "FANUC",         2021, 5,
+        "Line-C", 6, "Leak-Test",            25.0, "ATEQ",          2022, 5,
+        "Line-D", 1, "Surface-Prep",         20.0, "Wheelabrator",  2017, 5,
+        "Line-D", 2, "Chemical-Wash",        30.0, "Dürr",          2017, 5,
+        "Line-D", 3, "Primer-Application",   25.0, "Graco",         2018, 5,
+        "Line-D", 4, "Paint-Booth",          40.0, "Dürr",          2018, 5,
+        "Line-D", 5, "Curing-Oven",          90.0, "Ipsen",         2016, 5,
+        "Line-D", 6, "Coating-Inspection",   15.0, "Keyence",       2021, 5,
+        "Line-D", 7, "Final-Packaging",      10.0, "Bosch-Rexroth", 2020, 5,
+        "Line-E", 1, "PCB-Loader",            5.0, "JUKI",          2021, 5,
+        "Line-E", 2, "SMT-Placement",        15.0, "JUKI",          2021, 5,
+        "Line-E", 3, "Reflow-Oven",          45.0, "Heller",        2020, 5,
+        "Line-E", 4, "AOI-Inspection",       10.0, "Koh Young",     2022, 5,
+        "Line-E", 5, "Through-Hole-Insert",  20.0, "Universal",     2019, 5,
+        "Line-E", 6, "Wave-Solder",          35.0, "ERSA",          2019, 5,
+        "Line-E", 7, "Functional-Test",      30.0, "National Instruments", 2020, 5,
+        "Line-E", 8, "Conformal-Coat",       25.0, "Nordson",       2022, 5,
     ]
 
 // ---------------------------------------------------------------------------
 // ProductionSchedule — planned output targets per line/shift
-// Used to compute schedule adherence vs. actual production
 // ---------------------------------------------------------------------------
-.set ProductionSchedule <|
+.set-or-replace ProductionSchedule <|
     datatable(line_id:string, shift:string, planned_parts:long)
     [
-        "Line-A", "Day",    45000,
-        "Line-A", "Night",  40000,
-        "Line-B", "Day",   230000,
-        "Line-B", "Night", 200000,
+        "Line-A", "Day",    120,
+        "Line-A", "Night",  100,
+        "Line-B", "Day",    500,
+        "Line-B", "Night",  450,
+        "Line-C", "Day",    200,
+        "Line-C", "Night",  180,
+        "Line-D", "Day",    150,
+        "Line-D", "Night",  130,
+        "Line-E", "Day",    180,
+        "Line-E", "Night",  150,
     ]
+```
+
+5. Create the materialized view for pre-aggregated OEE:
+
+```kql
+.create materialized-view with (backfill=true, dimensionTables=['StationMaster']) OEE_5min on table MachineEvents
+{
+    MachineEvents
+    | join kind=inner StationMaster on $left.line_id == $right.line_id, $left.station_position == $right.station_position
+    | extend shift = iff(hourofday(timestamp) >= 6 and hourofday(timestamp) < 18, "Day", "Night")
+    | summarize
+        event_count  = count(),
+        running      = countif(machine_status == "Running"),
+        fault        = countif(machine_status == "Fault"),
+        maintenance  = countif(machine_status == "Maintenance"),
+        avg_actual   = avgif(actual_cycle_time, machine_status == "Running"),
+        ideal        = avg(ideal_cycle_time),
+        total_parts  = sum(total_parts_processed),
+        rejected     = sum(rejected_parts)
+        by bin(timestamp, 5m), device_id, machine_type, line_id, station_position, shift
+}
 ```
 
 ---
 
 ## Step 4 — Connect Eventstream to Eventhouse (with Routing)
 
-Both machine telemetry and maintenance events flow through the **same** Eventstream source. Use a **Query** (SQL transform) operator to filter, rename columns, cast types, and route each `event_type` to the correct KQL table in one step.
+All three event types (machine telemetry, part events, maintenance events) flow through the **same** Eventstream source. Use **Query** (SQL transform) operators to filter and route each `event_type` to the correct KQL table.
 
-> **Why Query instead of Filter + Manage Fields:** The Query operator lets you write a SQL `SELECT` statement with full control over column names, types, and filtering. This avoids Fabric's schema inference limitations in Manage Fields (no free-text entry, wrong type defaults, dependency on sampled events).
+> **Why Query instead of Filter + Manage Fields:** The Query operator lets you write a SQL `SELECT` statement with full control over column names, types, and filtering.
 
 ### 4.1 — Route machine telemetry to MachineEvents
 
 1. In the Eventstream canvas, from the source node click **+** and add a **Query** operation.
-2. In the Query pane, click **+ Add output** and name the output **`MachineEvents`**. This creates the destination node and makes `[MachineEvents]` available as the `INTO` target.
-3. Enter the following SQL in the query editor:
+2. In the Query pane, click **+ Add output** and name the output **`MachineEvents`**.
+3. Enter the following SQL:
 
 ```sql
 SELECT
     event_type,
-    deviceId          AS device_id,
+    device_id,
     machine_type,
     machine_status,
-    actual_cycle_time,
-    CAST(total_parts    AS BIGINT) AS total_parts,
-    CAST(rejected_parts AS BIGINT) AS rejected_parts,
+    idle_reason,
     line_id,
-    timestamp
+    CAST(station_position AS BIGINT)    AS station_position,
+    actual_cycle_time,
+    CAST(input_buffer_count AS BIGINT)  AS input_buffer_count,
+    CAST(output_buffer_count AS BIGINT) AS output_buffer_count,
+    CAST(buffer_capacity AS BIGINT)     AS buffer_capacity,
+    CAST(total_parts_processed AS BIGINT) AS total_parts_processed,
+    CAST(rejected_parts AS BIGINT)      AS rejected_parts,
+    current_part_id,
+    [timestamp]
 INTO [MachineEvents]
 FROM [manufacturing-telemetry-stream]
 WHERE event_type = 'machine_telemetry'
@@ -240,386 +449,182 @@ WHERE event_type = 'machine_telemetry'
    - **Table:** `MachineEvents`
    - **Input data format:** JSON
 
-### 4.2 — Route maintenance events to MaintenanceEvents
+### 4.2 — Route part events to PartEvents
 
-1. From the same source node, click **+** again to add a **second Query** operation (branching independently).
-2. In the Query pane, click **+ Add output** and name the output **`MaintenanceEvents`**.
+1. From the same source node, click **+** again to add a **second Query** operation.
+2. Click **+ Add output** and name the output **`PartEvents`**.
 3. Enter the following SQL:
 
 ```sql
 SELECT
     event_type,
+    part_id,
+    line_id,
+    CAST(station_position AS BIGINT) AS station_position,
+    machine_type,
+    action,
+    cycle_time,
+    quality_pass,
+    [timestamp]
+INTO [PartEvents]
+FROM [manufacturing-telemetry-stream]
+WHERE event_type = 'part_event'
+```
+
+4. Connect the `PartEvents` output node to a **KQL Database** destination:
+   - **KQL Database:** `ManufacturingEH`
+   - **Table:** `PartEvents`
+   - **Input data format:** JSON
+
+### 4.3 — Route maintenance events to MaintenanceEvents
+
+1. Add a **third Query** operation from the source node.
+2. Click **+ Add output** and name the output **`MaintenanceEvents`**.
+3. Enter:
+
+```sql
+SELECT
+    event_type,
+    work_order_id,
+    device_id,
     machine_type,
     line_id,
-    technician_id,
+    CAST(station_position AS BIGINT) AS station_position,
     issue_type,
     action,
-    timestamp
+    technician_id,
+    [timestamp]
 INTO [MaintenanceEvents]
 FROM [manufacturing-telemetry-stream]
 WHERE event_type = 'maintenance_event'
 ```
 
-4. Connect the `MaintenanceEvents` output node to a **KQL Database** destination:
+4. Connect to **KQL Database** destination:
    - **KQL Database:** `ManufacturingEH`
    - **Table:** `MaintenanceEvents`
    - **Input data format:** JSON
 
-### 4.3 — Publish and verify
+### 4.4 — Publish and verify
 
 1. Click **Publish** in the Eventstream canvas.
 2. Wait ~60 seconds, then run these verification queries in the KQL Database:
 
 ```kql
-// Should show 10 distinct device IDs
+// Should show 30 distinct device IDs (one per station)
 MachineEvents
 | summarize count() by device_id
 | order by device_id asc
 
-// Should show 4 technician feeds
+// Should show part events with sequential IDs per line
+PartEvents
+| take 20
+| order by timestamp desc
+
+// Should show maintenance work order lifecycle events
 MaintenanceEvents
-| summarize count() by machine_type, technician_id
-| order by machine_type asc
+| take 10
+| order by timestamp desc
 ```
 
-> **Tip:** If one table is empty, check that the Filter condition exactly matches the `event_type` string value (case-sensitive) and that both filters are connected to destinations before publishing.
+> **Tip:** If a table is empty, check that the Query condition exactly matches the `event_type` string value (case-sensitive) and that all three queries are connected to destinations before publishing.
 
 ---
 
 ## Step 5 — OEE KQL Queries
 
-These queries power the Real-Time Dashboard tiles. Save them as **named queries** in the KQL Database for reuse.
+These queries power the Real-Time Dashboard tiles. All queries enrich raw telemetry by joining `StationMaster` for `ideal_cycle_time` and deriving `shift` from the event timestamp.
 
-All queries enrich raw telemetry by joining `MachineMaster` for `ideal_cycle_time` and deriving `shift` from the event timestamp.
-
-### 5.1 — Availability (by line, last hour, 5-minute bins)
+### 5.1 — Per-Station OEE (5-minute bins)
 
 ```kql
 MachineEvents
-| where timestamp > ago(1h)
+| where timestamp between (_startTime .. _endTime)
+| join kind=inner StationMaster
+    on $left.line_id == $right.line_id, $left.station_position == $right.station_position
 | summarize
-    total   = count(),
-    running = countif(machine_status == "Running")
-    by bin(timestamp, 5m), line_id
-| extend availability = round(todouble(running) / todouble(total), 4)
-| project timestamp, line_id, availability
-| order by timestamp desc
-```
-
-### 5.2 — Performance (by line + machine type, last hour, 5-minute bins)
-
-Joins `MachineMaster` to get `ideal_cycle_time`. Only meaningful when the machine is running.
-
-```kql
-MachineEvents
-| where timestamp > ago(1h)
-| where machine_status == "Running"
-| join kind=inner MachineMaster on machine_type
-| summarize avg_actual = avg(actual_cycle_time), ideal = avg(ideal_cycle_time)
-    by bin(timestamp, 5m), line_id, machine_type
-| extend performance = round(ideal / avg_actual, 4)
-| project timestamp, line_id, machine_type, performance
-| order by timestamp desc
-```
-
-### 5.3 — Quality (by line, last hour, 5-minute bins)
-
-```kql
-MachineEvents
-| where timestamp > ago(1h)
-| where total_parts > 0
-| summarize
-    total_sum    = sum(total_parts),
-    rejected_sum = sum(rejected_parts)
-    by bin(timestamp, 5m), line_id
-| extend quality = round(1.0 - (todouble(rejected_sum) / todouble(total_sum)), 4)
-| project timestamp, line_id, quality
-| order by timestamp desc
-```
-
-### 5.4 — Combined OEE Score (by line, last hour, 5-minute bins)
-
-Joins all three components into one table. This is the primary OEE tile query.
-
-```kql
-let avail =
-    MachineEvents
-    | where timestamp > ago(1h)
-    | summarize total = count(), running = countif(machine_status == "Running")
-        by bin(timestamp, 5m), line_id
-    | extend availability = todouble(running) / todouble(total);
-let perf =
-    MachineEvents
-    | where timestamp > ago(1h)
-    | where machine_status == "Running"
-    | join kind=inner MachineMaster on machine_type
-    | summarize avg_actual = avg(actual_cycle_time), ideal = avg(ideal_cycle_time)
-        by bin(timestamp, 5m), line_id
-    | extend performance = ideal / avg_actual;
-let qual =
-    MachineEvents
-    | where timestamp > ago(1h)
-    | where total_parts > 0
-    | summarize total_sum = sum(total_parts), rejected_sum = sum(rejected_parts)
-        by bin(timestamp, 5m), line_id
-    | extend quality = 1.0 - (todouble(rejected_sum) / todouble(total_sum));
-avail
-| join kind=leftouter perf  on timestamp, line_id
-| join kind=leftouter qual  on timestamp, line_id
-| extend oee = round(availability * performance * quality, 4)
-| project timestamp, line_id, availability = round(availability, 4),
-          performance = round(performance, 4), quality = round(quality, 4), oee
-| order by timestamp desc
-```
-
-### 5.5 — Current Machine Status (live snapshot)
-
-Most-recent status per device — used for the status table tile.
-
-```kql
-MachineEvents
-| summarize arg_max(timestamp, machine_status, machine_type, line_id) by device_id
-| project device_id, machine_type, line_id, machine_status, timestamp
-| order by line_id asc, machine_type asc
-```
-
-### 5.6 — Fault Count by Machine (last hour)
-
-```kql
-MachineEvents
-| where timestamp > ago(1h)
-| where machine_status == "Fault"
-| summarize fault_count = count() by device_id, machine_type, line_id
-| order by fault_count desc
-```
-
-### 5.7 — Shift KPI Summary
-
-Shift is derived from the event timestamp in KQL — not sent by the device.
-
-```kql
-MachineEvents
-| where timestamp > ago(8h)
-| where total_parts > 0
-| extend shift = iff(hourofday(timestamp) >= 6 and hourofday(timestamp) < 18, "Day", "Night")
-| summarize
-    total_p    = sum(total_parts),
-    rejected_p = sum(rejected_parts),
-    faults     = countif(machine_status == "Fault")
-    by shift, line_id
-| extend quality = round(1.0 - (todouble(rejected_p) / todouble(total_p)), 4)
-| project shift, line_id, total_p, rejected_p, quality, faults
-| order by line_id asc, shift asc
-```
-
-### 5.8 — Materialized View for Performance
-
-For dashboards querying frequently over large data, pre-aggregate into a materialized view.
-Note: the view joins `MachineMaster` at creation time so `ideal_cycle_time` is baked in.
-
-```kql
-.create materialized-view with (backfill=true, dimensionTables=['MachineMaster']) OEE_5min on table MachineEvents
-{
-    MachineEvents
-    | join kind=inner MachineMaster on machine_type
-    | extend shift = iff(hourofday(timestamp) >= 6 and hourofday(timestamp) < 18, "Day", "Night")
-    | summarize
-        event_count  = count(),
-        running      = countif(machine_status == "Running"),
-        fault        = countif(machine_status == "Fault"),
-        avg_actual   = avgif(actual_cycle_time, machine_status == "Running"),
-        ideal        = avg(ideal_cycle_time),
-        total_parts  = sum(total_parts),
-        rejected     = sum(rejected_parts)
-        by bin(timestamp, 5m), device_id, machine_type, line_id, shift
-}
-```
-
-Then query the view instead of the raw table:
-
-```kql
-OEE_5min
-| where timestamp > ago(1h)
+    total     = count(),
+    running   = countif(machine_status == "Running"),
+    downtime  = countif(machine_status in ("Fault", "Maintenance")),
+    avg_actual = avgif(actual_cycle_time, machine_status == "Running"),
+    ideal     = avg(ideal_cycle_time),
+    parts     = sum(total_parts_processed),
+    rejected  = sum(rejected_parts)
+    by bin(timestamp, 5m), device_id, machine_type, line_id, station_position
 | extend
-    availability = todouble(running) / todouble(event_count),
-    performance  = iif(avg_actual > 0, ideal / avg_actual, real(null)),
-    quality      = iif(total_parts > 0, 1.0 - todouble(rejected) / todouble(total_parts), real(null))
+    availability = iif(running + downtime > 0,
+        round(todouble(running) / todouble(running + downtime), 4), real(null)),
+    performance = iif(avg_actual > 0, round(ideal / avg_actual, 4), real(null)),
+    quality = iif(parts > 0, round(1.0 - todouble(rejected) / todouble(parts), 4), real(null))
 | extend oee = round(availability * performance * quality, 4)
-| project timestamp, device_id, machine_type, line_id, shift,
-          availability = round(availability, 4),
-          performance  = round(performance, 4),
-          quality      = round(quality, 4), oee
-| order by timestamp desc
-```
-
-### 5.9 — Mean Time to Repair (MTTR) by Machine Type
-
-Joins `MachineEvents` (Fault occurrences) with `MaintenanceEvents` (Resolved actions) on `machine_type` and `line_id`. Demonstrates a **cross-table join between a live stream and a second live stream**.
-
-```kql
-let faults =
-    MachineEvents
-    | where timestamp > ago(24h)
-    | where machine_status == "Fault"
-    | project fault_time = timestamp, machine_type, line_id;
-let resolutions =
-    MaintenanceEvents
-    | where timestamp > ago(24h)
-    | where action == "Resolved"
-    | project resolve_time = timestamp, machine_type, line_id;
-faults
-| join kind=inner resolutions on machine_type, line_id
-| where resolve_time > fault_time
-| extend mttr_minutes = datetime_diff('minute', resolve_time, fault_time)
-| where mttr_minutes between (1 .. 480)    // exclude noise / same-minute events
-| summarize avg_mttr = round(avg(mttr_minutes), 1), incidents = count()
-    by machine_type, line_id
-| join kind=leftouter MachineMaster on machine_type
-| project machine_type, manufacturer, line_id, avg_mttr, incidents
-| order by avg_mttr desc
-```
-
-### 5.10 — Actual vs. Planned Production (Schedule Adherence)
-
-Compares cumulative `total_parts` per line against `ProductionSchedule` targets. Uses `max(total_parts)` per device as the end-of-window cumulative count, then sums across devices on the line.
-
-```kql
-MachineEvents
-| where timestamp > ago(8h)
-| extend shift = iff(hourofday(timestamp) >= 6 and hourofday(timestamp) < 18, "Day", "Night")
-| summarize device_total = max(total_parts) by line_id, shift, device_id
-| summarize actual_parts = sum(device_total) by line_id, shift
-| join kind=inner ProductionSchedule on line_id, shift
-| extend adherence_pct = round(todouble(actual_parts) / todouble(planned_parts) * 100, 1)
-| project line_id, shift, actual_parts, planned_parts, adherence_pct
-| order by line_id asc, shift asc
-```
-
-### 5.11 — OEE by Manufacturer (Equipment Age Analysis)
-
-Enriches OEE results with `MachineMaster` manufacturer and install year — demonstrates a **multi-column reference join** for equipment benchmarking.
-
-```kql
-MachineEvents
-| where timestamp > ago(1h)
-| join kind=inner MachineMaster on machine_type
-| summarize
-    total        = count(),
-    running      = countif(machine_status == "Running"),
-    avg_actual   = avgif(actual_cycle_time, machine_status == "Running"),
-    ideal        = avg(ideal_cycle_time),
-    total_parts  = sum(total_parts),
-    rejected     = sum(rejected_parts)
-    by manufacturer, install_year, maintenance_interval_hours
-| extend
-    availability = round(todouble(running) / todouble(total), 4),
-    performance  = iif(avg_actual > 0, round(ideal / avg_actual, 4), real(null)),
-    quality      = iif(total_parts > 0, round(1.0 - todouble(rejected) / todouble(total_parts), 4), real(null))
-| extend oee = round(availability * performance * quality, 4)
-| project manufacturer, install_year, maintenance_interval_hours,
+| project timestamp, line_id, station_position, device_id, machine_type,
           availability, performance, quality, oee
-| order by oee desc
+| order by line_id asc, station_position asc, timestamp desc
 ```
 
-### 5.12 — Open (Unacknowledged) Faults
+### 5.2 — Line OEE Trend (5-minute bins)
 
-Finds machines that are currently in Fault state with no corresponding Acknowledged or later maintenance event in the past 15 minutes.
-
-```kql
-let recent_faults =
-    MachineEvents
-    | where timestamp > ago(15m)
-    | where machine_status == "Fault"
-    | summarize last_fault = max(timestamp) by machine_type, line_id;
-let acknowledged =
-    MaintenanceEvents
-    | where timestamp > ago(15m)
-    | where action in ("Acknowledged", "InProgress", "Resolved")
-    | summarize last_ack = max(timestamp) by machine_type, line_id;
-recent_faults
-| join kind=leftouter acknowledged on machine_type, line_id
-| where isnull(last_ack) or last_ack < last_fault
-| extend minutes_unacknowledged = datetime_diff('minute', now(), last_fault)
-| project machine_type, line_id, last_fault, minutes_unacknowledged
-| order by minutes_unacknowledged desc
-```
-
----
-
-## Step 6 — Build the Real-Time Dashboard
-
-There are two ways to create the dashboard:
-
-- **Option A — Build it manually** by adding each tile and query yourself. This is the best way to understand how Real-Time Dashboards work.
-- **Option B — Import the pre-built template** from `oee-dashboard.template.json` for a quick start.
-
-### Option A — Manual Dashboard Build
-
-1. In your Fabric workspace, select **+ New item → Real-Time Dashboard**.
-2. Name it **`OEE Manufacturing Dashboard`** and click **Create**.
-3. Click **+ Add data source → KQL Database** and select `ManufacturingEH`.
-
-### Tile 1 — OEE Trend (Line Chart)
+Aggregates across all stations on a line for the overall line OEE.
 
 ```kql
 let avail =
     MachineEvents
-    | where timestamp > ago(1h)
-    | summarize total = count(), running = countif(machine_status == "Running")
+    | where timestamp between (_startTime .. _endTime)
+    | summarize
+        running  = countif(machine_status == "Running"),
+        downtime = countif(machine_status in ("Fault", "Maintenance"))
         by bin(timestamp, 5m), line_id
-    | extend availability = todouble(running) / todouble(total);
+    | extend availability = todouble(running) / todouble(running + downtime);
 let perf =
     MachineEvents
-    | where timestamp > ago(1h)
+    | where timestamp between (_startTime .. _endTime)
     | where machine_status == "Running"
-    | join kind=inner MachineMaster on machine_type
+    | join kind=inner StationMaster
+        on $left.line_id == $right.line_id, $left.station_position == $right.station_position
     | summarize avg_actual = avg(actual_cycle_time), ideal = avg(ideal_cycle_time)
         by bin(timestamp, 5m), line_id
     | extend performance = ideal / avg_actual;
 let qual =
     MachineEvents
-    | where timestamp > ago(1h)
-    | where total_parts > 0
-    | summarize total_sum = sum(total_parts), rejected_sum = sum(rejected_parts)
+    | where timestamp between (_startTime .. _endTime)
+    | where total_parts_processed > 0
+    | summarize total_sum = sum(total_parts_processed), rejected_sum = sum(rejected_parts)
         by bin(timestamp, 5m), line_id
     | extend quality = 1.0 - (todouble(rejected_sum) / todouble(total_sum));
 avail
-| join kind=leftouter perf  on timestamp, line_id
-| join kind=leftouter qual  on timestamp, line_id
+| join kind=leftouter perf on timestamp, line_id
+| join kind=leftouter qual on timestamp, line_id
 | extend oee = round(availability * performance * quality, 4)
-| project timestamp, line_id, availability = round(availability, 4),
-          performance = round(performance, 4), quality = round(quality, 4), oee
+| project timestamp, line_id,
+          availability = round(availability, 4),
+          performance = round(performance, 4),
+          quality = round(quality, 4), oee
 | order by timestamp desc
 ```
 
-- **Visualization:** Line chart
-- **X-axis:** `timestamp`
-- **Y-axis:** `oee`
-- **Series:** `line_id`
-- **Title:** "OEE by Production Line (last hour)"
-
-### Tile 2 — Current OEE Score (Stat Cards)
-
-For a single-number KPI card per line:
+### 5.3 — Live OEE Score per Line (last 5 min)
 
 ```kql
 let avail =
     MachineEvents
     | where timestamp > ago(5m)
-    | summarize total = count(), running = countif(machine_status == "Running") by line_id
-    | extend availability = todouble(running) / todouble(total);
+    | summarize
+        running = countif(machine_status == "Running"),
+        downtime = countif(machine_status in ("Fault", "Maintenance"))
+        by line_id
+    | extend availability = todouble(running) / todouble(running + downtime);
 let perf =
     MachineEvents
     | where timestamp > ago(5m)
     | where machine_status == "Running"
-    | join kind=inner MachineMaster on machine_type
+    | join kind=inner StationMaster
+        on $left.line_id == $right.line_id, $left.station_position == $right.station_position
     | summarize avg_actual = avg(actual_cycle_time), ideal = avg(ideal_cycle_time) by line_id
     | extend performance = ideal / avg_actual;
 let qual =
     MachineEvents
     | where timestamp > ago(5m)
-    | where total_parts > 0
-    | summarize total_sum = sum(total_parts), rejected_sum = sum(rejected_parts) by line_id
+    | where total_parts_processed > 0
+    | summarize total_sum = sum(total_parts_processed), rejected_sum = sum(rejected_parts) by line_id
     | extend quality = 1.0 - (todouble(rejected_sum) / todouble(total_sum));
 avail
 | join kind=leftouter perf on line_id
@@ -628,100 +633,162 @@ avail
 | project line_id, oee
 ```
 
-- **Visualization:** Stat / Single value
-- **Value:** `oee`
-- **Series:** `line_id`
-- **Title:** "Live OEE % (last 5 min)"
-- **Conditional formatting:** Green ≥ 80, Yellow 60–79, Red < 60
-
-### Tile 3 — Availability, Performance, Quality Breakdown (Bar Chart)
-
-Use the Combined OEE query (5.4), latest bin only:
+### 5.4 — OEE Components Breakdown (Availability / Performance / Quality)
 
 ```kql
 let avail =
     MachineEvents
-    | where timestamp > ago(5m)
-    | summarize total = count(), running = countif(machine_status == "Running") by line_id
-    | extend metric = "Availability", value = round(todouble(running)/todouble(total)*100,1);
+    | where timestamp between (_startTime .. _endTime)
+    | summarize
+        running = countif(machine_status == "Running"),
+        downtime = countif(machine_status in ("Fault", "Maintenance"))
+        by line_id
+    | extend metric = "Availability",
+        value = round(todouble(running)/todouble(running + downtime)*100, 1);
 let perf =
     MachineEvents
-    | where timestamp > ago(5m)
+    | where timestamp between (_startTime .. _endTime)
     | where machine_status == "Running"
-    | join kind=inner MachineMaster on machine_type
+    | join kind=inner StationMaster
+        on $left.line_id == $right.line_id, $left.station_position == $right.station_position
     | summarize avg_actual = avg(actual_cycle_time), ideal = avg(ideal_cycle_time) by line_id
-    | extend metric = "Performance", value = round(ideal/avg_actual*100,1);
+    | extend metric = "Performance", value = round(ideal/avg_actual*100, 1);
 let qual =
     MachineEvents
-    | where timestamp > ago(5m)
-    | where total_parts > 0
-    | summarize total_sum = sum(total_parts), rejected_sum = sum(rejected_parts) by line_id
-    | extend metric = "Quality", value = round((1.0 - todouble(rejected_sum)/todouble(total_sum))*100,1);
+    | where timestamp between (_startTime .. _endTime)
+    | where total_parts_processed > 0
+    | summarize total_sum = sum(total_parts_processed), rejected_sum = sum(rejected_parts) by line_id
+    | extend metric = "Quality",
+        value = round((1.0 - todouble(rejected_sum)/todouble(total_sum))*100, 1);
 union avail, perf, qual
 | project line_id, metric, value
 | order by line_id asc, metric asc
 ```
 
-- **Visualization:** Clustered bar chart
-- **X-axis:** `metric`
-- **Y-axis:** `value`
-- **Series:** `line_id`
-- **Title:** "OEE Components (live)"
+### 5.5 — Station Status (Live Snapshot)
 
-### Tile 4 — Machine Status Table
+Most-recent status per station — includes buffer levels and idle reason.
 
 ```kql
 MachineEvents
-| summarize arg_max(timestamp, machine_status, machine_type, line_id) by device_id
-| project device_id, machine_type, line_id, machine_status, timestamp
-| order by line_id asc, machine_type asc
+| summarize arg_max(timestamp, machine_status, idle_reason, machine_type, line_id,
+    station_position, input_buffer_count, output_buffer_count, current_part_id) by device_id
+| project device_id, line_id, station_position, machine_type, machine_status,
+    idle_reason, input_buffer_count, output_buffer_count, current_part_id, timestamp
+| order by line_id asc, station_position asc
 ```
 
-- **Visualization:** Table
-- **Columns:** `device_id`, `machine_type`, `line_id`, `machine_status`, `timestamp`
-- **Conditional formatting on `machine_status`:** Running = green, Idle = yellow, Fault = red
-- **Title:** "Machine Status — Live"
-
-### Tile 5 — Fault Count Heatmap / Bar
+### 5.6 — Fault Count by Station
 
 ```kql
 MachineEvents
-| where timestamp > ago(1h)
+| where timestamp between (_startTime .. _endTime)
 | where machine_status == "Fault"
-| summarize fault_count = count() by device_id, machine_type, line_id
+| summarize fault_count = count() by device_id, machine_type, line_id, station_position
 | order by fault_count desc
 ```
 
-- **Visualization:** Bar chart (horizontal)
-- **X-axis:** `fault_count`
-- **Y-axis:** `device_id`
-- **Color by:** `machine_type`
-- **Title:** "Faults by Device (last hour)"
-
-### Tile 6 — Parts Produced Time Series
+### 5.7 — Part Throughput per Line (5-min bins)
 
 ```kql
-MachineEvents
-| where timestamp > ago(1h)
-| summarize parts = sum(total_parts) by bin(timestamp, 5m), line_id
-| order by timestamp desc
+PartEvents
+| where timestamp between (_startTime .. _endTime)
+| where action == "completed"
+| summarize parts_completed = count() by bin(timestamp, 5m), line_id
+| order by timestamp desc, line_id asc
 ```
 
-- **Visualization:** Area chart
-- **X-axis:** `timestamp`
-- **Y-axis:** `parts`
-- **Series:** `line_id`
-- **Title:** "Parts Produced (last hour)"
+### 5.8 — Part Traceability (search by part_id)
 
-### Tile 7 — Shift KPI Table
+Full station-by-station journey for a specific part.
+
+```kql
+PartEvents
+| where part_id == _partId
+| order by station_position asc
+| project station_position, machine_type, action, cycle_time, quality_pass, timestamp
+```
+
+### 5.9 — Rejection Rate by Station
+
+```kql
+PartEvents
+| where timestamp between (_startTime .. _endTime)
+| summarize
+    total = count(),
+    rejected = countif(action == "rejected")
+    by line_id, station_position, machine_type
+| extend reject_rate = round(todouble(rejected) / todouble(total) * 100, 2)
+| order by reject_rate desc
+```
+
+### 5.10 — Active Work Orders
+
+```kql
+let created =
+    MaintenanceEvents
+    | where timestamp > ago(24h)
+    | where action == "Created"
+    | summarize create_time = min(timestamp) by work_order_id, device_id, machine_type,
+        line_id, station_position, issue_type;
+let resolved =
+    MaintenanceEvents
+    | where timestamp > ago(24h)
+    | where action == "Resolved"
+    | summarize resolve_time = min(timestamp) by work_order_id;
+created
+| join kind=leftouter resolved on work_order_id
+| where isnull(resolve_time)
+| extend open_minutes = datetime_diff('minute', now(), create_time)
+| project work_order_id, device_id, machine_type, line_id, station_position,
+    issue_type, create_time, open_minutes
+| order by open_minutes desc
+```
+
+### 5.11 — MTTR by Machine Type
+
+```kql
+let wo_created =
+    MaintenanceEvents
+    | where timestamp > ago(24h)
+    | where action == "Created"
+    | project work_order_id, create_time = timestamp, machine_type, line_id;
+let wo_resolved =
+    MaintenanceEvents
+    | where timestamp > ago(24h)
+    | where action == "Resolved"
+    | project work_order_id, resolve_time = timestamp;
+wo_created
+| join kind=inner wo_resolved on work_order_id
+| extend mttr_minutes = datetime_diff('minute', resolve_time, create_time)
+| where mttr_minutes > 0
+| summarize avg_mttr = round(avg(todouble(mttr_minutes)), 1), incidents = count()
+    by machine_type, line_id
+| join kind=leftouter StationMaster
+    on $left.line_id == $right.line_id, $left.machine_type == $right.machine_type
+| project machine_type, manufacturer, line_id, avg_mttr, incidents
+| order by avg_mttr desc
+```
+
+### 5.12 — Fault Type Pareto
+
+```kql
+MaintenanceEvents
+| where timestamp > ago(24h)
+| where action == "Created"
+| summarize fault_count = count() by issue_type, machine_type
+| order by fault_count desc
+```
+
+### 5.13 — Shift KPI Summary
 
 ```kql
 MachineEvents
 | where timestamp > ago(8h)
-| where total_parts > 0
+| where total_parts_processed > 0
 | extend shift = iff(hourofday(timestamp) >= 6 and hourofday(timestamp) < 18, "Day", "Night")
 | summarize
-    total_p    = sum(total_parts),
+    total_p    = sum(total_parts_processed),
     rejected_p = sum(rejected_parts),
     faults     = countif(machine_status == "Fault")
     by shift, line_id
@@ -730,47 +797,13 @@ MachineEvents
 | order by line_id asc, shift asc
 ```
 
-- **Visualization:** Table
-- **Title:** "Shift Summary (last 8 hours)"
-
-### Tile 8 — MTTR by Machine Type (Bar Chart)
-
-```kql
-let faults =
-    MachineEvents
-    | where timestamp > ago(24h)
-    | where machine_status == "Fault"
-    | project fault_time = timestamp, machine_type, line_id;
-let resolutions =
-    MaintenanceEvents
-    | where timestamp > ago(24h)
-    | where action == "Resolved"
-    | project resolve_time = timestamp, machine_type, line_id;
-faults
-| join kind=inner resolutions on machine_type, line_id
-| where resolve_time > fault_time
-| extend mttr_minutes = datetime_diff('minute', resolve_time, fault_time)
-| where mttr_minutes between (1 .. 480)
-| summarize avg_mttr = round(avg(mttr_minutes), 1), incidents = count()
-    by machine_type, line_id
-| join kind=leftouter MachineMaster on machine_type
-| project machine_type, manufacturer, line_id, avg_mttr, incidents
-| order by avg_mttr desc
-```
-
-- **Visualization:** Bar chart (horizontal)
-- **X-axis:** `avg_mttr`
-- **Y-axis:** `machine_type`
-- **Color by:** `manufacturer`
-- **Title:** "Avg. Time to Repair by Machine Type (last 24h, minutes)"
-
-### Tile 9 — Schedule Adherence (Stat Cards)
+### 5.14 — Schedule Adherence
 
 ```kql
 MachineEvents
 | where timestamp > ago(8h)
 | extend shift = iff(hourofday(timestamp) >= 6 and hourofday(timestamp) < 18, "Day", "Night")
-| summarize device_total = max(total_parts) by line_id, shift, device_id
+| summarize device_total = max(total_parts_processed) by line_id, shift, device_id
 | summarize actual_parts = sum(device_total) by line_id, shift
 | join kind=inner ProductionSchedule on line_id, shift
 | extend adherence_pct = round(todouble(actual_parts) / todouble(planned_parts) * 100, 1)
@@ -778,210 +811,230 @@ MachineEvents
 | order by line_id asc, shift asc
 ```
 
-- **Visualization:** Stat / Single value per row
-- **Value:** `adherence_pct`
-- **Series:** `line_id` + `shift`
-- **Title:** "Production Schedule Adherence %"
-- **Conditional formatting:** Green ≥ 95, Yellow 80–94, Red < 80
+### 5.15 — Buffer Health (cascade detection)
 
-### Tile 10 — OEE by Manufacturer (Table)
+Detects stations that are currently starved or blocked — indicates a cascade in progress.
 
 ```kql
 MachineEvents
-| where timestamp > ago(1h)
-| join kind=inner MachineMaster on machine_type
+| summarize arg_max(timestamp, machine_status, idle_reason, input_buffer_count,
+    output_buffer_count, buffer_capacity) by device_id, line_id, station_position, machine_type
+| where machine_status == "Idle"
+| project device_id, line_id, station_position, machine_type, idle_reason,
+    input_buffer_count, output_buffer_count, buffer_capacity, timestamp
+| order by line_id asc, station_position asc
+```
+
+### 5.16 — OEE Loss Waterfall
+
+```kql
+let avail_v = materialize(
+    MachineEvents
+    | where timestamp between (_startTime .. _endTime)
+    | summarize
+        running = countif(machine_status == "Running"),
+        downtime = countif(machine_status in ("Fault", "Maintenance"))
+    | extend v = round(todouble(running) / todouble(running + downtime) * 100, 2));
+let perf_v = materialize(
+    MachineEvents
+    | where timestamp between (_startTime .. _endTime)
+    | where machine_status == "Running"
+    | join kind=inner StationMaster
+        on $left.line_id == $right.line_id, $left.station_position == $right.station_position
+    | summarize ideal = avg(ideal_cycle_time), actual = avg(actual_cycle_time)
+    | extend v = round(ideal / actual * 100, 2));
+let qual_v = materialize(
+    MachineEvents
+    | where timestamp between (_startTime .. _endTime)
+    | where total_parts_processed > 0
+    | summarize tp = sum(total_parts_processed), rp = sum(rejected_parts)
+    | extend v = round((1.0 - todouble(rp) / todouble(tp)) * 100, 2));
+let a = toscalar(avail_v | project v);
+let p = toscalar(perf_v  | project v);
+let q = toscalar(qual_v  | project v);
+union
+    (print stage="1 - Theoretical Max",     value=100.0),
+    (print stage="2 - After Availability",  value=a),
+    (print stage="3 - After Performance",   value=round(a * p / 100.0, 2)),
+    (print stage="4 - OEE (after Quality)", value=round(a * p * q / 10000.0, 2))
+```
+
+### 5.17 — Using the Materialized View
+
+Once the `OEE_5min` materialized view is created, query it for better performance:
+
+```kql
+OEE_5min
+| where timestamp between (_startTime .. _endTime)
+| extend
+    availability = iif(running + fault + maintenance > 0,
+        todouble(running) / todouble(running + fault + maintenance), real(null)),
+    performance  = iif(avg_actual > 0, ideal / avg_actual, real(null)),
+    quality      = iif(total_parts > 0, 1.0 - todouble(rejected) / todouble(total_parts), real(null))
+| extend oee = round(availability * performance * quality, 4)
+| project timestamp, device_id, machine_type, line_id, station_position, shift,
+          availability = round(availability, 4),
+          performance  = round(performance, 4),
+          quality      = round(quality, 4), oee
+| order by timestamp desc
+```
+
+---
+
+## Step 6 — Build the Real-Time Dashboard
+
+There are two ways to create the dashboard:
+
+- **Option A — Build it manually** by adding each tile. Best for learning.
+- **Option B — Import the pre-built template** from `oee-dashboard.template.json`.
+
+### Option A — Manual Dashboard Build
+
+1. In your Fabric workspace, select **+ New item → Real-Time Dashboard**.
+2. Name it **`OEE Manufacturing Dashboard`** and click **Create**.
+3. Click **+ Add data source → KQL Database** and select `ManufacturingEH`.
+
+#### Page 1: Factory Floor Overview
+
+| Tile | Visualization | Query | Key Settings |
+|------|--------------|-------|-------------|
+| Line OEE Trend | Line chart | 5.2 | X: timestamp, Y: oee, Series: line_id |
+| Live OEE Score | Stat card | 5.3 | Value: oee, Series: line_id, Green≥80/Yellow≥60/Red<60 |
+| OEE Components | Clustered bar | 5.4 | X: metric, Y: value, Series: line_id |
+| Station Status | Table | 5.5 | Color: machine_status (Running=green, Idle=yellow, Fault=red) |
+| Faults by Station | Bar | 5.6 | X: device_id, Y: fault_count, Color: machine_type |
+| Parts Throughput | Area chart | 5.7 | X: timestamp, Y: parts_completed, Series: line_id |
+| OEE Loss Waterfall | Funnel | 5.16 | X: stage, Y: value |
+
+#### Page 2: Line Deep-Dive
+
+Add a `line_id` parameter to this page to filter by line.
+
+| Tile | Visualization | Query | Key Settings |
+|------|--------------|-------|-------------|
+| Station Pipeline | Table | 5.5 filtered by _lineId | Shows ordered stations, buffers, status |
+| Per-Station OEE | Bar chart | 5.1 filtered by _lineId | X: station_position, Y: oee |
+| Cascade Alert | Table | 5.15 filtered by _lineId | Starved/Blocked stations |
+| Cycle Time Comparison | Bar | Station actual vs ideal | X: machine_type, Y: cycle_time |
+
+#### Page 3: Maintenance & Reliability
+
+| Tile | Visualization | Query | Key Settings |
+|------|--------------|-------|-------------|
+| Open Work Orders | Table | 5.10 | Sorted by open_minutes desc |
+| MTTR by Machine Type | Bar | 5.11 | X: machine_type, Y: avg_mttr, Color: manufacturer |
+| Fault Type Pareto | Bar | 5.12 | X: issue_type, Y: fault_count |
+| WO Lifecycle | Table | (see below) | Created → Ack → Resolve timeline |
+| Equipment Age vs OEE | Scatter | (see below) | X: age_years, Y: oee, Color: manufacturer |
+
+**WO Lifecycle query:**
+```kql
+MaintenanceEvents
+| where timestamp > ago(24h)
 | summarize
-    total        = count(),
-    running      = countif(machine_status == "Running"),
-    avg_actual   = avgif(actual_cycle_time, machine_status == "Running"),
-    ideal        = avg(ideal_cycle_time),
-    total_parts  = sum(total_parts),
-    rejected     = sum(rejected_parts)
-    by manufacturer, install_year, maintenance_interval_hours
+    create_time  = minif(timestamp, action == "Created"),
+    ack_time     = minif(timestamp, action == "Acknowledged"),
+    start_time   = minif(timestamp, action == "InProgress"),
+    resolve_time = minif(timestamp, action == "Resolved"),
+    technician   = any(technician_id)
+    by work_order_id, device_id, machine_type, line_id, issue_type
+| extend
+    time_to_ack     = iif(isnotnull(ack_time), datetime_diff('minute', ack_time, create_time), int(null)),
+    time_to_resolve = iif(isnotnull(resolve_time), datetime_diff('minute', resolve_time, create_time), int(null))
+| project work_order_id, device_id, machine_type, line_id, issue_type, technician,
+    create_time, time_to_ack, time_to_resolve
+| order by create_time desc
+```
+
+**Equipment Age vs OEE query:**
+```kql
+MachineEvents
+| where timestamp between (_startTime .. _endTime)
+| join kind=inner StationMaster
+    on $left.line_id == $right.line_id, $left.station_position == $right.station_position
+| summarize
+    total       = count(),
+    running     = countif(machine_status == "Running"),
+    avg_actual  = avgif(actual_cycle_time, machine_status == "Running"),
+    ideal       = avg(ideal_cycle_time),
+    total_parts = sum(total_parts_processed),
+    rejected    = sum(rejected_parts)
+    by machine_type, manufacturer, install_year
 | extend
     availability = round(todouble(running) / todouble(total), 4),
     performance  = iif(avg_actual > 0, round(ideal / avg_actual, 4), real(null)),
     quality      = iif(total_parts > 0, round(1.0 - todouble(rejected) / todouble(total_parts), 4), real(null))
-| extend oee = round(availability * performance * quality, 4)
-| project manufacturer, install_year, maintenance_interval_hours,
-          availability, performance, quality, oee
-| order by oee desc
+| extend
+    oee       = round(availability * performance * quality, 4),
+    age_years = datetime_diff('year', now(), make_datetime(install_year, 1, 1))
+| project machine_type, manufacturer, install_year, age_years, availability, performance, quality, oee
+| order by install_year asc
 ```
 
-- **Visualization:** Table
-- **Columns:** `manufacturer`, `install_year`, `maintenance_interval_hours`, `availability`, `performance`, `quality`, `oee`
-- **Conditional formatting on `oee`:** Green ≥ 0.80, Yellow 0.60–0.79, Red < 0.60
-- **Title:** "OEE by Equipment Manufacturer"
+#### Page 4: Quality & Traceability
+
+| Tile | Visualization | Query | Key Settings |
+|------|--------------|-------|-------------|
+| Rejection Rate by Station | Bar | 5.9 | X: machine_type, Y: reject_rate, Color: line_id |
+| Part Journey | Table | 5.8 with _partId param | Full station-by-station traceability |
+| Quality Trend | Line chart | (see below) | X: timestamp, Y: quality_pct, Series: line_id |
+| Shift KPI Summary | Table | 5.13 | Shift performance comparison |
+
+**Quality Trend query:**
+```kql
+PartEvents
+| where timestamp between (_startTime .. _endTime)
+| summarize
+    total = count(),
+    good = countif(quality_pass == true)
+    by bin(timestamp, 5m), line_id
+| extend quality_pct = round(todouble(good) / todouble(total) * 100, 1)
+| project timestamp, line_id, quality_pct
+| order by timestamp desc
+```
 
 ### Dashboard Auto-Refresh
 
-Set the dashboard auto-refresh to **30 seconds** via **Dashboard settings → Auto refresh → 30s** to keep all tiles live.
+Set the dashboard auto-refresh to **30 seconds** via **Dashboard settings → Auto refresh → 30s**.
 
 ### Option B — Import the Pre-Built Template
-
-The pre-built template `oee-dashboard.template.json` includes more tiles than the 10 defined above — additional visualizations across two pages (OEE Overview and Maintenance Deep-Dive). To use it:
 
 1. Copy the template to create your dashboard file:
    ```bash
    cp oee-dashboard.template.json oee-dashboard.json
    ```
-2. Open `oee-dashboard.json` and replace `__CLUSTER_URI__` with your Eventhouse **Query URI** and `__DATABASE_ID__` with your KQL Database ID.
-   Find the Query URI in Fabric: open **ManufacturingEH** → **Overview** → copy the **Query URI**
-   (format: `https://<id>.kusto.fabric.microsoft.com`).
-3. In your Fabric workspace, select **+ New item → Real-Time Dashboard**.
-4. Name it **`OEE Manufacturing Dashboard`** and click **Create**.
-5. In the top toolbar click the **pencil (edit)** icon, then **File → Open file** and upload `oee-dashboard.json`.
-6. Fabric will prompt you to re-link the data source — select **ManufacturingEH** and click **Apply**.
-7. Click **Save** and set auto-refresh to **30s** via **Dashboard settings**.
+
+2. Replace the placeholders in `oee-dashboard.json`:
+   - `__CLUSTER_URI__` — the Eventhouse Query URI (found on the Eventhouse overview page)
+   - `__DATABASE_ID__` — the KQL Database ID (found on the database overview page under Properties)
+
+3. In the Fabric workspace: **+ New item → Import from file → Real-Time Dashboard** → upload `oee-dashboard.json`.
 
 ---
 
-## Step 7 — Configure Activator Alerts
-
-Activator monitors a stream and fires actions when conditions are met.
-
-### 7.1 — Create an Activator from Eventstream
+## Step 7 — Configure Activator Alerts (Optional)
 
 1. In the Eventstream canvas, click **+ Add destination → Activator**.
-2. Name it **`MachineAlerts`** and click **Add**.
-3. Open the Activator item in your workspace.
-
-### 7.2 — Fault Detection Rule
-
-1. In the Activator, click **+ New rule**.
-2. Configure:
-   - **Event column to monitor:** `machine_status`
-   - **Condition:** `Is equal to` → `Fault`
-   - **Group by device (unique object):** `device_id`
-   - **Trigger:** When condition **becomes true** (fires once on transition, not on every fault message)
-3. Under **Action**, select **Send Teams message** (or Email) and set the message body:
-   ```
-   ⚠️ FAULT DETECTED
-   Device: {{device_id}}
-   Type:   {{machine_type}}
-   Line:   {{line_id}}
-   Time:   {{timestamp}}
-   ```
-
-### 7.3 — Low OEE Alert (KQL-based)
-
-For a more sophisticated alert, create an Activator rule sourced from the KQL Database:
-
-1. In the Activator, click **+ New rule → KQL source**.
-2. Select **`ManufacturingEH`** database and enter:
-
-```kql
-OEE_5min
-| where timestamp > ago(6m) and timestamp <= ago(1m)
-| extend
-    availability = todouble(running) / todouble(event_count),
-    performance  = iif(avg_actual > 0, ideal / avg_actual, real(null)),
-    quality      = iif(total_parts > 0, 1.0 - todouble(rejected) / todouble(total_parts), real(null))
-| extend oee = availability * performance * quality
-| where oee < 0.60
-| project device_id, line_id, machine_type, oee = round(oee * 100, 1)
-```
-
-3. Configure:
-   - **Group by:** `device_id`
-   - **Trigger:** When condition **becomes true**
-   - **Action:** Teams message `OEE dropped below 60% for {{device_id}} on {{line_id}}: {{oee}}%`
-
-### 7.4 — Unacknowledged Fault Alert (cross-table KQL)
-
-Fires when a machine has been in Fault state for more than 10 minutes with no maintenance acknowledgement. This rule **joins two live tables** inside Activator.
-
-1. In the Activator, click **+ New rule → KQL source**.
-2. Select **`ManufacturingEH`** database and enter:
-
-```kql
-let recent_faults =
-    MachineEvents
-    | where timestamp > ago(15m)
-    | where machine_status == "Fault"
-    | summarize last_fault = max(timestamp) by machine_type, line_id;
-let acknowledged =
-    MaintenanceEvents
-    | where timestamp > ago(15m)
-    | where action in ("Acknowledged", "InProgress", "Resolved")
-    | summarize last_ack = max(timestamp) by machine_type, line_id;
-recent_faults
-| join kind=leftouter acknowledged on machine_type, line_id
-| where isnull(last_ack) or last_ack < last_fault
-| extend minutes_unacknowledged = datetime_diff('minute', now(), last_fault)
-| where minutes_unacknowledged >= 10
-| project machine_type, line_id, last_fault, minutes_unacknowledged
-```
-
-3. Configure:
-   - **Group by:** `machine_type`, `line_id`
-   - **Trigger:** When condition **becomes true**
-   - **Action:** Teams message `⚠️ UNACKNOWLEDGED FAULT: {{machine_type}} on {{line_id}} has been faulted for {{minutes_unacknowledged}} minutes with no maintenance response.`
+2. Name it **`MachineAlerts`**.
+3. Add a **Fault alert rule**: trigger when `machine_status == 'Fault'`, grouped by `device_id`.
+4. Add a **Low OEE KQL rule**: query `OEE_5min` where `oee < 0.60`.
+5. Configure notification actions (email, Teams, etc.).
 
 ---
 
-## Step 8 — Run the Demo
+## Automated Setup (Alternative to Steps 1–6)
 
-### Start the Simulator
+Instead of following the manual steps, you can run the automated provisioner script:
 
-Start the simulator container as described in Step 2. The console shows a live monitoring table of all **14 devices** (10 machine + 4 maintenance) — status, last message time, and message count.
+```bash
+bash completed_tutorial_build.sh --workspace-name "My Workspace"
+# -- or with device code auth --
+bash completed_tutorial_build.sh --workspace-name "My Workspace" --use-device-code
+```
 
+This script creates the Eventhouse, KQL Database, tables, reference data, materialized view, Eventstream with routing, and imports the dashboard — all via the Fabric REST API.
 
----
-
-## Appendix — Telemetry Schema Reference
-
-### MachineEvents (routed from Eventstream: `event_type = machine_telemetry`)
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `event_type` | string | `machine_telemetry` (Eventstream routing key) |
-| `deviceId` | string | Device identifier (e.g. `cnc-mill-001`) |
-| `machine_type` | string | `CNC-Mill`, `Hydraulic-Press`, `Assembly-Robot`, `Packaging-Line` |
-| `machine_status` | string | `Running`, `Idle`, `Fault` |
-| `actual_cycle_time` | number | Measured seconds per unit this cycle |
-| `total_parts` | integer | Cumulative parts counter |
-| `rejected_parts` | integer | Parts rejected this cycle |
-| `line_id` | string | `Line-A` or `Line-B` |
-| `timestamp` | ISO 8601 | UTC timestamp at message generation |
-
-### MaintenanceEvents (routed from Eventstream: `event_type = maintenance_event`)
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `event_type` | string | `maintenance_event` (Eventstream routing key) |
-| `machine_type` | string | Machine type being maintained |
-| `line_id` | string | `Line-A` or `Line-B` |
-| `technician_id` | string | `T001`–`T004` (one technician per machine type) |
-| `issue_type` | string | Fault category (e.g. `Tool-Wear`, `Pressure-Loss`, `Gripper-Failure`, `Conveyor-Jam`) |
-| `action` | string | `Acknowledged`, `InProgress`, `Resolved` — one unique stage per incident |
-| `timestamp` | ISO 8601 | UTC timestamp |
-
-### MachineMaster (static reference table in KQL Database)
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `machine_type` | string | Join key to MachineEvents |
-| `ideal_cycle_time` | real | Target seconds per unit (engineering spec) |
-| `manufacturer` | string | Equipment manufacturer |
-| `install_year` | int | Year installed |
-| `maintenance_interval_hours` | real | Recommended hours between scheduled maintenance |
-
-### ProductionSchedule (static reference table in KQL Database)
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `line_id` | string | `Line-A` or `Line-B` |
-| `shift` | string | `Day` or `Night` |
-| `planned_parts` | long | Target cumulative parts per shift |
-
-**Derived in KQL (not sent by any device):**
-
-| Value | How |
-|-------|-----|
-| `ideal_cycle_time` | Joined from `MachineMaster` on `machine_type` |
-| `shift` | `iff(hourofday(timestamp) >= 6 and hourofday(timestamp) < 18, "Day", "Night")` |
-| `manufacturer`, `install_year` | Joined from `MachineMaster` on `machine_type` |
+> **⚠ Important:** After the script completes, open the Eventstream in the Fabric UI and verify it shows **Running**. The Eventstream sometimes does not start automatically after provisioning. If it is stopped or in draft state, click **Publish** to activate it. Data will not flow to the KQL tables until the Eventstream is running.
 
 ---
 
@@ -989,8 +1042,12 @@ Start the simulator container as described in Step 2. The console shows a live m
 
 | Symptom | Check |
 |---------|-------|
-| Simulator exits immediately | `devices.yaml` connection string is still the placeholder — fill in real Fabric credentials |
-| No rows in `MachineEvents` | Confirm Eventstream destination is published; check ingestion mapping name matches |
-| OEE values > 1.0 | Performance can exceed 1.0 if actual cycle time < ideal — this is valid (machine running faster than spec) |
-| Activator not firing | Verify Eventstream destination for Activator is published; check rule condition column name matches exactly |
-| Dashboard tiles show "No data" | Extend the time range — tiles default to `ago(1h)`; if the simulator just started, use `ago(5m)` |
+| Simulator exits immediately | Run with `-it` flags for Docker; ensure `simulator.yaml` exists |
+| Eventstream not running after script | Open the Eventstream in the Fabric UI and click **Publish** — it sometimes does not start automatically |
+| No rows in `MachineEvents` | Confirm Eventstream is running and destination is published; check ingestion mapping name matches |
+| No rows in `PartEvents` | Verify the third Query operator for `part_event` is connected and published |
+| OEE values > 1.0 | Performance can exceed 1.0 if actual cycle time < ideal — this is valid |
+| All stations show "Starved" | Normal at startup — first part needs to traverse the full line before output appears |
+| 0 parts produced in short runs | Lines take 50–250 seconds of wall clock before the first part exits |
+| Activator not firing | Verify Eventstream destination for Activator is published; check rule condition |
+| Dashboard tiles show "No data" | Extend the time range — if the simulator just started, use `ago(5m)` |
