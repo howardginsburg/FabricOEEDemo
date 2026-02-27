@@ -1,4 +1,4 @@
-# FabricOEEDemo
+# Real-Time OEE Dashboard on Microsoft Fabric
 
 A real-time **Overall Equipment Effectiveness (OEE)** dashboard built on [Microsoft Fabric](https://learn.microsoft.com/fabric/). Simulates a factory floor with **5 production lines (30 machines)** streaming telemetry into Fabric Eventstream, then routes, enriches, and visualizes the data through KQL, Real-Time Dashboards, and Activator alerts.
 
