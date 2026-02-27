@@ -28,9 +28,6 @@ public sealed class MachineTelemetryEvent : TelemetryEvent
     [JsonPropertyName("device_id")]
     public string DeviceId { get; set; } = string.Empty;
 
-    [JsonPropertyName("factory_id")]
-    public string FactoryId { get; set; } = string.Empty;
-
     [JsonPropertyName("machine_type")]
     public string MachineType { get; set; } = string.Empty;
 

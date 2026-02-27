@@ -113,6 +113,9 @@ public sealed class Station
                 Status = MachineStatus.Fault;
                 _logger.LogWarning("{DeviceId} faulted: {FaultType}", _deviceId, faultType);
 
+                // Hold Fault state for several telemetry cycles so it appears in MachineEvents
+                await Task.Delay(_telemetryIntervalMs * 3, ct);
+
                 // Create work order and wait for resolution
                 Status = MachineStatus.Maintenance;
                 var wo = _maintenanceManager.CreateWorkOrder(_deviceId, _config.MachineType, _lineId, _config.Position, faultType);

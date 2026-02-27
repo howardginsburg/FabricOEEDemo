@@ -639,6 +639,7 @@ DASH_TEMPLATE="${SCRIPT_DIR}/oee-dashboard.template.json"
 if [[ -f "$DASH_TEMPLATE" ]]; then
   sed -e "s|__CLUSTER_URI__|${CLUSTER_URI}|g" \
       -e "s|__DATABASE_ID__|${DB_ID}|g" \
+      -e "s|__WORKSPACE_ID__|${WS_ID}|g" \
       "$DASH_TEMPLATE" > "$DASH_OUT"
   ok "Dashboard JSON generated"
 else

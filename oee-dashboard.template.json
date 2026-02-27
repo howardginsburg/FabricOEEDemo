@@ -11,7 +11,7 @@
       "name": "ManufacturingEH",
       "clusterUri": "__CLUSTER_URI__",
       "database": "__DATABASE_ID__",
-      "workspace": "00000000-0000-0000-0000-000000000000",
+      "workspace": "__WORKSPACE_ID__",
       "scopeId": "kusto-trident"
     }
   ],
@@ -99,7 +99,7 @@
         "kind": "inline",
         "dataSourceId": "b12979d1-e244-4088-b1ae-d91ca3ed9d9d"
       },
-      "text": "let avail =\n    MachineEvents\n    | where timestamp between (_startTime .. _endTime)\n    | summarize\n        running  = countif(machine_status == \"Running\"),\n        downtime = countif(machine_status in (\"Fault\", \"Maintenance\"))\n        by bin(timestamp, 5m), line_id\n    | extend availability = todouble(running) / todouble(running + downtime);\nlet perf =\n    MachineEvents\n    | where timestamp between (_startTime .. _endTime)\n    | where machine_status == \"Running\"\n    | join kind=inner StationMaster\n        on $left.line_id == $right.line_id, $left.station_position == $right.station_position\n    | summarize avg_actual = avg(actual_cycle_time), ideal = avg(ideal_cycle_time)\n        by bin(timestamp, 5m), line_id\n    | extend performance = ideal / avg_actual;\nlet qual =\n    MachineEvents\n    | where timestamp between (_startTime .. _endTime)\n    | where total_parts_processed > 0\n    | summarize total_sum = sum(total_parts_processed), rejected_sum = sum(rejected_parts)\n        by bin(timestamp, 5m), line_id\n    | extend quality = 1.0 - (todouble(rejected_sum) / todouble(total_sum));\navail\n| join kind=leftouter perf on timestamp, line_id\n| join kind=leftouter qual on timestamp, line_id\n| extend oee = round(availability * performance * quality, 4)\n| project timestamp, line_id,\n          availability = round(availability, 4),\n          performance = round(performance, 4),\n          quality = round(quality, 4), oee\n| order by timestamp desc",
+      "text": "let avail =\n    MachineEvents\n    | where timestamp between (_startTime .. _endTime)\n    | summarize\n        running  = countif(machine_status == \"Running\"),\n        downtime = countif(machine_status in (\"Fault\", \"Maintenance\"))\n        by bin(timestamp, 5m), line_id\n    | extend availability = todouble(running) / todouble(running + downtime);\nlet perf =\n    MachineEvents\n    | where timestamp between (_startTime .. _endTime)\n    | where machine_status == \"Running\"\n    | join kind=inner StationMaster\n        on $left.line_id == $right.line_id, $left.station_position == $right.station_position\n    | summarize avg_actual = avg(actual_cycle_time), ideal = avg(ideal_cycle_time)\n        by bin(timestamp, 5m), line_id\n    | extend performance = ideal / avg_actual;\nlet qual =\n    MachineEvents\n    | where timestamp between (_startTime .. _endTime)\n    | where total_parts_processed > 0\n    | summarize total_sum = sum(total_parts_processed), rejected_sum = sum(rejected_parts)\n        by bin(timestamp, 5m), line_id\n    | extend quality = 1.0 - (todouble(rejected_sum) / todouble(total_sum));\navail\n| join kind=leftouter perf on timestamp, line_id\n| join kind=leftouter qual on timestamp, line_id\n| extend oee = round(coalesce(availability, 0.0) * coalesce(performance, 0.0) * coalesce(quality, 0.0), 4)\n| project timestamp, line_id,\n          availability = round(coalesce(availability, 0.0), 4),\n          performance = round(coalesce(performance, 0.0), 4),\n          quality = round(coalesce(quality, 0.0), 4), oee\n| order by timestamp desc",
       "usedVariables": [
         "_startTime",
         "_endTime"
@@ -111,7 +111,7 @@
         "kind": "inline",
         "dataSourceId": "b12979d1-e244-4088-b1ae-d91ca3ed9d9d"
       },
-      "text": "let avail =\n    MachineEvents\n    | where timestamp > ago(5m)\n    | summarize\n        running = countif(machine_status == \"Running\"),\n        downtime = countif(machine_status in (\"Fault\", \"Maintenance\"))\n        by line_id\n    | extend availability = todouble(running) / todouble(running + downtime);\nlet perf =\n    MachineEvents\n    | where timestamp > ago(5m)\n    | where machine_status == \"Running\"\n    | join kind=inner StationMaster\n        on $left.line_id == $right.line_id, $left.station_position == $right.station_position\n    | summarize avg_actual = avg(actual_cycle_time), ideal = avg(ideal_cycle_time) by line_id\n    | extend performance = ideal / avg_actual;\nlet qual =\n    MachineEvents\n    | where timestamp > ago(5m)\n    | where total_parts_processed > 0\n    | summarize total_sum = sum(total_parts_processed), rejected_sum = sum(rejected_parts) by line_id\n    | extend quality = 1.0 - (todouble(rejected_sum) / todouble(total_sum));\navail\n| join kind=leftouter perf on line_id\n| join kind=leftouter qual on line_id\n| extend oee = round(availability * performance * quality * 100, 1)\n| project line_id, oee",
+      "text": "let avail =\n    MachineEvents\n    | where timestamp > ago(5m)\n    | summarize\n        running = countif(machine_status == \"Running\"),\n        downtime = countif(machine_status in (\"Fault\", \"Maintenance\"))\n        by line_id\n    | extend availability = todouble(running) / todouble(running + downtime);\nlet perf =\n    MachineEvents\n    | where timestamp > ago(5m)\n    | where machine_status == \"Running\"\n    | join kind=inner StationMaster\n        on $left.line_id == $right.line_id, $left.station_position == $right.station_position\n    | summarize avg_actual = avg(actual_cycle_time), ideal = avg(ideal_cycle_time) by line_id\n    | extend performance = ideal / avg_actual;\nlet qual =\n    MachineEvents\n    | where timestamp > ago(5m)\n    | where total_parts_processed > 0\n    | summarize total_sum = sum(total_parts_processed), rejected_sum = sum(rejected_parts) by line_id\n    | extend quality = 1.0 - (todouble(rejected_sum) / todouble(total_sum));\navail\n| join kind=leftouter perf on line_id\n| join kind=leftouter qual on line_id\n| extend oee = round(coalesce(availability, 0.0) * coalesce(performance, 0.0) * coalesce(quality, 0.0) * 100, 1)\n| project line_id, oee",
       "usedVariables": []
     },
     {
@@ -177,7 +177,7 @@
         "kind": "inline",
         "dataSourceId": "b12979d1-e244-4088-b1ae-d91ca3ed9d9d"
       },
-      "text": "MachineEvents\n| where timestamp between (_startTime .. _endTime)\n| where line_id == _lineId\n| join kind=inner StationMaster\n    on $left.line_id == $right.line_id, $left.station_position == $right.station_position\n| summarize\n    total     = count(),\n    running   = countif(machine_status == \"Running\"),\n    downtime  = countif(machine_status in (\"Fault\", \"Maintenance\")),\n    avg_actual = avgif(actual_cycle_time, machine_status == \"Running\"),\n    ideal     = avg(ideal_cycle_time),\n    parts     = sum(total_parts_processed),\n    rejected  = sum(rejected_parts)\n    by device_id, machine_type, line_id, station_position\n| extend\n    availability = iif(running + downtime > 0,\n        round(todouble(running) / todouble(running + downtime), 4), real(null)),\n    performance = iif(avg_actual > 0, round(ideal / avg_actual, 4), real(null)),\n    quality = iif(parts > 0, round(1.0 - todouble(rejected) / todouble(parts), 4), real(null))\n| extend oee = round(availability * performance * quality, 4)\n| project station_position, device_id, machine_type,\n          availability, performance, quality, oee\n| order by station_position asc",
+      "text": "MachineEvents\n| where timestamp between (_startTime .. _endTime)\n| where line_id == _lineId\n| join kind=inner StationMaster\n    on $left.line_id == $right.line_id, $left.station_position == $right.station_position\n| summarize\n    total     = count(),\n    running   = countif(machine_status == \"Running\"),\n    downtime  = countif(machine_status in (\"Fault\", \"Maintenance\")),\n    avg_actual = avgif(actual_cycle_time, machine_status == \"Running\"),\n    ideal     = avg(ideal_cycle_time),\n    parts     = sum(total_parts_processed),\n    rejected  = sum(rejected_parts)\n    by device_id, machine_type, line_id, station_position\n| extend\n    availability = iif(running + downtime > 0,\n        round(todouble(running) / todouble(running + downtime), 4), real(null)),\n    performance = iif(avg_actual > 0, round(ideal / avg_actual, 4), real(null)),\n    quality = iif(parts > 0, round(1.0 - todouble(rejected) / todouble(parts), 4), real(null))\n| extend oee = round(coalesce(availability, 0.0) * coalesce(performance, 0.0) * coalesce(quality, 0.0), 4)\n| project station_position, device_id, machine_type,\n          availability, performance, quality, oee\n| order by station_position asc",
       "usedVariables": [
         "_startTime",
         "_endTime",
@@ -261,7 +261,7 @@
         "kind": "inline",
         "dataSourceId": "b12979d1-e244-4088-b1ae-d91ca3ed9d9d"
       },
-      "text": "MachineEvents\n| where timestamp between (_startTime .. _endTime)\n| join kind=inner StationMaster\n    on $left.line_id == $right.line_id, $left.station_position == $right.station_position\n| summarize\n    total       = count(),\n    running     = countif(machine_status == \"Running\"),\n    avg_actual  = avgif(actual_cycle_time, machine_status == \"Running\"),\n    ideal       = avg(ideal_cycle_time),\n    total_parts = sum(total_parts_processed),\n    rejected    = sum(rejected_parts)\n    by machine_type, manufacturer\n| extend\n    availability = round(todouble(running) / todouble(total), 4),\n    performance  = iif(avg_actual > 0, round(ideal / avg_actual, 4), real(null)),\n    quality      = iif(total_parts > 0, round(1.0 - todouble(rejected) / todouble(total_parts), 4), real(null))\n| extend\n    oee       = round(availability * performance * quality, 4)\n| project machine_type, manufacturer, availability, performance, quality, oee\n| order by machine_type asc",
+      "text": "MachineEvents\n| where timestamp between (_startTime .. _endTime)\n| join kind=inner StationMaster\n    on $left.line_id == $right.line_id, $left.station_position == $right.station_position\n| summarize\n    downtime    = countif(machine_status in (\"Fault\", \"Maintenance\")),\n    running     = countif(machine_status == \"Running\"),\n    avg_actual  = avgif(actual_cycle_time, machine_status == \"Running\"),\n    ideal       = avg(ideal_cycle_time),\n    total_parts = sum(total_parts_processed),\n    rejected    = sum(rejected_parts)\n    by machine_type, manufacturer\n| extend\n    availability = iif(running + downtime > 0, round(todouble(running) / todouble(running + downtime), 4), real(null)),\n    performance  = iif(avg_actual > 0, round(ideal / avg_actual, 4), real(null)),\n    quality      = iif(total_parts > 0, round(1.0 - todouble(rejected) / todouble(total_parts), 4), real(null))\n| extend\n    oee       = round(coalesce(availability, 0.0) * coalesce(performance, 0.0) * coalesce(quality, 0.0), 4)\n| project machine_type, manufacturer, coalesce(availability, 0.0) as availability, coalesce(performance, 0.0) as performance, coalesce(quality, 0.0) as quality, oee\n| order by machine_type asc",
       "usedVariables": [
         "_startTime",
         "_endTime"
@@ -273,7 +273,7 @@
         "kind": "inline",
         "dataSourceId": "b12979d1-e244-4088-b1ae-d91ca3ed9d9d"
       },
-      "text": "PartEvents\n| where timestamp between (_startTime .. _endTime)\n| summarize\n    total = count(),\n    rejected = countif(action == \"rejected\")\n    by line_id, station_position, machine_type\n| extend reject_rate = round(todouble(rejected) / todouble(total) * 100, 2)\n| top 20 by reject_rate desc",
+      "text": "PartEvents\n| where timestamp between (_startTime .. _endTime)\n| where action in (\"completed\", \"rejected\")\n| summarize\n    total = count(),\n    rejected = countif(action == \"rejected\")\n    by line_id, station_position, machine_type\n| extend reject_rate = round(todouble(rejected) / todouble(total) * 100, 2)\n| top 20 by reject_rate desc",
       "usedVariables": [
         "_startTime",
         "_endTime"
@@ -296,7 +296,7 @@
         "kind": "inline",
         "dataSourceId": "b12979d1-e244-4088-b1ae-d91ca3ed9d9d"
       },
-      "text": "PartEvents\n| where timestamp between (_startTime .. _endTime)\n| summarize\n    total = count(),\n    good = countif(quality_pass == true)\n    by bin(timestamp, 5m), line_id\n| extend quality_pct = round(todouble(good) / todouble(total) * 100, 1)\n| project timestamp, line_id, quality_pct\n| order by timestamp desc",
+      "text": "PartEvents\n| where timestamp between (_startTime .. _endTime)\n| where action in (\"completed\", \"rejected\")\n| summarize\n    total = count(),\n    good = countif(quality_pass == true)\n    by bin(timestamp, 5m), line_id\n| extend quality_pct = round(todouble(good) / todouble(total) * 100, 1)\n| project timestamp, line_id, quality_pct\n| order by timestamp desc",
       "usedVariables": [
         "_startTime",
         "_endTime"
@@ -338,7 +338,7 @@
         "kind": "inline",
         "dataSourceId": "b12979d1-e244-4088-b1ae-d91ca3ed9d9d"
       },
-      "text": "MachineEvents\n| where timestamp between (_startTime .. _endTime)\n| summarize\n    running = countif(machine_status == \"Running\"),\n    total = count()\n    by line_id, station_position\n| extend availability_pct = round(todouble(running) / todouble(total) * 100, 1)\n| project line_id, station = strcat(\"Stn-\", station_position), availability_pct\n| order by line_id asc, station asc",
+      "text": "MachineEvents\n| where timestamp between (_startTime .. _endTime)\n| summarize\n    running = countif(machine_status == \"Running\"),\n    downtime = countif(machine_status in (\"Fault\", \"Maintenance\"))\n    by line_id, station_position\n| extend availability_pct = round(todouble(running) / todouble(running + downtime) * 100, 1)\n| project line_id, station = strcat(\"Stn-\", station_position), availability_pct\n| order by line_id asc, station asc",
       "usedVariables": [
         "_startTime",
         "_endTime"
@@ -372,7 +372,7 @@
         "kind": "inline",
         "dataSourceId": "b12979d1-e244-4088-b1ae-d91ca3ed9d9d"
       },
-      "text": "let total_p = toscalar(MachineEvents | where timestamp > ago(5m) | summarize sum(total_parts_processed));\nlet rejected_p = toscalar(MachineEvents | where timestamp > ago(5m) | summarize sum(rejected_parts));\nlet fault_c = toscalar(MachineEvents | where timestamp > ago(5m) | where machine_status == \"Fault\" | count);\nlet running_c = toscalar(MachineEvents | where timestamp > ago(5m) | where machine_status == \"Running\" | count);\nlet total_c = toscalar(MachineEvents | where timestamp > ago(5m) | count);\nlet uptime = round(todouble(running_c) / todouble(total_c) * 100, 1);\nlet quality = round((1.0 - todouble(rejected_p) / todouble(total_p)) * 100, 1);\nunion\n    (print metric = \"Uptime %\", value = uptime),\n    (print metric = \"Quality %\", value = quality),\n    (print metric = \"Total Parts\", value = todouble(total_p)),\n    (print metric = \"Active Faults\", value = todouble(fault_c))",
+      "text": "let total_p = toscalar(MachineEvents | where timestamp > ago(5m) | summarize sum(total_parts_processed));\nlet rejected_p = toscalar(MachineEvents | where timestamp > ago(5m) | summarize sum(rejected_parts));\nlet fault_c = toscalar(MachineEvents | where timestamp > ago(5m) | where machine_status == \"Fault\" | count);\nlet running_c = toscalar(MachineEvents | where timestamp > ago(5m) | where machine_status == \"Running\" | count);\nlet downtime_c = toscalar(MachineEvents | where timestamp > ago(5m) | where machine_status in (\"Fault\", \"Maintenance\") | count);\nlet uptime = round(todouble(running_c) / todouble(running_c + downtime_c) * 100, 1);\nlet quality = round((1.0 - todouble(rejected_p) / todouble(total_p)) * 100, 1);\nunion\n    (print metric = \"Uptime %\", value = uptime),\n    (print metric = \"Quality %\", value = quality),\n    (print metric = \"Total Parts\", value = todouble(total_p)),\n    (print metric = \"Active Faults\", value = todouble(fault_c))",
       "usedVariables": []
     }
   ],

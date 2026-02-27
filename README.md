@@ -6,6 +6,8 @@ This demo models **true production-line OEE** — parts flow sequentially throug
 
 **OEE = Availability × Performance × Quality**
 
+![OEE Dashboard](dashboard.png)
+
 ## Architecture
 
 ```
