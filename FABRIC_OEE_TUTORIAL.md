@@ -879,6 +879,82 @@ OEE_5min
 | order by timestamp desc
 ```
 
+### 5.18 — Machine Status Distribution (Last Hour)
+Visual Type: **Pie Chart**
+
+```kql
+MachineEvents
+| where timestamp between (_startTime .. _endTime)
+| summarize Count = count() by machine_status
+```
+
+### 5.19 — Completed vs Rejected per Line
+Visual Type: **Column Chart**
+
+```kql
+PartEvents
+| where timestamp between (_startTime .. _endTime)
+| summarize Completed = countif(action == 'completed'), Rejected = countif(action == 'rejected') by line_id
+| order by line_id asc
+```
+
+### 5.20 — Factory Active Operations
+Visual Type: **Stat**
+
+```kql
+MachineEvents
+| where timestamp between (_startTime .. _endTime)
+| summarize Operations = count()
+```
+
+### 5.21 — Overall Factory OEE Gauge
+Visual Type: **Plotly**
+
+```kql
+let avail = MachineEvents
+| where timestamp between (_startTime .. _endTime)
+| summarize running = countif(machine_status == "Running"), downtime = countif(machine_status in ("Fault", "Maintenance"))
+| extend availability = coalesce(todouble(running) / todouble(running + downtime), 0.0);
+let perf = MachineEvents
+| where timestamp between (_startTime .. _endTime)
+| where machine_status == "Running"
+| join kind=inner StationMaster on line_id, station_position
+| summarize avg_actual = avg(actual_cycle_time), ideal = avg(ideal_cycle_time)
+| extend performance = min_of(coalesce(ideal / avg_actual, 0.0), 1.0);
+let qual = PartEvents
+| where timestamp between(_startTime .. _endTime)
+| where action in ("completed", "rejected")
+| summarize total_sum = count(), rejected_sum = countif(action == "rejected")
+| extend quality = coalesce(1.0 - (todouble(rejected_sum) / todouble(total_sum)), 1.0);
+let overallOEE = toscalar(avail | extend dummy=1
+| join kind=inner (perf | extend dummy=1) on dummy
+| join kind=inner (qual | extend dummy=1) on dummy
+| extend oee = availability * performance * quality
+| project oee=oee*100);
+print plotly=dynamic({"data": [{"type": "indicator", "mode": "gauge+number", "value": 0, "title": {"text": "Overall OEE %"}, "gauge": {"axis": { "range": [null, 100] }, "steps": [ { "range": [0, 60], "color": "red" }, { "range": [60, 80], "color": "yellow" }, { "range": [80, 100], "color": "green" } ], "threshold": { "line": { "color": "black", "width": 4 }, "thickness": 0.75, "value": 0 }}}]}) 
+| extend plotly = bag_set_key(plotly, "data[0].value", overallOEE)
+| extend plotly = bag_set_key(plotly, "data[0].gauge.threshold.value", overallOEE)
+```
+
+### 5.22 — Global Location Production
+Visual Type: **Map** *(Display bubbles per location)*
+
+```kql
+datatable(line_id:string, lat:real, lon:real, location:string) [
+    'Line-A', 47.6062, -122.3321, 'Seattle',
+    'Line-B', 40.7128, -74.0060, 'New York',
+    'Line-C', 51.5074, -0.1278, 'London',
+    'Line-D', 34.0522, -118.2437, 'Los Angeles',
+    'Line-E', 35.6895, 139.6917, 'Tokyo'
+]
+| join kind=inner (
+    PartEvents
+    | where timestamp between (_startTime .. _endTime)
+    | summarize TotalParts = count() by line_id
+) on line_id
+| project location, lat, lon, TotalParts
+```
+
 ---
 
 ## Step 6 — Build the Real-Time Dashboard
