@@ -202,6 +202,70 @@ broker:
 
 This logs all telemetry events to the log file without sending to any external service.
 
+### Example Event Payloads
+
+The simulator sends three event types to the Event Hub. Each event is serialized as JSON with `null` fields omitted. Below are representative examples of each type.
+
+**machine_telemetry** — emitted every cycle by each station:
+
+```json
+{
+  "event_type": "machine_telemetry",
+  "timestamp": "2025-01-15T14:32:01.4567890Z",
+  "device_id": "Line-A_Stn1",
+  "machine_type": "CNC-Lathe",
+  "machine_status": "Running",
+  "line_id": "Line-A",
+  "station_position": 1,
+  "actual_cycle_time": 42.3,
+  "input_buffer_count": 3,
+  "output_buffer_count": 1,
+  "buffer_capacity": 5,
+  "total_parts_processed": 847,
+  "rejected_parts": 17,
+  "current_part_id": "P-00042"
+}
+```
+
+> When `machine_status` is `"Idle"`, an `idle_reason` field is included (e.g., `"Starved"` or `"Blocked"`). The `current_part_id` field is omitted when the station has no part loaded.
+
+**part_event** — emitted when a part enters or exits a station:
+
+```json
+{
+  "event_type": "part_event",
+  "timestamp": "2025-01-15T14:32:01.8901234Z",
+  "part_id": "P-00042",
+  "line_id": "Line-A",
+  "station_position": 1,
+  "machine_type": "CNC-Lathe",
+  "action": "Completed",
+  "cycle_time": 42.3,
+  "quality_pass": true
+}
+```
+
+> The `action` field is `"Started"` when a part enters a station and `"Completed"` when it finishes. `quality_pass` is only meaningful on `"Completed"` events.
+
+**maintenance_event** — emitted when a maintenance work order is created, started, or completed:
+
+```json
+{
+  "event_type": "maintenance_event",
+  "timestamp": "2025-01-15T14:35:12.3456789Z",
+  "work_order_id": "WO-0019",
+  "device_id": "Line-A_Stn2",
+  "machine_type": "CNC-Mill",
+  "line_id": "Line-A",
+  "station_position": 2,
+  "issue_type": "Mechanical",
+  "action": "Created",
+  "technician_id": "TECH-03"
+}
+```
+
+> The `action` field tracks the work order lifecycle: `"Created"` → `"Started"` → `"Completed"`. The `issue_type` describes the fault category (e.g., `"Mechanical"`, `"Electrical"`, `"Calibration"`).
+
 ---
 
 ## Step 3 — Create the Eventhouse and KQL Database
