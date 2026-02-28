@@ -7,7 +7,7 @@ Build a real-time **Overall Equipment Effectiveness (OEE)** dashboard in Microso
 - Cascading fault behavior — a downed machine starves downstream and blocks upstream
 - Maintenance work orders that must be resolved before a machine can resume
 - A KQL Database (Eventhouse) storing machine, part, and maintenance events
-- A 4-page Real-Time Dashboard showing live OEE, line deep-dive, maintenance, and quality
+- A 5-page Real-Time Dashboard organized by stakeholder persona: Corporate Executive, Plant Manager, Line Manager, Maintenance Technician, and Quality / Station Worker
 - Activator alerts firing when a machine enters a Fault state
 
 ---
@@ -36,7 +36,7 @@ Eventhouse — KQL Database
   [ProductionSchedule]  ← reference (planned targets)
 
 KQL Database → OEE_5min Materialized View
-KQL Database → Real-Time Dashboard (4 pages)
+KQL Database → Real-Time Dashboard (5 pages)
 KQL Database → Activator (fault + maintenance alerts)
 ```
 
@@ -899,7 +899,7 @@ PartEvents
 ```
 
 ### 5.20 — Factory Active Operations
-Visual Type: **Stat**
+Visual Type: **Multi Stat**
 
 ```kql
 MachineEvents
@@ -936,24 +936,72 @@ print plotly=dynamic({"data": [{"type": "indicator", "mode": "gauge+number", "va
 | extend plotly = bag_set_key(plotly, "data[0].gauge.threshold.value", overallOEE)
 ```
 
-### 5.22 — Global Location Production
-Visual Type: **Map** *(Display bubbles per location)*
+### 5.22 — Factory KPIs (5-min snapshot)
+Visual Type: **Multi Stat**
 
 ```kql
-datatable(line_id:string, lat:real, lon:real, location:string) [
-    'Line-A', 47.6062, -122.3321, 'Seattle',
-    'Line-B', 40.7128, -74.0060, 'New York',
-    'Line-C', 51.5074, -0.1278, 'London',
-    'Line-D', 34.0522, -118.2437, 'Los Angeles',
-    'Line-E', 35.6895, 139.6917, 'Tokyo'
-]
-| join kind=inner (
-    PartEvents
-    | where timestamp between (_startTime .. _endTime)
-    | summarize TotalParts = count() by line_id
-) on line_id
-| project location, lat, lon, TotalParts
+let total_p = toscalar(MachineEvents | where timestamp > ago(5m) | summarize sum(total_parts_processed));
+let rejected_p = toscalar(MachineEvents | where timestamp > ago(5m) | summarize sum(rejected_parts));
+let fault_c = toscalar(MachineEvents | where timestamp > ago(5m) | where machine_status == "Fault" | count);
+let running_c = toscalar(MachineEvents | where timestamp > ago(5m) | where machine_status == "Running" | count);
+let downtime_c = toscalar(MachineEvents | where timestamp > ago(5m) | where machine_status in ("Fault", "Maintenance") | count);
+let uptime = round(todouble(running_c) / todouble(running_c + downtime_c) * 100, 1);
+let quality = round((1.0 - todouble(rejected_p) / todouble(total_p)) * 100, 1);
+union
+    (print metric = "Uptime %", value = uptime),
+    (print metric = "Quality %", value = quality),
+    (print metric = "Total Parts", value = todouble(total_p)),
+    (print metric = "Active Faults", value = todouble(fault_c))
 ```
+
+### 5.23 — Parts Funnel (Entered → Passed → Rejected)
+Visual Type: **Funnel**
+
+```kql
+let data = PartEvents
+| where timestamp between (_startTime .. _endTime)
+| where action in ("completed", "rejected")
+| summarize
+    total_entered = count(),
+    passed_qc = countif(action == "completed"),
+    rejected = countif(action == "rejected");
+data | project stage = "1 - Total Entered", value = total_entered
+| union (data | project stage = "2 - Passed QC", value = passed_qc)
+| union (data | project stage = "3 - Rejected", value = rejected)
+| order by stage asc
+```
+
+### 5.24 — Factory Snapshot (Card)
+Visual Type: **Card**
+
+```kql
+let total_p = toscalar(PartEvents | where timestamp between (_startTime .. _endTime) | where action == "completed" | count);
+let rejected_p = toscalar(PartEvents | where timestamp between (_startTime .. _endTime) | where action == "rejected" | count);
+let running_c = toscalar(MachineEvents | where timestamp between (_startTime .. _endTime) | where machine_status == "Running" | count);
+let fault_c = toscalar(MachineEvents | where timestamp between (_startTime .. _endTime) | where machine_status == "Fault" | count);
+print Total_Parts_Produced = total_p, Rejected = rejected_p, Running_Stations = running_c, Active_Faults = fault_c
+```
+
+### 5.25 — Average Cycle Time (Time Series)
+Visual Type: **Timechart**
+
+```kql
+MachineEvents
+| where timestamp between (_startTime .. _endTime)
+| where machine_status == "Running"
+| summarize avg_cycle = round(avg(actual_cycle_time), 2) by bin(timestamp, 5m), line_id
+| order by timestamp asc
+```
+
+### 5.26 — Total Parts Produced
+Visual Type: **Multi Stat**
+
+```kql
+let total_p = toscalar(PartEvents | where timestamp between (_startTime .. _endTime) | where action == "completed" | count);
+print Metric = "Parts Produced", Value = total_p
+```
+
+> **Note:** Sections 5.18–5.26 showcase additional visual types (pie, column, funnel, card, multistat, timechart, plotly) distributed across the stakeholder pages.
 
 ---
 
@@ -970,104 +1018,73 @@ There are two ways to create the dashboard:
 2. Name it **`OEE Manufacturing Dashboard`** and click **Create**.
 3. Click **+ Add data source → KQL Database** and select `ManufacturingEH`.
 
-#### Page 1: Factory Floor Overview
+#### Page 1: Corporate Executive
+
+High-level KPIs and trends — the "how's the factory doing?" view.
 
 | Tile | Visualization | Query | Key Settings |
 |------|--------------|-------|-------------|
+| Factory OEE Gauge | Plotly | 5.21 | Gauge indicator with red/yellow/green bands |
+| Factory Snapshot | Card | 5.24 | Parts produced, rejected, running stations, faults |
+| Live OEE (last 5 min) | Multi Stat | 5.3 | OEE per line, Green≥80/Yellow≥60/Red<60 |
+| Machine Status Distribution | Pie | 5.18 | Category: machine_status |
 | Line OEE Trend | Line chart | 5.2 | X: timestamp, Y: oee, Series: line_id |
-| Live OEE Score | Stat card | 5.3 | Value: oee, Series: line_id, Green≥80/Yellow≥60/Red<60 |
-| OEE Components | Clustered bar | 5.4 | X: metric, Y: value, Series: line_id |
-| Station Status | Table | 5.5 | Color: machine_status (Running=green, Idle=yellow, Fault=red) |
-| Faults by Station | Bar | 5.6 | X: device_id, Y: fault_count, Color: machine_type |
-| Parts Throughput | Area chart | 5.7 | X: timestamp, Y: parts_completed, Series: line_id |
-| OEE Loss Waterfall | Funnel | 5.16 | X: stage, Y: value |
+| OEE Loss Waterfall | Bar | 5.16 | X: stage, Y: value |
 
-#### Page 2: Line Deep-Dive
+#### Page 2: Plant Manager
 
-Add a `line_id` parameter to this page to filter by line.
+Cross-line comparison, maintenance health, and scheduling.
 
 | Tile | Visualization | Query | Key Settings |
 |------|--------------|-------|-------------|
-| Station Pipeline | Table | 5.5 filtered by _lineId | Shows ordered stations, buffers, status |
-| Per-Station OEE | Bar chart | 5.1 filtered by _lineId | X: station_position, Y: oee |
-| Cascade Alert | Table | 5.15 filtered by _lineId | Starved/Blocked stations |
-| Cycle Time Comparison | Bar | Station actual vs ideal | X: machine_type, Y: cycle_time |
+| OEE Components (A × P × Q) | Bar | 5.4 | X: metric, Y: value, Series: line_id |
+| Part Throughput per Line | Area chart | 5.7 | X: timestamp, Y: parts_completed, Series: line_id |
+| Completed vs Rejected by Line | Column | 5.19 | X: line_id, Y: Completed/Rejected |
+| Fault Type Pareto | Bar | 5.12 | X: issue_type, Y: fault_count |
+| MTTR by Machine Type | Bar | 5.11 | X: machine_type, Y: avg_mttr |
+| Shift KPI Summary | Table | 5.13 | Shift performance comparison |
+| Schedule Adherence | Table | 5.14 | Target vs actual comparison |
 
-#### Page 3: Maintenance & Reliability
+#### Page 3: Line Manager
+
+Deep-dive into a specific line's stations and flow. The `Line ID` parameter (`_lineId`, default `Line-A`) is shown on this page to filter tiles.
+
+| Tile | Visualization | Query | Key Settings |
+|------|--------------|-------|-------------|
+| Per-Station OEE | Bar | 5.1 (filtered by `_lineId`) | X: station_position, Y: oee |
+| Parts Funnel (Entered > Passed > Rejected) | Funnel | 5.23 | Entered → Passed QC → Rejected |
+| Station Pipeline | Table | 5.5 (filtered by `_lineId`) | Ordered stations, buffers, status |
+| Cascade Alert (Starved/Blocked) | Table | 5.15 (filtered by `_lineId`) | Bottleneck detection |
+| Actual vs Ideal Cycle Time | Bar | Station cycle time comparison (filtered by `_lineId`) | X: machine_type, Y: cycle_time |
+| Parts Funnel by Station | Bar | Station-level funnel (filtered by `_lineId`) | X: station, Y: count |
+| Quality Trend | Line chart | Quality over time | X: timestamp, Y: quality_pct, Series: line_id |
+
+#### Page 4: Maintenance Technician
+
+Equipment health, work orders, and fault diagnosis.
 
 | Tile | Visualization | Query | Key Settings |
 |------|--------------|-------|-------------|
 | Open Work Orders | Table | 5.10 | Sorted by open_minutes desc |
-| MTTR by Machine Type | Bar | 5.11 | X: machine_type, Y: avg_mttr, Color: manufacturer |
-| Fault Type Pareto | Bar | 5.12 | X: issue_type, Y: fault_count |
-| WO Lifecycle | Table | (see below) | Created → Ack → Resolve timeline |
-| Equipment Age vs OEE | Scatter | (see below) | X: age_years, Y: oee, Color: manufacturer |
+| Work Order Lifecycle | Table | WO Lifecycle query below | Created → Ack → Resolve timeline |
+| Equipment Age vs OEE | Scatter | Equipment Age query below | X: machine_type, Y: oee, Color: manufacturer |
+| Faults by Station | Bar | 5.6 | X: device_id, Y: fault_count |
+| Fault Distribution Treemap | Bar | Fault breakdown | X: issue_type, Y: count |
+| Station Availability Heatmap | Heatmap | Availability patterns | X: timestamp, Y: station, Value: availability |
+| Cycle Time Anomaly Detection | Anomaly chart | Anomaly detection | X: timestamp, Y: cycle_time |
 
-**WO Lifecycle query:**
-```kql
-MaintenanceEvents
-| where timestamp > ago(24h)
-| summarize
-    create_time  = minif(timestamp, action == "Created"),
-    ack_time     = minif(timestamp, action == "Acknowledged"),
-    start_time   = minif(timestamp, action == "InProgress"),
-    resolve_time = minif(timestamp, action == "Resolved"),
-    technician   = any(technician_id)
-    by work_order_id, device_id, machine_type, line_id, issue_type
-| extend
-    time_to_ack     = iif(isnotnull(ack_time), datetime_diff('minute', ack_time, create_time), int(null)),
-    time_to_resolve = iif(isnotnull(resolve_time), datetime_diff('minute', resolve_time, create_time), int(null))
-| project work_order_id, device_id, machine_type, line_id, issue_type, technician,
-    create_time, time_to_ack, time_to_resolve
-| order by create_time desc
-```
+#### Page 5: Quality / Station Worker
 
-**Equipment Age vs OEE query:**
-```kql
-MachineEvents
-| where timestamp between (_startTime .. _endTime)
-| join kind=inner StationMaster
-    on $left.line_id == $right.line_id, $left.station_position == $right.station_position
-| summarize
-    total       = count(),
-    running     = countif(machine_status == "Running"),
-    avg_actual  = avgif(actual_cycle_time, machine_status == "Running"),
-    ideal       = avg(ideal_cycle_time),
-    total_parts = sum(total_parts_processed),
-    rejected    = sum(rejected_parts)
-    by machine_type, manufacturer, install_year
-| extend
-    availability = round(todouble(running) / todouble(total), 4),
-    performance  = iif(avg_actual > 0, round(ideal / avg_actual, 4), real(null)),
-    quality      = iif(total_parts > 0, round(1.0 - todouble(rejected) / todouble(total_parts), 4), real(null))
-| extend
-    oee       = round(availability * performance * quality, 4),
-    age_years = datetime_diff('year', now(), make_datetime(install_year, 1, 1))
-| project machine_type, manufacturer, install_year, age_years, availability, performance, quality, oee
-| order by install_year asc
-```
-
-#### Page 4: Quality & Traceability
+Part-level data, rejection details, and traceability. The `Part ID` parameter (`_partId`) is shown on this page for part traceability lookup.
 
 | Tile | Visualization | Query | Key Settings |
 |------|--------------|-------|-------------|
-| Rejection Rate by Station | Bar | 5.9 | X: machine_type, Y: reject_rate, Color: line_id |
-| Part Journey | Table | 5.8 with _partId param | Full station-by-station traceability |
-| Quality Trend | Line chart | (see below) | X: timestamp, Y: quality_pct, Series: line_id |
-| Shift KPI Summary | Table | 5.13 | Shift performance comparison |
-
-**Quality Trend query:**
-```kql
-PartEvents
-| where timestamp between (_startTime .. _endTime)
-| summarize
-    total = count(),
-    good = countif(quality_pass == true)
-    by bin(timestamp, 5m), line_id
-| extend quality_pct = round(todouble(good) / todouble(total) * 100, 1)
-| project timestamp, line_id, quality_pct
-| order by timestamp desc
-```
+| Station Status (Live) | Table | 5.5 | Current station state (all lines) |
+| Total Parts Produced | Multi Stat | 5.26 | Output count metric |
+| Rejection Rate by Station | Bar | 5.9 | X: machine_type, Y: reject_rate |
+| Avg Cycle Time (Time Series) | Time chart | 5.25 | X: timestamp, Y: avg_cycle, Series: line_id |
+| Part Journey (Traceability) | Table | 5.8 with _partId param | Station-by-station tracking |
+| Factory KPIs (5 min) | Multi Stat | 5.22 | Uptime %, Quality %, Total Parts, Active Faults |
 
 ### Dashboard Auto-Refresh
 

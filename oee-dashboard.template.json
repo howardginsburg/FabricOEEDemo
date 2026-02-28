@@ -17,23 +17,23 @@
   ],
   "pages": [
     {
-      "name": "Factory Floor Overview",
+      "name": "Corporate Executive",
       "id": "a1b2c3d4-e5f6-4a8b-9c0d-e1f2a3b4c5d6"
     },
     {
-      "name": "Line Deep-Dive",
+      "name": "Plant Manager",
       "id": "b2c3d4e5-f6a7-4b9c-8d1e-f2a3b4c5d6e7"
     },
     {
-      "name": "Maintenance & Reliability",
+      "name": "Line Manager",
       "id": "c3d4e5f6-a7b8-4c0d-9e2f-a3b4c5d6e7f8"
     },
     {
-      "name": "Quality & Traceability",
+      "name": "Maintenance Technician",
       "id": "d4e5f6a7-b8c9-4d1e-af3a-b4c5d6e7f8a9"
     },
     {
-      "name": "Advanced Analytics",
+      "name": "Quality / Station Worker",
       "id": "e5f6a7b8-c9d0-4e1f-ba5c-d6e7f8a9b0c1"
     }
   ],
@@ -68,7 +68,7 @@
       "showOnPages": {
         "kind": "selection",
         "pageIds": [
-          "b2c3d4e5-f6a7-4b9c-8d1e-f2a3b4c5d6e7"
+          "c3d4e5f6-a7b8-4c0d-9e2f-a3b4c5d6e7f8"
         ]
       }
     },
@@ -86,7 +86,7 @@
       "showOnPages": {
         "kind": "selection",
         "pageIds": [
-          "d4e5f6a7-b8c9-4d1e-af3a-b4c5d6e7f8a9"
+          "e5f6a7b8-c9d0-4e1f-ba5c-d6e7f8a9b0c1"
         ]
       }
     }
@@ -261,7 +261,7 @@
         "kind": "inline",
         "dataSourceId": "b12979d1-e244-4088-b1ae-d91ca3ed9d9d"
       },
-      "text": "MachineEvents\n| where timestamp between (_startTime .. _endTime)\n| join kind=inner StationMaster\n    on $left.line_id == $right.line_id, $left.station_position == $right.station_position\n| summarize\n    downtime    = countif(machine_status in (\"Fault\", \"Maintenance\")),\n    running     = countif(machine_status == \"Running\"),\n    avg_actual  = avgif(actual_cycle_time, machine_status == \"Running\"),\n    ideal       = avg(ideal_cycle_time),\n    total_parts = sum(total_parts_processed),\n    rejected    = sum(rejected_parts)\n    by machine_type, manufacturer\n| extend\n    availability = iif(running + downtime > 0, round(todouble(running) / todouble(running + downtime), 4), real(null)),\n    performance  = iif(avg_actual > 0, round(ideal / avg_actual, 4), real(null)),\n    quality      = iif(total_parts > 0, round(1.0 - todouble(rejected) / todouble(total_parts), 4), real(null))\n| extend\n    oee       = round(coalesce(availability, 0.0) * coalesce(performance, 0.0) * coalesce(quality, 0.0), 4)\n| project machine_type, manufacturer, coalesce(availability, 0.0) as availability, coalesce(performance, 0.0) as performance, coalesce(quality, 0.0) as quality, oee\n| order by machine_type asc",
+      "text": "MachineEvents\n| where timestamp between (_startTime .. _endTime)\n| join kind=inner StationMaster\n    on $left.line_id == $right.line_id, $left.station_position == $right.station_position\n| summarize\n    downtime    = countif(machine_status in (\"Fault\", \"Maintenance\")),\n    running     = countif(machine_status == \"Running\"),\n    avg_actual  = avgif(actual_cycle_time, machine_status == \"Running\"),\n    ideal       = avg(ideal_cycle_time),\n    total_parts = sum(total_parts_processed),\n    rejected    = sum(rejected_parts)\n    by machine_type, manufacturer\n| extend\n    availability = iif(running + downtime > 0, round(todouble(running) / todouble(running + downtime), 4), real(null)),\n    performance  = iif(avg_actual > 0, round(ideal / avg_actual, 4), real(null)),\n    quality      = iif(total_parts > 0, round(1.0 - todouble(rejected) / todouble(total_parts), 4), real(null))\n| extend\n    oee       = round(coalesce(availability, 0.0) * coalesce(performance, 0.0) * coalesce(quality, 0.0), 4)\n| project machine_type, manufacturer, availability = coalesce(availability, 0.0), performance = coalesce(performance, 0.0), quality = coalesce(quality, 0.0), oee\n| order by machine_type asc",
       "usedVariables": [
         "_startTime",
         "_endTime"
@@ -374,6 +374,90 @@
       },
       "text": "let total_p = toscalar(MachineEvents | where timestamp > ago(5m) | summarize sum(total_parts_processed));\nlet rejected_p = toscalar(MachineEvents | where timestamp > ago(5m) | summarize sum(rejected_parts));\nlet fault_c = toscalar(MachineEvents | where timestamp > ago(5m) | where machine_status == \"Fault\" | count);\nlet running_c = toscalar(MachineEvents | where timestamp > ago(5m) | where machine_status == \"Running\" | count);\nlet downtime_c = toscalar(MachineEvents | where timestamp > ago(5m) | where machine_status in (\"Fault\", \"Maintenance\") | count);\nlet uptime = round(todouble(running_c) / todouble(running_c + downtime_c) * 100, 1);\nlet quality = round((1.0 - todouble(rejected_p) / todouble(total_p)) * 100, 1);\nunion\n    (print metric = \"Uptime %\", value = uptime),\n    (print metric = \"Quality %\", value = quality),\n    (print metric = \"Total Parts\", value = todouble(total_p)),\n    (print metric = \"Active Faults\", value = todouble(fault_c))",
       "usedVariables": []
+    },
+    {
+      "id": "01000000-0000-4000-8000-000000000030",
+      "dataSource": {
+        "kind": "inline",
+        "dataSourceId": "b12979d1-e244-4088-b1ae-d91ca3ed9d9d"
+      },
+      "text": "MachineEvents\n| where timestamp between (_startTime .. _endTime)\n| summarize Count = count() by machine_status",
+      "usedVariables": [
+        "_startTime",
+        "_endTime"
+      ]
+    },
+    {
+      "id": "01000000-0000-4000-8000-000000000031",
+      "dataSource": {
+        "kind": "inline",
+        "dataSourceId": "b12979d1-e244-4088-b1ae-d91ca3ed9d9d"
+      },
+      "text": "PartEvents\n| where timestamp between (_startTime .. _endTime)\n| where action in (\"completed\", \"rejected\")\n| summarize Completed = countif(action == \"completed\"), Rejected = countif(action == \"rejected\") by line_id\n| order by line_id asc",
+      "usedVariables": [
+        "_startTime",
+        "_endTime"
+      ]
+    },
+    {
+      "id": "01000000-0000-4000-8000-000000000032",
+      "dataSource": {
+        "kind": "inline",
+        "dataSourceId": "b12979d1-e244-4088-b1ae-d91ca3ed9d9d"
+      },
+      "text": "let data = PartEvents\r\n| where timestamp between (_startTime .. _endTime)\r\n| where action in (\"completed\", \"rejected\")\r\n| summarize\r\n    total_entered = count(),\r\n    passed_qc = countif(action == \"completed\"),\r\n    rejected = countif(action == \"rejected\");\r\ndata | project stage = \"1 - Total Entered\", value = total_entered\r\n| union (data | project stage = \"2 - Passed QC\", value = passed_qc)\r\n| union (data | project stage = \"3 - Rejected\", value = rejected)\r\n| order by stage asc",
+      "usedVariables": [
+        "_startTime",
+        "_endTime"
+      ]
+    },
+    {
+      "id": "01000000-0000-4000-8000-000000000034",
+      "dataSource": {
+        "kind": "inline",
+        "dataSourceId": "b12979d1-e244-4088-b1ae-d91ca3ed9d9d"
+      },
+      "text": "let total_p = toscalar(PartEvents | where timestamp between (_startTime .. _endTime) | where action == \"completed\" | count);\nlet rejected_p = toscalar(PartEvents | where timestamp between (_startTime .. _endTime) | where action == \"rejected\" | count);\nlet running_c = toscalar(MachineEvents | where timestamp between (_startTime .. _endTime) | where machine_status == \"Running\" | count);\nlet fault_c = toscalar(MachineEvents | where timestamp between (_startTime .. _endTime) | where machine_status == \"Fault\" | count);\nprint Total_Parts_Produced = total_p, Rejected = rejected_p, Running_Stations = running_c, Active_Faults = fault_c",
+      "usedVariables": [
+        "_startTime",
+        "_endTime"
+      ]
+    },
+    {
+      "id": "01000000-0000-4000-8000-000000000035",
+      "dataSource": {
+        "kind": "inline",
+        "dataSourceId": "b12979d1-e244-4088-b1ae-d91ca3ed9d9d"
+      },
+      "text": "let total_p = toscalar(PartEvents | where timestamp between (_startTime .. _endTime) | where action == \"completed\" | count);\nprint Metric = \"Parts Produced\", Value = total_p",
+      "usedVariables": [
+        "_startTime",
+        "_endTime"
+      ]
+    },
+    {
+      "id": "01000000-0000-4000-8000-000000000036",
+      "dataSource": {
+        "kind": "inline",
+        "dataSourceId": "b12979d1-e244-4088-b1ae-d91ca3ed9d9d"
+      },
+      "text": "MachineEvents\n| where timestamp between (_startTime .. _endTime)\n| where machine_status == \"Running\"\n| summarize avg_cycle = round(avg(actual_cycle_time), 2) by bin(timestamp, 5m), line_id\n| order by timestamp asc",
+      "usedVariables": [
+        "_startTime",
+        "_endTime"
+      ]
+    },
+    {
+      "id": "01000000-0000-4000-8000-000000000037",
+      "dataSource": {
+        "kind": "inline",
+        "dataSourceId": "b12979d1-e244-4088-b1ae-d91ca3ed9d9d"
+      },
+      "text": "let avail = MachineEvents\r\n| where timestamp between (_startTime .. _endTime)\r\n| summarize running = countif(machine_status == \"Running\"), downtime = countif(machine_status in (\"Fault\", \"Maintenance\"))\r\n| extend availability = coalesce(todouble(running) / todouble(running + downtime), 0.0);\r\nlet perf = MachineEvents\r\n| where timestamp between (_startTime .. _endTime)\r\n| where machine_status == \"Running\"\r\n| join kind=inner StationMaster on line_id, station_position\r\n| summarize avg_actual = avg(actual_cycle_time), ideal = avg(ideal_cycle_time)\r\n| extend performance = min_of(coalesce(ideal / avg_actual, 0.0), 1.0);\r\nlet qual = PartEvents\r\n| where timestamp between(_startTime .. _endTime)\r\n| where action in (\"completed\", \"rejected\")\r\n| summarize total_sum = count(), rejected_sum = countif(action == \"rejected\")\r\n| extend quality = coalesce(1.0 - (todouble(rejected_sum) / todouble(total_sum)), 1.0);\r\nlet oeeVal = toscalar(avail | extend d=1\r\n| join kind=inner (perf | extend d=1) on d\r\n| join kind=inner (qual | extend d=1) on d\r\n| project round(availability * performance * quality * 100, 1));\r\nprint plotly = strcat('{\"data\":[{\"type\":\"indicator\",\"mode\":\"gauge+number\",\"value\":', oeeVal, ',\"number\":{\"font\":{\"size\":28}},\"title\":{\"text\":\"Factory OEE %\",\"font\":{\"size\":14}},\"domain\":{\"x\":[0.05,0.95],\"y\":[0.1,0.9]},\"gauge\":{\"axis\":{\"range\":[0,100],\"tickfont\":{\"size\":10}},\"bar\":{\"color\":\"darkblue\"},\"steps\":[{\"range\":[0,60],\"color\":\"#ff4444\"},{\"range\":[60,80],\"color\":\"#ffbb33\"},{\"range\":[80,100],\"color\":\"#00C851\"}],\"threshold\":{\"line\":{\"color\":\"black\",\"width\":3},\"thickness\":0.7,\"value\":', oeeVal, '}}}],\"layout\":{\"autosize\":true,\"margin\":{\"t\":10,\"b\":10,\"l\":10,\"r\":10},\"paper_bgcolor\":\"rgba(0,0,0,0)\",\"font\":{\"size\":12}}}')",
+      "usedVariables": [
+        "_startTime",
+        "_endTime"
+      ]
     }
   ],
   "tiles": [
@@ -388,9 +472,9 @@
       "visualType": "line",
       "layout": {
         "x": 0,
-        "y": 0,
+        "y": 16,
         "width": 12,
-        "height": 7
+        "height": 8
       },
       "visualOptions": {}
     },
@@ -404,17 +488,17 @@
       },
       "visualType": "multistat",
       "layout": {
-        "x": 12,
-        "y": 0,
+        "x": 0,
+        "y": 8,
         "width": 12,
-        "height": 7
+        "height": 8
       },
       "visualOptions": {}
     },
     {
       "id": "02000000-0000-4000-8000-000000000003",
       "title": "OEE Components (A x P x Q)",
-      "pageId": "a1b2c3d4-e5f6-4a8b-9c0d-e1f2a3b4c5d6",
+      "pageId": "b2c3d4e5-f6a7-4b9c-8d1e-f2a3b4c5d6e7",
       "queryRef": {
         "kind": "query",
         "queryId": "01000000-0000-4000-8000-000000000003"
@@ -422,50 +506,50 @@
       "visualType": "bar",
       "layout": {
         "x": 0,
-        "y": 7,
+        "y": 0,
         "width": 12,
-        "height": 6
+        "height": 8
       },
       "visualOptions": {}
     },
     {
       "id": "02000000-0000-4000-8000-000000000004",
       "title": "Station Status (Live)",
-      "pageId": "a1b2c3d4-e5f6-4a8b-9c0d-e1f2a3b4c5d6",
+      "pageId": "e5f6a7b8-c9d0-4e1f-ba5c-d6e7f8a9b0c1",
       "queryRef": {
         "kind": "query",
         "queryId": "01000000-0000-4000-8000-000000000004"
       },
       "visualType": "table",
       "layout": {
-        "x": 12,
-        "y": 7,
+        "x": 0,
+        "y": 0,
         "width": 12,
-        "height": 6
+        "height": 8
       },
       "visualOptions": {}
     },
     {
       "id": "02000000-0000-4000-8000-000000000005",
       "title": "Faults by Station",
-      "pageId": "a1b2c3d4-e5f6-4a8b-9c0d-e1f2a3b4c5d6",
+      "pageId": "d4e5f6a7-b8c9-4d1e-af3a-b4c5d6e7f8a9",
       "queryRef": {
         "kind": "query",
         "queryId": "01000000-0000-4000-8000-000000000005"
       },
       "visualType": "bar",
       "layout": {
-        "x": 0,
-        "y": 13,
+        "x": 12,
+        "y": 16,
         "width": 12,
-        "height": 6
+        "height": 8
       },
       "visualOptions": {}
     },
     {
       "id": "02000000-0000-4000-8000-000000000006",
       "title": "Part Throughput per Line",
-      "pageId": "a1b2c3d4-e5f6-4a8b-9c0d-e1f2a3b4c5d6",
+      "pageId": "b2c3d4e5-f6a7-4b9c-8d1e-f2a3b4c5d6e7",
       "queryRef": {
         "kind": "query",
         "queryId": "01000000-0000-4000-8000-000000000006"
@@ -473,9 +557,9 @@
       "visualType": "area",
       "layout": {
         "x": 12,
-        "y": 13,
+        "y": 0,
         "width": 12,
-        "height": 6
+        "height": 8
       },
       "visualOptions": {}
     },
@@ -489,17 +573,17 @@
       },
       "visualType": "bar",
       "layout": {
-        "x": 0,
-        "y": 19,
-        "width": 24,
-        "height": 5
+        "x": 12,
+        "y": 16,
+        "width": 12,
+        "height": 8
       },
       "visualOptions": {}
     },
     {
       "id": "02000000-0000-4000-8000-000000000008",
       "title": "Station Pipeline",
-      "pageId": "b2c3d4e5-f6a7-4b9c-8d1e-f2a3b4c5d6e7",
+      "pageId": "c3d4e5f6-a7b8-4c0d-9e2f-a3b4c5d6e7f8",
       "queryRef": {
         "kind": "query",
         "queryId": "01000000-0000-4000-8000-000000000009"
@@ -507,7 +591,7 @@
       "visualType": "table",
       "layout": {
         "x": 0,
-        "y": 0,
+        "y": 8,
         "width": 12,
         "height": 8
       },
@@ -516,14 +600,14 @@
     {
       "id": "02000000-0000-4000-8000-000000000009",
       "title": "Per-Station OEE",
-      "pageId": "b2c3d4e5-f6a7-4b9c-8d1e-f2a3b4c5d6e7",
+      "pageId": "c3d4e5f6-a7b8-4c0d-9e2f-a3b4c5d6e7f8",
       "queryRef": {
         "kind": "query",
         "queryId": "01000000-0000-4000-8000-000000000008"
       },
       "visualType": "bar",
       "layout": {
-        "x": 12,
+        "x": 0,
         "y": 0,
         "width": 12,
         "height": 8
@@ -533,75 +617,75 @@
     {
       "id": "02000000-0000-4000-8000-000000000010",
       "title": "Cascade Alert (Starved/Blocked)",
-      "pageId": "b2c3d4e5-f6a7-4b9c-8d1e-f2a3b4c5d6e7",
+      "pageId": "c3d4e5f6-a7b8-4c0d-9e2f-a3b4c5d6e7f8",
       "queryRef": {
         "kind": "query",
         "queryId": "01000000-0000-4000-8000-000000000010"
       },
       "visualType": "table",
       "layout": {
-        "x": 0,
+        "x": 12,
         "y": 8,
         "width": 12,
-        "height": 6
+        "height": 8
       },
       "visualOptions": {}
     },
     {
       "id": "02000000-0000-4000-8000-000000000027",
       "title": "Factory KPIs (5 min)",
-      "pageId": "a1b2c3d4-e5f6-4a8b-9c0d-e1f2a3b4c5d6",
+      "pageId": "e5f6a7b8-c9d0-4e1f-ba5c-d6e7f8a9b0c1",
       "queryRef": {
         "kind": "query",
         "queryId": "01000000-0000-4000-8000-000000000027"
       },
       "visualType": "multistat",
       "layout": {
-        "x": 0,
-        "y": 24,
-        "width": 24,
-        "height": 6
+        "x": 12,
+        "y": 16,
+        "width": 12,
+        "height": 8
       },
       "visualOptions": {}
     },
     {
       "id": "02000000-0000-4000-8000-000000000011",
       "title": "Actual vs Ideal Cycle Time",
-      "pageId": "b2c3d4e5-f6a7-4b9c-8d1e-f2a3b4c5d6e7",
+      "pageId": "c3d4e5f6-a7b8-4c0d-9e2f-a3b4c5d6e7f8",
       "queryRef": {
         "kind": "query",
         "queryId": "01000000-0000-4000-8000-000000000011"
       },
       "visualType": "bar",
       "layout": {
-        "x": 12,
-        "y": 8,
-        "width": 12,
-        "height": 6
+        "x": 0,
+        "y": 16,
+        "width": 8,
+        "height": 8
       },
       "visualOptions": {}
     },
     {
       "id": "02000000-0000-4000-8000-000000000026",
       "title": "Parts Funnel by Station",
-      "pageId": "b2c3d4e5-f6a7-4b9c-8d1e-f2a3b4c5d6e7",
+      "pageId": "c3d4e5f6-a7b8-4c0d-9e2f-a3b4c5d6e7f8",
       "queryRef": {
         "kind": "query",
         "queryId": "01000000-0000-4000-8000-000000000026"
       },
       "visualType": "bar",
       "layout": {
-        "x": 0,
-        "y": 14,
-        "width": 24,
-        "height": 6
+        "x": 8,
+        "y": 16,
+        "width": 8,
+        "height": 8
       },
       "visualOptions": {}
     },
     {
       "id": "02000000-0000-4000-8000-000000000012",
       "title": "Open Work Orders",
-      "pageId": "c3d4e5f6-a7b8-4c0d-9e2f-a3b4c5d6e7f8",
+      "pageId": "d4e5f6a7-b8c9-4d1e-af3a-b4c5d6e7f8a9",
       "queryRef": {
         "kind": "query",
         "queryId": "01000000-0000-4000-8000-000000000012"
@@ -611,14 +695,14 @@
         "x": 0,
         "y": 0,
         "width": 24,
-        "height": 6
+        "height": 8
       },
       "visualOptions": {}
     },
     {
       "id": "02000000-0000-4000-8000-000000000013",
       "title": "MTTR by Machine Type",
-      "pageId": "c3d4e5f6-a7b8-4c0d-9e2f-a3b4c5d6e7f8",
+      "pageId": "b2c3d4e5-f6a7-4b9c-8d1e-f2a3b4c5d6e7",
       "queryRef": {
         "kind": "query",
         "queryId": "01000000-0000-4000-8000-000000000013"
@@ -626,16 +710,16 @@
       "visualType": "bar",
       "layout": {
         "x": 0,
-        "y": 6,
-        "width": 12,
-        "height": 6
+        "y": 16,
+        "width": 8,
+        "height": 8
       },
       "visualOptions": {}
     },
     {
       "id": "02000000-0000-4000-8000-000000000014",
       "title": "Fault Type Pareto",
-      "pageId": "c3d4e5f6-a7b8-4c0d-9e2f-a3b4c5d6e7f8",
+      "pageId": "b2c3d4e5-f6a7-4b9c-8d1e-f2a3b4c5d6e7",
       "queryRef": {
         "kind": "query",
         "queryId": "01000000-0000-4000-8000-000000000014"
@@ -643,16 +727,16 @@
       "visualType": "bar",
       "layout": {
         "x": 12,
-        "y": 6,
+        "y": 8,
         "width": 12,
-        "height": 6
+        "height": 8
       },
       "visualOptions": {}
     },
     {
       "id": "02000000-0000-4000-8000-000000000015",
       "title": "Work Order Lifecycle",
-      "pageId": "c3d4e5f6-a7b8-4c0d-9e2f-a3b4c5d6e7f8",
+      "pageId": "d4e5f6a7-b8c9-4d1e-af3a-b4c5d6e7f8a9",
       "queryRef": {
         "kind": "query",
         "queryId": "01000000-0000-4000-8000-000000000015"
@@ -660,16 +744,16 @@
       "visualType": "table",
       "layout": {
         "x": 0,
-        "y": 12,
+        "y": 8,
         "width": 24,
-        "height": 6
+        "height": 8
       },
       "visualOptions": {}
     },
     {
       "id": "02000000-0000-4000-8000-000000000016",
       "title": "Equipment Age vs OEE",
-      "pageId": "c3d4e5f6-a7b8-4c0d-9e2f-a3b4c5d6e7f8",
+      "pageId": "d4e5f6a7-b8c9-4d1e-af3a-b4c5d6e7f8a9",
       "queryRef": {
         "kind": "query",
         "queryId": "01000000-0000-4000-8000-000000000016"
@@ -677,16 +761,16 @@
       "visualType": "scatter",
       "layout": {
         "x": 0,
-        "y": 18,
-        "width": 24,
-        "height": 6
+        "y": 16,
+        "width": 12,
+        "height": 8
       },
       "visualOptions": {}
     },
     {
       "id": "02000000-0000-4000-8000-000000000017",
       "title": "Rejection Rate by Station",
-      "pageId": "d4e5f6a7-b8c9-4d1e-af3a-b4c5d6e7f8a9",
+      "pageId": "e5f6a7b8-c9d0-4e1f-ba5c-d6e7f8a9b0c1",
       "queryRef": {
         "kind": "query",
         "queryId": "01000000-0000-4000-8000-000000000017"
@@ -694,93 +778,93 @@
       "visualType": "bar",
       "layout": {
         "x": 0,
-        "y": 0,
+        "y": 8,
         "width": 12,
-        "height": 6
+        "height": 8
       },
       "visualOptions": {}
     },
     {
       "id": "02000000-0000-4000-8000-000000000018",
       "title": "Part Journey (Traceability)",
-      "pageId": "d4e5f6a7-b8c9-4d1e-af3a-b4c5d6e7f8a9",
+      "pageId": "e5f6a7b8-c9d0-4e1f-ba5c-d6e7f8a9b0c1",
       "queryRef": {
         "kind": "query",
         "queryId": "01000000-0000-4000-8000-000000000018"
       },
       "visualType": "table",
       "layout": {
-        "x": 12,
-        "y": 0,
+        "x": 0,
+        "y": 16,
         "width": 12,
-        "height": 6
+        "height": 8
       },
       "visualOptions": {}
     },
     {
       "id": "02000000-0000-4000-8000-000000000019",
       "title": "Quality Trend",
-      "pageId": "d4e5f6a7-b8c9-4d1e-af3a-b4c5d6e7f8a9",
+      "pageId": "c3d4e5f6-a7b8-4c0d-9e2f-a3b4c5d6e7f8",
       "queryRef": {
         "kind": "query",
         "queryId": "01000000-0000-4000-8000-000000000019"
       },
       "visualType": "line",
       "layout": {
-        "x": 0,
-        "y": 6,
-        "width": 12,
-        "height": 6
+        "x": 16,
+        "y": 16,
+        "width": 8,
+        "height": 8
       },
       "visualOptions": {}
     },
     {
       "id": "02000000-0000-4000-8000-000000000020",
       "title": "Shift KPI Summary",
-      "pageId": "d4e5f6a7-b8c9-4d1e-af3a-b4c5d6e7f8a9",
+      "pageId": "b2c3d4e5-f6a7-4b9c-8d1e-f2a3b4c5d6e7",
       "queryRef": {
         "kind": "query",
         "queryId": "01000000-0000-4000-8000-000000000020"
       },
       "visualType": "table",
       "layout": {
-        "x": 12,
-        "y": 6,
-        "width": 12,
-        "height": 6
+        "x": 8,
+        "y": 16,
+        "width": 8,
+        "height": 8
       },
       "visualOptions": {}
     },
     {
       "id": "02000000-0000-4000-8000-000000000021",
       "title": "Schedule Adherence",
-      "pageId": "d4e5f6a7-b8c9-4d1e-af3a-b4c5d6e7f8a9",
+      "pageId": "b2c3d4e5-f6a7-4b9c-8d1e-f2a3b4c5d6e7",
       "queryRef": {
         "kind": "query",
         "queryId": "01000000-0000-4000-8000-000000000021"
       },
       "visualType": "table",
       "layout": {
-        "x": 0,
-        "y": 12,
-        "width": 24,
-        "height": 4
+        "x": 16,
+        "y": 16,
+        "width": 8,
+        "height": 8
       },
       "visualOptions": {}
     },
     {
       "id": "02000000-0000-4000-8000-000000000022",
       "title": "Cycle Time Anomaly Detection",
-      "pageId": "e5f6a7b8-c9d0-4e1f-ba5c-d6e7f8a9b0c1",
+      "pageId": "d4e5f6a7-b8c9-4d1e-af3a-b4c5d6e7f8a9",
       "queryRef": {
         "kind": "query",
         "queryId": "01000000-0000-4000-8000-000000000022"
       },
       "visualType": "anomalychart",
       "layout": {
-        "x": 0,
-        "y": 0,
-        "width": 24,
+        "x": 16,
+        "y": 24,
+        "width": 8,
         "height": 8
       },
       "visualOptions": {}
@@ -788,12 +872,63 @@
     {
       "id": "02000000-0000-4000-8000-000000000023",
       "title": "Station Availability Heatmap",
-      "pageId": "e5f6a7b8-c9d0-4e1f-ba5c-d6e7f8a9b0c1",
+      "pageId": "d4e5f6a7-b8c9-4d1e-af3a-b4c5d6e7f8a9",
       "queryRef": {
         "kind": "query",
         "queryId": "01000000-0000-4000-8000-000000000023"
       },
       "visualType": "heatmap",
+      "layout": {
+        "x": 8,
+        "y": 24,
+        "width": 8,
+        "height": 8
+      },
+      "visualOptions": {}
+    },
+    {
+      "id": "02000000-0000-4000-8000-000000000024",
+      "title": "Fault Distribution Treemap",
+      "pageId": "d4e5f6a7-b8c9-4d1e-af3a-b4c5d6e7f8a9",
+      "queryRef": {
+        "kind": "query",
+        "queryId": "01000000-0000-4000-8000-000000000024"
+      },
+      "visualType": "bar",
+      "layout": {
+        "x": 0,
+        "y": 24,
+        "width": 8,
+        "height": 8
+      },
+      "visualOptions": {}
+    },
+    {
+      "id": "02000000-0000-4000-8000-000000000030",
+      "title": "Machine Status Distribution",
+      "pageId": "a1b2c3d4-e5f6-4a8b-9c0d-e1f2a3b4c5d6",
+      "queryRef": {
+        "queryId": "01000000-0000-4000-8000-000000000030",
+        "kind": "query"
+      },
+      "visualType": "pie",
+      "layout": {
+        "x": 12,
+        "y": 8,
+        "width": 12,
+        "height": 8
+      },
+      "visualOptions": {}
+    },
+    {
+      "id": "02000000-0000-4000-8000-000000000031",
+      "title": "Completed vs Rejected by Line",
+      "pageId": "b2c3d4e5-f6a7-4b9c-8d1e-f2a3b4c5d6e7",
+      "queryRef": {
+        "queryId": "01000000-0000-4000-8000-000000000031",
+        "kind": "query"
+      },
+      "visualType": "column",
       "layout": {
         "x": 0,
         "y": 8,
@@ -803,18 +938,86 @@
       "visualOptions": {}
     },
     {
-      "id": "02000000-0000-4000-8000-000000000024",
-      "title": "Fault Distribution Treemap",
+      "id": "02000000-0000-4000-8000-000000000032",
+      "title": "Parts Funnel (Entered > Passed > Rejected)",
+      "pageId": "c3d4e5f6-a7b8-4c0d-9e2f-a3b4c5d6e7f8",
+      "queryRef": {
+        "queryId": "01000000-0000-4000-8000-000000000032",
+        "kind": "query"
+      },
+      "visualType": "funnel",
+      "layout": {
+        "x": 12,
+        "y": 0,
+        "width": 12,
+        "height": 8
+      },
+      "visualOptions": {}
+    },
+    {
+      "id": "02000000-0000-4000-8000-000000000034",
+      "title": "Factory Snapshot",
+      "pageId": "a1b2c3d4-e5f6-4a8b-9c0d-e1f2a3b4c5d6",
+      "queryRef": {
+        "queryId": "01000000-0000-4000-8000-000000000034",
+        "kind": "query"
+      },
+      "visualType": "card",
+      "layout": {
+        "x": 8,
+        "y": 0,
+        "width": 16,
+        "height": 8
+      },
+      "visualOptions": {}
+    },
+    {
+      "id": "02000000-0000-4000-8000-000000000035",
+      "title": "Total Parts Produced",
       "pageId": "e5f6a7b8-c9d0-4e1f-ba5c-d6e7f8a9b0c1",
       "queryRef": {
-        "kind": "query",
-        "queryId": "01000000-0000-4000-8000-000000000024"
+        "queryId": "01000000-0000-4000-8000-000000000035",
+        "kind": "query"
       },
-      "visualType": "bar",
+      "visualType": "multistat",
+      "layout": {
+        "x": 12,
+        "y": 0,
+        "width": 12,
+        "height": 8
+      },
+      "visualOptions": {}
+    },
+    {
+      "id": "02000000-0000-4000-8000-000000000036",
+      "title": "Avg Cycle Time (Time Series)",
+      "pageId": "e5f6a7b8-c9d0-4e1f-ba5c-d6e7f8a9b0c1",
+      "queryRef": {
+        "queryId": "01000000-0000-4000-8000-000000000036",
+        "kind": "query"
+      },
+      "visualType": "timechart",
       "layout": {
         "x": 12,
         "y": 8,
         "width": 12,
+        "height": 8
+      },
+      "visualOptions": {}
+    },
+    {
+      "id": "02000000-0000-4000-8000-000000000037",
+      "title": "Factory OEE Gauge (Plotly)",
+      "pageId": "a1b2c3d4-e5f6-4a8b-9c0d-e1f2a3b4c5d6",
+      "queryRef": {
+        "queryId": "01000000-0000-4000-8000-000000000037",
+        "kind": "query"
+      },
+      "visualType": "plotly",
+      "layout": {
+        "x": 0,
+        "y": 0,
+        "width": 8,
         "height": 8
       },
       "visualOptions": {}
