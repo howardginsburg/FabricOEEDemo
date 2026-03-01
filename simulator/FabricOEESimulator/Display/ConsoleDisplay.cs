@@ -1,6 +1,8 @@
 using FabricOEESimulator.Models;
 using FabricOEESimulator.Simulation;
+using FabricOEESimulator.Telemetry;
 using Spectre.Console;
+using Spectre.Console.Rendering;
 
 namespace FabricOEESimulator.Display;
 
@@ -14,7 +16,7 @@ public sealed class ConsoleDisplay
         _pageSize = pageSize;
     }
 
-    public async Task RunAsync(IReadOnlyList<ProductionLine> lines, MaintenanceManager maintenanceManager, CancellationToken ct)
+    public async Task RunAsync(IReadOnlyList<ProductionLine> lines, MaintenanceManager maintenanceManager, TelemetryLog telemetryLog, CancellationToken ct)
     {
         // Build flat list of (lineId, station) for paging
         var allStations = new List<(string LineId, Station Station, bool IsFirstInLine)>();
@@ -35,9 +37,9 @@ public sealed class ConsoleDisplay
         // Listen for keyboard input on a background thread
         _ = Task.Run(() => ReadKeyInput(totalPages, ct), ct);
 
-        var table = CreateTable(1, totalPages);
+        IRenderable layout = new Text("");
 
-        await AnsiConsole.Live(table)
+        await AnsiConsole.Live(layout)
             .AutoClear(false)
             .Overflow(VerticalOverflow.Ellipsis)
             .StartAsync(async ctx =>
@@ -48,7 +50,7 @@ public sealed class ConsoleDisplay
                     int skip = page * _pageSize;
                     var pageStations = allStations.Skip(skip).Take(_pageSize).ToList();
 
-                    table = CreateTable(page + 1, totalPages);
+                    var stationTable = CreateStationTable(page + 1, totalPages);
 
                     foreach (var (lineId, station, isFirst) in pageStations)
                     {
@@ -68,7 +70,7 @@ public sealed class ConsoleDisplay
                             ? $"{station.OutputBuffer.Count}/{station.OutputBuffer.Capacity}"
                             : "—";
 
-                        table.AddRow(
+                        stationTable.AddRow(
                             lineLabel,
                             Markup.Escape(station.MachineType),
                             station.Position.ToString(),
@@ -81,13 +83,13 @@ public sealed class ConsoleDisplay
                             Markup.Escape(station.CurrentPartId ?? "—"));
                     }
 
-                    table.AddEmptyRow();
+                    stationTable.AddEmptyRow();
 
                     // Maintenance summary
                     var activeWOs = maintenanceManager.ActiveOrders;
                     if (activeWOs.Count > 0)
                     {
-                        table.AddRow(
+                        stationTable.AddRow(
                             $"[bold red]Maint WOs[/]",
                             $"[red]{activeWOs.Count} active[/]",
                             "", "", "", "", "", "", "", "");
@@ -96,13 +98,18 @@ public sealed class ConsoleDisplay
                     // Line throughput summary
                     foreach (var line in lines)
                     {
-                        table.AddRow(
+                        stationTable.AddRow(
                             $"[bold cyan]{Markup.Escape(line.LineId)}[/]",
                             $"[bold cyan]Finished: {line.PartsProduced:N0} parts[/]",
                             "", "", "", "", "", "", "", "");
                     }
 
-                    ctx.UpdateTarget(table);
+                    // Build telemetry table
+                    var telemetryTable = CreateTelemetryTable(telemetryLog);
+
+                    // Combine into vertical layout
+                    layout = new Rows(stationTable, telemetryTable);
+                    ctx.UpdateTarget(layout);
 
                     try
                     {
@@ -116,11 +123,11 @@ public sealed class ConsoleDisplay
             });
     }
 
-    private static Table CreateTable(int currentPage, int totalPages)
+    private static Table CreateStationTable(int currentPage, int totalPages)
     {
         return new Table()
             .Border(TableBorder.Rounded)
-            .Title($"[bold cyan]OEE Production Line Simulator[/]  [dim]Page {currentPage}/{totalPages}  (← → to navigate)[/]")
+            .Title($"[bold cyan]OEE Production Line Simulator[/]  [dim]{DateTime.Now:yyyy-MM-dd HH:mm:ss}  Page {currentPage}/{totalPages}  (← → to navigate)[/]")
             .AddColumn(new TableColumn("[bold]Line[/]").Width(12))
             .AddColumn(new TableColumn("[bold]Station[/]").Width(20))
             .AddColumn(new TableColumn("[bold]Pos[/]").Centered().Width(4))
@@ -131,6 +138,29 @@ public sealed class ConsoleDisplay
             .AddColumn(new TableColumn("[bold]Processed[/]").RightAligned().Width(10))
             .AddColumn(new TableColumn("[bold]Rejected[/]").RightAligned().Width(9))
             .AddColumn(new TableColumn("[bold]Part ID[/]").Width(14));
+    }
+
+    private static Table CreateTelemetryTable(TelemetryLog telemetryLog)
+    {
+        var table = new Table()
+            .Border(TableBorder.Rounded)
+            .Title("[bold magenta]Recent Telemetry Payloads[/]")
+            .Expand()
+            .HideHeaders()
+            .AddColumn(new TableColumn("Payload"));
+
+        var recentEvents = telemetryLog.GetRecent();
+        foreach (var entry in recentEvents)
+        {
+            table.AddRow($"[dim]{Markup.Escape(entry.JsonPayload)}[/]");
+        }
+
+        if (recentEvents.Count == 0)
+        {
+            table.AddRow("[dim]Waiting for telemetry...[/]");
+        }
+
+        return table;
     }
 
     private void ReadKeyInput(int totalPages, CancellationToken ct)

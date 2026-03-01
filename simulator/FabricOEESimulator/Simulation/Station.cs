@@ -1,3 +1,4 @@
+using System.Text.Json;
 using FabricOEESimulator.Configuration;
 using FabricOEESimulator.Models;
 using FabricOEESimulator.Telemetry;
@@ -12,9 +13,16 @@ public sealed class Station
     private readonly string _deviceId;
     private readonly MaintenanceManager _maintenanceManager;
     private readonly ITelemetrySink _sink;
+    private readonly TelemetryLog _telemetryLog;
     private readonly ILogger _logger;
     private readonly Random _random = new();
     private readonly int _telemetryIntervalMs;
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        WriteIndented = false,
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+    };
 
     // Buffers — set by ProductionLine when wiring the chain
     public PartBuffer? InputBuffer { get; set; }
@@ -39,6 +47,7 @@ public sealed class Station
         string lineId,
         MaintenanceManager maintenanceManager,
         ITelemetrySink sink,
+        TelemetryLog telemetryLog,
         int telemetryIntervalSeconds,
         ILogger logger)
     {
@@ -47,6 +56,7 @@ public sealed class Station
         _deviceId = $"{lineId.ToLowerInvariant()}-station-{config.Position}";
         _maintenanceManager = maintenanceManager;
         _sink = sink;
+        _telemetryLog = telemetryLog;
         _logger = logger;
         _telemetryIntervalMs = telemetryIntervalSeconds * 1000;
     }
@@ -202,6 +212,8 @@ public sealed class Station
             CurrentPartId = CurrentPartId,
             Timestamp = DateTime.UtcNow
         };
+        var json = JsonSerializer.Serialize(evt, evt.GetType(), JsonOptions);
+        _telemetryLog.Record(evt.EventType, _deviceId, _lineId, json);
         return _sink.SendAsync(evt, ct);
     }
 
@@ -218,6 +230,8 @@ public sealed class Station
             QualityPass = qualityPass,
             Timestamp = DateTime.UtcNow
         };
+        var json = JsonSerializer.Serialize(evt, evt.GetType(), JsonOptions);
+        _telemetryLog.Record(evt.EventType, _deviceId, _lineId, json);
         return _sink.SendAsync(evt, ct);
     }
 }

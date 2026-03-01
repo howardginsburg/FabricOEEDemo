@@ -46,6 +46,9 @@ var host = Host.CreateDefaultBuilder(args)
             };
         });
 
+        // Register telemetry log (shared tracker for recent sends)
+        services.AddSingleton<TelemetryLog>();
+
         // Register display and engine
         services.AddSingleton(sp =>
         {

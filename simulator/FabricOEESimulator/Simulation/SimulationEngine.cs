@@ -11,6 +11,7 @@ public sealed class SimulationEngine : IHostedService
 {
     private readonly SimulatorConfig _config;
     private readonly ITelemetrySink _sink;
+    private readonly TelemetryLog _telemetryLog;
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger<SimulationEngine> _logger;
     private readonly ConsoleDisplay _display;
@@ -23,11 +24,13 @@ public sealed class SimulationEngine : IHostedService
     public SimulationEngine(
         IOptions<SimulatorConfig> config,
         ITelemetrySink sink,
+        TelemetryLog telemetryLog,
         ILoggerFactory loggerFactory,
         ConsoleDisplay display)
     {
         _config = config.Value;
         _sink = sink;
+        _telemetryLog = telemetryLog;
         _loggerFactory = loggerFactory;
         _logger = loggerFactory.CreateLogger<SimulationEngine>();
         _display = display;
@@ -51,6 +54,7 @@ public sealed class SimulationEngine : IHostedService
                 lineConfig,
                 _maintenanceManager,
                 _sink,
+                _telemetryLog,
                 _config.TelemetryIntervalSeconds,
                 _loggerFactory);
             _lines.Add(line);
@@ -87,7 +91,7 @@ public sealed class SimulationEngine : IHostedService
         var lineTasks = _lines.Select(l => l.RunAsync(ct)).ToList();
 
         // Start console display
-        var displayTask = _display.RunAsync(_lines, _maintenanceManager!, ct);
+        var displayTask = _display.RunAsync(_lines, _maintenanceManager!, _telemetryLog, ct);
 
         await Task.WhenAll(lineTasks.Append(displayTask));
     }

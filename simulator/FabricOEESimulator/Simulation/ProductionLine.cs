@@ -10,6 +10,7 @@ public sealed class ProductionLine
     private readonly LineConfig _config;
     private readonly MaintenanceManager _maintenanceManager;
     private readonly ITelemetrySink _sink;
+    private readonly TelemetryLog _telemetryLog;
     private readonly ILogger<ProductionLine> _logger;
     private readonly int _telemetryIntervalSeconds;
 
@@ -29,12 +30,14 @@ public sealed class ProductionLine
         LineConfig config,
         MaintenanceManager maintenanceManager,
         ITelemetrySink sink,
+        TelemetryLog telemetryLog,
         int telemetryIntervalSeconds,
         ILoggerFactory loggerFactory)
     {
         _config = config;
         _maintenanceManager = maintenanceManager;
         _sink = sink;
+        _telemetryLog = telemetryLog;
         _logger = loggerFactory.CreateLogger<ProductionLine>();
         _telemetryIntervalSeconds = telemetryIntervalSeconds;
 
@@ -53,6 +56,7 @@ public sealed class ProductionLine
                 _config.Id,
                 _maintenanceManager,
                 _sink,
+                _telemetryLog,
                 _telemetryIntervalSeconds,
                 loggerFactory.CreateLogger<Station>());
             _stations.Add(station);

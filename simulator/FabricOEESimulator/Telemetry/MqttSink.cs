@@ -3,7 +3,6 @@ using System.Text.Json;
 using FabricOEESimulator.Configuration;
 using Microsoft.Extensions.Logging;
 using MQTTnet;
-using MQTTnet.Client;
 
 namespace FabricOEESimulator.Telemetry;
 
@@ -30,7 +29,7 @@ public sealed class MqttSink : ITelemetrySink
         if (string.IsNullOrEmpty(_config.Host))
             throw new InvalidOperationException("MQTT host is required.");
 
-        var factory = new MqttFactory();
+        var factory = new MqttClientFactory();
         _client = factory.CreateMqttClient();
 
         var optionsBuilder = new MqttClientOptionsBuilder()
@@ -77,7 +76,7 @@ public sealed class MqttSink : ITelemetrySink
         if (_client is not null)
         {
             if (_client.IsConnected)
-                await _client.DisconnectAsync();
+                await _client.DisconnectAsync(new MqttClientDisconnectOptions());
             _client.Dispose();
             _client = null;
         }
