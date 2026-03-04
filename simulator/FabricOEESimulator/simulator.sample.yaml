@@ -8,11 +8,11 @@ simulator:
     # connection: "<YOUR_EVENTHUB_CONNECTION_STRING>"
     # hub: ""                # omit if EntityPath is in the connection string
     #
-    # For MQTT:
+    # For Azure IoT Operations (MQTT with per-event-type topic routing):
     # type: Mqtt
-    # host: localhost
+    # host: <AIO_BROKER_IP_OR_HOSTNAME>
     # port: 1883
-    # topic: "telemetry/{deviceId}"
+    # topic: "oee/{lineId}/{deviceId}"
     # username: ""
     # password: ""
 

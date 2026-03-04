@@ -1184,9 +1184,9 @@ Set the dashboard auto-refresh to **30 seconds** via **Dashboard settings → Au
 Instead of following the manual steps, you can run the automated provisioner script:
 
 ```bash
-bash completed_tutorial_build.sh --workspace-name "My Workspace"
+bash scripts/completed_tutorial_build.sh --workspace-name "My Workspace"
 # -- or with device code auth --
-bash completed_tutorial_build.sh --workspace-name "My Workspace" --use-device-code
+bash scripts/completed_tutorial_build.sh --workspace-name "My Workspace" --use-device-code
 ```
 
 This script creates the Eventhouse, KQL Database, tables, reference data, materialized view, Eventstream with routing, and imports the dashboard — all via the Fabric REST API.

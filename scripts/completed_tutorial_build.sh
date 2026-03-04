@@ -633,8 +633,9 @@ fi
 
 # ── Step 4: Generate dashboard ────────────────────────────────────────────────
 step "Step 4 — Generating oee-dashboard.json"
-DASH_OUT="${SCRIPT_DIR}/oee-dashboard.json"
-DASH_TEMPLATE="${SCRIPT_DIR}/oee-dashboard.template.json"
+REPO_ROOT="${SCRIPT_DIR}/.."
+DASH_OUT="${REPO_ROOT}/oee-dashboard.json"
+DASH_TEMPLATE="${REPO_ROOT}/oee-dashboard.template.json"
 
 if [[ -f "$DASH_TEMPLATE" ]]; then
   sed -e "s|__CLUSTER_URI__|${CLUSTER_URI}|g" \

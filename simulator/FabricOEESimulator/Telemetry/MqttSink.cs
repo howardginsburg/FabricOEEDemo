@@ -51,16 +51,7 @@ public sealed class MqttSink : ITelemetrySink
 
         var json = JsonSerializer.Serialize(evt, evt.GetType(), JsonOptions);
 
-        var deviceId = evt switch
-        {
-            MachineTelemetryEvent m => m.DeviceId,
-            MaintenanceTelemetryEvent m => m.DeviceId,
-            PartTelemetryEvent p => p.PartId,
-            _ => "unknown"
-        };
-
-        var topic = (_config.Topic ?? "telemetry/{deviceId}")
-            .Replace("{deviceId}", deviceId, StringComparison.OrdinalIgnoreCase);
+        var topic = ResolveTopic(evt);
 
         var message = new MqttApplicationMessageBuilder()
             .WithTopic(topic)
@@ -69,6 +60,43 @@ public sealed class MqttSink : ITelemetrySink
             .Build();
 
         await _client.PublishAsync(message, ct);
+    }
+
+    private string ResolveTopic(TelemetryEvent evt)
+    {
+        var template = _config.Topic ?? "telemetry/{deviceId}";
+
+        // When the template contains {lineId}, use per-event-type topic routing
+        // (designed for Azure IoT Operations / structured MQTT brokers)
+        if (template.Contains("{lineId}", StringComparison.OrdinalIgnoreCase))
+        {
+            return evt switch
+            {
+                MachineTelemetryEvent m => template
+                    .Replace("{lineId}", m.LineId.ToLowerInvariant(), StringComparison.OrdinalIgnoreCase)
+                    .Replace("{deviceId}", m.DeviceId, StringComparison.OrdinalIgnoreCase),
+                PartTelemetryEvent p => template
+                    .Replace("{lineId}", p.LineId.ToLowerInvariant(), StringComparison.OrdinalIgnoreCase)
+                    .Replace("{deviceId}", "parts", StringComparison.OrdinalIgnoreCase),
+                MaintenanceTelemetryEvent m => template
+                    .Replace("{lineId}", m.LineId.ToLowerInvariant(), StringComparison.OrdinalIgnoreCase)
+                    .Replace("{deviceId}", "maintenance", StringComparison.OrdinalIgnoreCase),
+                _ => template
+                    .Replace("{lineId}", "unknown", StringComparison.OrdinalIgnoreCase)
+                    .Replace("{deviceId}", "unknown", StringComparison.OrdinalIgnoreCase)
+            };
+        }
+
+        // Legacy flat topic — single {deviceId} placeholder
+        var deviceId = evt switch
+        {
+            MachineTelemetryEvent m => m.DeviceId,
+            MaintenanceTelemetryEvent m => m.DeviceId,
+            PartTelemetryEvent p => p.PartId,
+            _ => "unknown"
+        };
+
+        return template.Replace("{deviceId}", deviceId, StringComparison.OrdinalIgnoreCase);
     }
 
     public async ValueTask DisposeAsync()

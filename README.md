@@ -74,6 +74,8 @@ KQL Database ──► OEE_5min Materialized View
    - Build a 4-page Real-Time Dashboard (manually or import the template)
    - Configure Activator alerts
 
+   **Alternative: Azure IoT Operations path** — [AIO_OEE_TUTORIAL.md](AIO_OEE_TUTORIAL.md) shows how to route the simulator through an Azure IoT Operations MQTT broker, with machine stations modeled as AIO assets and data flowing into Fabric via Eventstream MQTT source.
+
 3. **Configure the simulator:**
    ```bash
    cd simulator/FabricOEESimulator
@@ -98,7 +100,7 @@ KQL Database ──► OEE_5min Materialized View
 Instead of following the tutorial manually, run the provisioner script:
 
 ```bash
-bash completed_tutorial_build.sh --workspace-name "My Workspace"
+bash scripts/completed_tutorial_build.sh --workspace-name "My Workspace"
 ```
 
 This creates the Eventhouse, KQL Database, tables, reference data, materialized view, Eventstream with routing, and imports the dashboard via the Fabric REST API.
@@ -107,13 +109,17 @@ This creates the Eventhouse, KQL Database, tables, reference data, materialized 
 
 | Path | Description |
 |------|-------------|
-| `FABRIC_OEE_TUTORIAL.md` | Step-by-step tutorial (7 steps) |
-| `completed_tutorial_build.sh` | Automated Fabric provisioner script |
+| `FABRIC_OEE_TUTORIAL.md` | Step-by-step tutorial — direct to Fabric Eventstream (7 steps) |
+| `scripts/completed_tutorial_build.sh` | Automated Fabric provisioner script |
 | `oee-dashboard.template.json` | Importable 4-page Real-Time Dashboard template |
 | `simulator/` | .NET 8 console app simulator |
 | `simulator/FabricOEESimulator/` | Simulator source code |
 | `simulator/FabricOEESimulator/simulator.sample.yaml` | Sample configuration file |
 | `simulator/Dockerfile` | Docker build for the simulator |
+| `AIO_OEE_TUTORIAL.md` | Step-by-step tutorial — via Azure IoT Operations MQTT broker |
+| `scripts/deploy-oee-config.sh` | Configuration for the deploy script |
+| `scripts/deploy-oee-assets.sh` | Script to deploy OEE assets and dataflow to AIO via az CLI |
+| `scripts/promote-discovered-assets.sh` | Bulk-promote discovered assets to managed assets |
 
 ## Dashboard Pages
 
