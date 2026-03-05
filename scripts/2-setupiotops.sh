@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# deploy-oee-assets.sh — Deploy OEE MQTT connector device and dataflow to AIO
+# 2-setupiotops.sh — Deploy OEE MQTT connector device and dataflow to AIO
 #
 # Creates: A Device with MQTT inbound endpoint (the connector auto-discovers
 #          topics and creates DiscoveredAssets), and an optional dataflow to
@@ -16,25 +16,17 @@
 #     published and with Entra ID authentication available.
 #
 # Usage:
-#   1. Edit deploy-oee-config.sh with your values (instance, resource group, etc.)
-#   2. bash deploy-oee-assets.sh
-#
-#   Or pass values as CLI args (overrides config file):
-#   bash deploy-oee-assets.sh --instance <name> --resource-group <rg>
-#   bash deploy-oee-assets.sh --instance <name> --resource-group <rg> \
+#   bash 2-setupiotops.sh --instance <name> --resource-group <rg>
+#   bash 2-setupiotops.sh --instance <name> --resource-group <rg> \
 #     --workspace-name <fabric-workspace> \
-#     --eventhub-namespace <host:port> --eventhub-name <es_xxx>
+#     --eventhub-namespace <host> --eventhub-name <es_xxx>
 #
 # Without --workspace-name, only the device is created (no dataflow).
 # You can add the dataflow later via the Operations Experience UI.
 # =============================================================================
 set -euo pipefail
 
-# ── Load configuration ────────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONFIG_FILE="${SCRIPT_DIR}/deploy-oee-config.sh"
-[[ -f "$CONFIG_FILE" ]] || { echo "ERROR: Config file not found: $CONFIG_FILE" >&2; exit 1; }
-source "$CONFIG_FILE"
 
 # ── Fixed defaults (not user-configurable) ─────────────────────────────────────
 DEVICE_NAME="oee-mqtt-device"
@@ -44,12 +36,12 @@ TOPIC_FILTER="oee/+/+"
 ASSET_LEVEL=3
 TOPIC_MAPPING_PREFIX="unified"
 
-# Allow CLI args to override config file values
-INSTANCE="${INSTANCE:-}"
-RESOURCE_GROUP="${RESOURCE_GROUP:-}"
-WORKSPACE_NAME="${WORKSPACE_NAME:-}"
-EVENTHUB_NAMESPACE="${EVENTHUB_NAMESPACE:-}"
-EVENTHUB_NAME="${EVENTHUB_NAME:-}"
+# ── User-configurable (via CLI args) ──────────────────────────────────────────
+INSTANCE=""
+RESOURCE_GROUP=""
+WORKSPACE_NAME=""
+EVENTHUB_NAMESPACE=""
+EVENTHUB_NAME=""
 
 # ── Colours ───────────────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then
@@ -135,11 +127,11 @@ warn "Waiting 90 seconds for the connector to discover topics..."
 sleep 90
 
 # Promote discovered assets using the companion script
-PROMOTE_SCRIPT="${SCRIPT_DIR}/promote-discovered-assets.sh"
+PROMOTE_SCRIPT="${SCRIPT_DIR}/3-setup-iotops-assets.sh"
 if [[ -f "$PROMOTE_SCRIPT" ]]; then
   bash "$PROMOTE_SCRIPT" --instance "$INSTANCE" --resource-group "$RESOURCE_GROUP"
 else
-  warn "promote-discovered-assets.sh not found — promote assets manually in https://iotoperations.azure.com"
+  warn "3-setup-iotops-assets.sh not found — promote assets manually in https://iotoperations.azure.com"
 fi
 
 # ── Dataflow via Entra ID (optional) ─────────────────────────────────────────
@@ -250,7 +242,7 @@ if [[ -n "$WORKSPACE_NAME" ]]; then
   ok "Dataflow endpoint 'fabric-rti-endpoint' created (Entra ID auth)"
 
   # ── Create dataflow ─────────────────────────────────────────────────────────
-  step "Creating dataflow: unified/oee/# → Fabric"
+  step "Creating dataflow: unified/oee/# + oee/+/parts + oee/+/maintenance → Fabric"
 
   DATAFLOW_CONFIG=$(mktemp)
   cat > "$DATAFLOW_CONFIG" <<DFJSON
@@ -261,7 +253,7 @@ if [[ -n "$WORKSPACE_NAME" ]]; then
       "operationType": "Source",
       "sourceSettings": {
         "endpointRef": "default",
-        "dataSources": ["unified/oee/#"]
+        "dataSources": ["unified/oee/#", "oee/+/parts", "oee/+/maintenance"]
       }
     },
     {

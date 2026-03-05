@@ -1,14 +1,47 @@
 #!/usr/bin/env bash
 # =============================================================================
-# completed_tutorial_build.sh — End-to-end Fabric OEE demo provisioner
+# 1-setup-fabric.sh — End-to-end Fabric OEE demo provisioner
 #
-# Provisions: Eventhouse  →  KQL Database (3 tables + ref data + mat-view)
-#             Eventstream (3 SQL query operators routed to KQL)
-#             Real-Time Dashboard (import from template)
+# Automates the full Fabric-side setup described in FABRIC_OEE_TUTORIAL.md.
+# A single command replaces manual Steps 1–6 of the tutorial.
 #
-# Requires: az (Azure CLI 2.x), base64, sed (jq auto-installed if missing)
-# Usage:    bash completed_tutorial_build.sh --workspace-name <NAME>
-#           bash completed_tutorial_build.sh --workspace-name <NAME> --use-device-code
+# What it creates:
+#   Step 1 — Eventhouse (ManufacturingEH)
+#   Step 2 — KQL Database with:
+#              • 3 event tables: MachineEvents, PartEvents, MaintenanceEvents
+#              • JSON ingestion mappings for each table
+#              • 3 reference tables: LineMaster, StationMaster, ProductionSchedule
+#              • OEE_5min materialized view (5-minute OEE aggregation)
+#   Step 3 — Eventstream (manufacturing-telemetry) with:
+#              • Custom endpoint source (oee-simulator)
+#              • 3 SQL Query routing operators (filter by event_type)
+#              • 3 Eventhouse destinations (one per table)
+#   Step 4 — Dashboard JSON generated from dashboard/oee-dashboard.template.json
+#   Step 5 — Real-Time Dashboard imported (OEE Manufacturing Dashboard)
+#   Step 6 — Simulator configuration (simulator.yaml from sample)
+#
+# The script is idempotent — re-running it skips resources that already exist.
+#
+# Prerequisites:
+#   - Azure CLI (az) 2.x with an active login (run 'az login' first)
+#   - base64, sed (standard on Linux/macOS/WSL)
+#   - jq (auto-installed via apt if missing)
+#   - A Fabric workspace (not "My workspace") with Real-Time Intelligence enabled
+#   - Tenant admin has enabled "Service principals can call Fabric public APIs"
+#
+# Usage:
+#   bash 1-setup-fabric.sh --workspace-name <NAME>
+#   bash 1-setup-fabric.sh --workspace-name <NAME> --use-device-code
+#
+# Arguments:
+#   --workspace-name <NAME>   (required) Fabric workspace display name
+#   --use-device-code         Use device-code auth flow (for headless/SSH sessions)
+#
+# After completion:
+#   1. Verify the Eventstream is running in the Fabric UI (it may need a manual
+#      Publish click to activate)
+#   2. Configure and start the simulator (see Step 6 output)
+#   3. Optionally set up Activator alerts (Step 7 of the tutorial)
 # =============================================================================
 set -euo pipefail
 
@@ -634,8 +667,8 @@ fi
 # ── Step 4: Generate dashboard ────────────────────────────────────────────────
 step "Step 4 — Generating oee-dashboard.json"
 REPO_ROOT="${SCRIPT_DIR}/.."
-DASH_OUT="${REPO_ROOT}/oee-dashboard.json"
-DASH_TEMPLATE="${REPO_ROOT}/oee-dashboard.template.json"
+DASH_OUT="${REPO_ROOT}/dashboard/oee-dashboard.json"
+DASH_TEMPLATE="${REPO_ROOT}/dashboard/oee-dashboard.template.json"
 
 if [[ -f "$DASH_TEMPLATE" ]]; then
   sed -e "s|__CLUSTER_URI__|${CLUSTER_URI}|g" \

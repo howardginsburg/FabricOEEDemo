@@ -1074,7 +1074,7 @@ print Metric = "Parts Produced", Value = total_p
 There are two ways to create the dashboard:
 
 - **Option A — Build it manually** by adding each tile. Best for learning.
-- **Option B — Import the pre-built template** from `oee-dashboard.template.json`.
+- **Option B — Import the pre-built template** from `dashboard/oee-dashboard.template.json`.
 
 ### Option A — Manual Dashboard Build
 
@@ -1158,14 +1158,14 @@ Set the dashboard auto-refresh to **30 seconds** via **Dashboard settings → Au
 
 1. Copy the template to create your dashboard file:
    ```bash
-   cp oee-dashboard.template.json oee-dashboard.json
+   cp dashboard/oee-dashboard.template.json dashboard/oee-dashboard.json
    ```
 
-2. Replace the placeholders in `oee-dashboard.json`:
+2. Replace the placeholders in `dashboard/oee-dashboard.json`:
    - `__CLUSTER_URI__` — the Eventhouse Query URI (found on the Eventhouse overview page)
    - `__DATABASE_ID__` — the KQL Database ID (found on the database overview page under Properties)
 
-3. In the Fabric workspace: **+ New item → Import from file → Real-Time Dashboard** → upload `oee-dashboard.json`.
+3. In the Fabric workspace: **+ New item → Import from file → Real-Time Dashboard** → upload `dashboard/oee-dashboard.json`.
 
 ---
 
@@ -1184,9 +1184,9 @@ Set the dashboard auto-refresh to **30 seconds** via **Dashboard settings → Au
 Instead of following the manual steps, you can run the automated provisioner script:
 
 ```bash
-bash scripts/completed_tutorial_build.sh --workspace-name "My Workspace"
+bash scripts/1-setup-fabric.sh --workspace-name "My Workspace"
 # -- or with device code auth --
-bash scripts/completed_tutorial_build.sh --workspace-name "My Workspace" --use-device-code
+bash scripts/1-setup-fabric.sh --workspace-name "My Workspace" --use-device-code
 ```
 
 This script creates the Eventhouse, KQL Database, tables, reference data, materialized view, Eventstream with routing, and imports the dashboard — all via the Fabric REST API.

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# promote-discovered-assets.sh — Bulk-promote discovered assets to Assets
+# 3-setup-iotops-assets.sh — Bulk-promote discovered assets to Assets
 #
 # Reads DiscoveredAssets via the ARM REST API and creates corresponding Asset
 # resources. This is the scripted equivalent of clicking "Import" for each
@@ -14,28 +14,19 @@
 #   - Discovered assets already exist (run the simulator + MQTT connector first)
 #
 # Usage:
-#   1. Edit deploy-oee-config.sh with your values
-#   2. bash promote-discovered-assets.sh
-#
-#   Or pass values as CLI args:
-#   bash promote-discovered-assets.sh \
+#   bash 3-setup-iotops-assets.sh \
 #     --instance <aio-instance> --resource-group <rg>
 # =============================================================================
 set -euo pipefail
 
-# ── Load configuration ────────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONFIG_FILE="${SCRIPT_DIR}/deploy-oee-config.sh"
-if [[ -f "$CONFIG_FILE" ]]; then
-  source "$CONFIG_FILE"
-fi
 
-INSTANCE="${INSTANCE:-}"
-RESOURCE_GROUP="${RESOURCE_GROUP:-}"
+INSTANCE=""
+RESOURCE_GROUP=""
 API_VERSION="2025-10-01"
 
-# OEE asset filter: matches station, parts, and maintenance discovered assets
-FILTER_PATTERN="^(line-|parts-|maintenance-)"
+# OEE asset filter: matches only station discovered assets
+FILTER_PATTERN="^line-.*-station-"
 
 # ── Colours ───────────────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then

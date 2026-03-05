@@ -1,5 +1,5 @@
 # Generated dashboard (has user-specific cluster URI / database ID)
-oee-dashboard.json
+dashboard/oee-dashboard.json
 
 # Simulator runtime config (contains connection strings)
 simulator/FabricOEESimulator/simulator.yaml
