@@ -1179,6 +1179,98 @@ Set the dashboard auto-refresh to **30 seconds** via **Dashboard settings → Au
 
 ---
 
+## Step 8 — Create the Ontology for Data Agent Queries (Optional)
+
+Create a Fabric Ontology to enable natural language querying via Data Agent (Copilot). The ontology defines the semantic relationships between production lines, stations, and events.
+
+### 8.1 — Enable OneLake Availability on KQL Database
+
+**Critical prerequisite**: Ontologies require OneLake availability to index KQL tables into the knowledge graph.
+
+1. Open the **ManufacturingEH** KQL Database in the Fabric portal.
+2. Navigate to **Settings → Database details → OneLake availability**.
+3. Enable **OneLake folder** and click **Done**.
+4. Wait 2-3 minutes for the setting to propagate.
+
+### 8.2 — Upload Ontology CSV Files
+
+1. Open the **ManufacturingLH** lakehouse in the Fabric portal.
+2. Navigate to **Files** and create a folder named `ontology`.
+3. Upload the following CSV files from the `ontology/` directory in this repo:
+   - `definition/entity_types.csv` (6 entity types, 48 properties)
+   - `definition/relationship_types.csv` (8 relationships)
+   - `binding/binding_entity_types.csv` (51 bindings: 27 static + 24 timeseries)
+   - `binding/binding_relationship_types.csv` (8 relationship bindings)
+
+4. Download the latest `fabriciq_ontology_accelerator` wheel from the [FabricIQ Accelerator releases](https://github.com/microsoft/fabriciq-accelerator/releases) and upload it to the `Files/ontology/` folder.
+
+### 8.3 — Run the Ontology Creation Notebook
+
+1. Open the `notebooks/create_ontology.ipynb` notebook in VS Code (requires Fabric extension) or upload it to the Fabric workspace.
+2. Attach the notebook to the **ManufacturingLH** lakehouse.
+3. Run all cells sequentially:
+   - **Step 1**: Installs the Fabric IQ Ontology Accelerator
+   - **Step 2**: Gets workspace context (Eventhouse ID, Lakehouse ID, cluster URI)
+   - **Step 3**: Verifies CSV files exist
+   - **Step 3b**: Validates CSV internal consistency (catches 5 common failure modes)
+   - **Step 4**: Creates the `.iq` package (ZIP file)
+   - **Step 5**: Generates ontology definition with binding substitutions
+   - **Step 6**: Creates the ontology via Fabric REST API
+   - **Step 7**: Verifies the GraphModel provisions successfully
+   - **Step 7b**: Diagnoses type mismatches if the graph is empty
+
+### 8.4 — Ontology Architecture
+
+| Entity Type | Properties | Description | Binding Strategy |
+|-------------|-----------|-------------|------------------|
+| **ProductionLine** | line_id (ID), line_name, purpose, station_count | Factory floor lines | Static (lakehouse) |
+| **Station** | line_id + station_position (composite ID), machine_type, ideal_cycle_time, manufacturer, install_year, buffer_capacity | Individual machines | Static (lakehouse) |
+| **ProductionSchedule** | line_id + shift (composite ID), planned_parts | Shift-level targets | Static (lakehouse) |
+| **MachineEvent** | device_id (ID), timestamp, event_type, machine_status, idle_reason, actual_cycle_time, buffer counts, parts processed | Machine telemetry | Hybrid (identifiers via lakehouse, telemetry via KQL) |
+| **PartEvent** | part_id (ID), timestamp, event_type, action, cycle_time, quality_pass | Part lifecycle | Hybrid (identifiers via lakehouse, telemetry via KQL) |
+| **MaintenanceEvent** | work_order_id (ID), timestamp, event_type, device_id, issue_type, action, technician_id | Work order lifecycle | Hybrid (identifiers via lakehouse, telemetry via KQL) |
+
+**Relationships** (8):
+- Station → ProductionLine (via line_id FK)
+- ProductionSchedule → ProductionLine (via line_id FK)
+- MachineEvent → ProductionLine (via line_id FK)
+- MachineEvent → Station (via line_id + station_position composite FK)
+- PartEvent → ProductionLine (via line_id FK)
+- PartEvent → Station (via line_id + station_position composite FK)
+- MaintenanceEvent → ProductionLine (via line_id FK)
+- MaintenanceEvent → Station (via line_id + station_position composite FK)
+
+### 8.5 — Key Design Decisions
+
+**Why OEEMetric is excluded:**
+- OEE_5min is a KQL **materialized view** (not a base table)
+- Materialized views **don't replicate to OneLake** → can't be accessed via lakehouse `dbo` schema
+- NonTimeSeries bindings require lakehouse table access → OEEMetric would fail silently
+- Solution: Query OEE data directly via KQL (TimeSeries) or create a separate Delta table copy
+
+**Hybrid binding strategy:**
+- **NonTimeSeries bindings** (graph indexing): Static properties (identifiers, FK columns, display names) → lakehouse tables via OneLake availability
+- **TimeSeries bindings** (real-time lookup): Telemetry properties (timestamp, metrics, status) → KQL tables directly
+- Identifiers appear in **both** binding types to enable graph joins AND time-series queries
+
+**Validation approach:**
+- The notebook includes a validation cell (Step 3b) that checks CSV consistency **before** deployment
+- The diagnostic cell (Step 7b) compares declared CSV types against actual table schemas to catch silent failures caused by type mismatches
+- Based on lessons from FabricOracleHFMDemo: Fabric silently drops entities when PropertyDataType doesn't match the actual Spark/Delta column type
+
+### 8.6 — Query the Ontology with Data Agent
+
+Once the ontology is created, connect a Data Agent to ask natural language questions:
+
+**Example queries:**
+- "What is the current status of all stations on Line-A?"
+- "Which stations have the highest fault rates this week?"
+- "Show maintenance events for Line-C station 2 in the last 24 hours"
+- "List all production lines with their station counts"
+- "What parts were processed by Line-B today?"
+
+---
+
 ## Automated Setup (Alternative to Steps 1–6)
 
 Instead of following the manual steps, you can run the automated provisioner script:
@@ -1208,3 +1300,7 @@ This script creates the Eventhouse, KQL Database, tables, reference data, materi
 | 0 parts produced in short runs | Lines take 50–250 seconds of wall clock before the first part exits |
 | Activator not firing | Verify Eventstream destination for Activator is published; check rule condition |
 | Dashboard tiles show "No data" | Extend the time range — if the simulator just started, use `ago(5m)` |
+| **Ontology:** Graph shows 0 nodes/edges | Run diagnostic cell (Step 7b) to check for type mismatches between CSV declarations and actual table schemas; verify OneLake availability is enabled on the KQL Database |
+| **Ontology:** `OEE_5min` table not found | Materialized views don't replicate to OneLake — either exclude OEEMetric entity or create a Delta table copy |
+| **Ontology:** NonTimeSeries mapping error | Check that all NonTimeSeries bindings reference properties with `IsTimeseries=FALSE` in entity_types.csv |
+| **Ontology:** Relationship binding fails | Verify `TargetKeyColumnNames` exist as properties in the SOURCE entity (not the target) |

@@ -1,0 +1,9 @@
+RelationshipName,SourceEntityTypeName,TargetEntityTypeName,SourceKeyColumnNames,TargetKeyColumnNames,SourceTableName,WorkspaceId,ItemId,SourceSchema
+Station_BelongsTo_ProductionLine,Station,ProductionLine,line_id;station_position,line_id,StationMaster,{WORKSPACE_ID},{LAKEHOUSE_ID},
+ProductionSchedule_For_ProductionLine,ProductionSchedule,ProductionLine,line_id;shift,line_id,ProductionSchedule,{WORKSPACE_ID},{LAKEHOUSE_ID},
+MachineEvent_OccursOn_ProductionLine,MachineEvent,ProductionLine,device_id,line_id,MachineEvents,{WORKSPACE_ID},{LAKEHOUSE_ID},
+MachineEvent_RunsAt_Station,MachineEvent,Station,device_id,line_id;station_position,MachineEvents,{WORKSPACE_ID},{LAKEHOUSE_ID},
+PartEvent_OccursOn_ProductionLine,PartEvent,ProductionLine,part_id,line_id,PartEvents,{WORKSPACE_ID},{LAKEHOUSE_ID},
+PartEvent_ProcessedAt_Station,PartEvent,Station,part_id,line_id;station_position,PartEvents,{WORKSPACE_ID},{LAKEHOUSE_ID},
+MaintenanceEvent_OccursOn_ProductionLine,MaintenanceEvent,ProductionLine,work_order_id,line_id,MaintenanceEvents,{WORKSPACE_ID},{LAKEHOUSE_ID},
+MaintenanceEvent_ServicesAt_Station,MaintenanceEvent,Station,work_order_id,line_id;station_position,MaintenanceEvents,{WORKSPACE_ID},{LAKEHOUSE_ID},

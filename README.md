@@ -13,6 +13,8 @@ This demo models **true production-line OEE** — parts flow sequentially throug
 
 **OEE = Availability × Performance × Quality**
 
+**NEW**: Includes a Fabric Ontology (6 entity types, 8 relationships) enabling natural language queries via Data Agent. Query production lines, stations, machine events, part history, and maintenance work orders using conversational language.
+
 ![OEE Dashboard](dashboard.png)
 
 ## Architecture
@@ -162,6 +164,8 @@ This demo models **true production-line OEE** — parts flow sequentially throug
    bash scripts/1-setup-fabric.sh --workspace-name "My Workspace"
    ```
 
+   **Optional — Create Ontology (Step 8):** Enable natural language querying with Data Agent by running the `notebooks/create_ontology.ipynb` notebook. Download the `fabriciq_ontology_accelerator` wheel from the [FabricIQ Accelerator releases](https://github.com/microsoft/fabriciq-accelerator/releases), upload it to your lakehouse, then follow Step 8 in the tutorial.
+
 3. Add Azure IoT Operations (optional):**
 
    If routing telemetry through an AIO MQTT broker instead of connecting directly to Fabric, deploy the MQTT connector device and dataflow:
@@ -226,7 +230,7 @@ This demo models **true production-line OEE** — parts flow sequentially throug
 
 | Path | Description |
 |------|-------------|
-| `FABRIC_OEE_TUTORIAL.md` | Step-by-step tutorial — direct to Fabric Eventstream (7 steps) |
+| `FABRIC_OEE_TUTORIAL.md` | Step-by-step tutorial — direct to Fabric Eventstream (8 steps) |
 | `AIO_OEE_TUTORIAL.md` | Step-by-step tutorial — via Azure IoT Operations MQTT broker |
 | `scripts/1-setup-fabric.sh` | Automated Fabric provisioner script |
 | `scripts/2-setup-iotops.sh` | Script to deploy OEE assets and dataflow to AIO via az CLI |
@@ -236,3 +240,6 @@ This demo models **true production-line OEE** — parts flow sequentially throug
 | `simulator/FabricOEESimulator/simulator.sample.yaml` | Sample configuration file |
 | `simulator/Dockerfile` | Docker build for the simulator |
 | `dashboard/oee-dashboard.template.json` | Importable 5-page Real-Time Dashboard template |
+| `ontology/` | Ontology CSV definitions for Data Agent (6 entities, 8 relationships) |
+| `notebooks/create_ontology.ipynb` | Notebook to deploy ontology with validation and diagnostics |
+| `docs/ONTOLOGY_LESSONS.md` | Lessons learned from ontology deployment (materialized views, type mismatches, validation) |

@@ -24,3 +24,6 @@ Desktop.ini
 
 # Logs
 *.log
+
+# Local ontology accelerator package
+/ontology/*.whl
