@@ -16,7 +16,6 @@ public sealed class Station
     private readonly TelemetryLog _telemetryLog;
     private readonly ILogger _logger;
     private readonly Random _random = new();
-    private volatile bool _forceFault;
     private readonly int _telemetryIntervalMs;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -60,9 +59,6 @@ public sealed class Station
         _logger = logger;
         _telemetryIntervalMs = telemetryIntervalSeconds * 1000;
     }
-
-    /// <summary>Force a fault on next processing cycle (called from UI thread).</summary>
-    public void InjectFault() => _forceFault = true;
 
     public async Task RunAsync(CancellationToken ct)
     {
@@ -112,8 +108,7 @@ public sealed class Station
 
             await Task.Delay(TimeSpan.FromSeconds(cycleTime), ct);
 
-            bool shouldFault = _forceFault || _random.NextDouble() < _config.FaultProbability;
-            if (_forceFault) _forceFault = false;
+            bool shouldFault = _random.NextDouble() < _config.FaultProbability;
 
             if (shouldFault)
             {

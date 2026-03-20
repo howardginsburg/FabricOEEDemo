@@ -104,6 +104,15 @@ public sealed class StationViewModel : ViewModelBase
         private set => SetProperty(ref _isPulsing, value);
     }
 
+    private bool _isTransferring;
+    public bool IsTransferring
+    {
+        get => _isTransferring;
+        private set => SetProperty(ref _isTransferring, value);
+    }
+
+    private long _prevPartsForTransfer;
+
     public void Refresh()
     {
         var prevStatus = Status;
@@ -118,6 +127,19 @@ public sealed class StationViewModel : ViewModelBase
 
         HasPartInProcess = CurrentPartId is not null && Status == MachineStatus.Running;
         IsPulsing = Status is MachineStatus.Fault or MachineStatus.Maintenance;
+
+        // Detect part transfer: parts processed increased → a part just left this station
+        if (TotalPartsProcessed > _prevPartsForTransfer && _prevPartsForTransfer > 0)
+        {
+            // Toggle false then true so WPF sees a fresh False→True transition every time
+            IsTransferring = false;
+            IsTransferring = true;
+        }
+        else if (IsTransferring)
+        {
+            IsTransferring = false;
+        }
+        _prevPartsForTransfer = TotalPartsProcessed;
 
         // Record status history
         StatusHistory.Add(new StatusHistoryEntry(DateTime.UtcNow, Status));
@@ -135,12 +157,6 @@ public sealed class StationViewModel : ViewModelBase
             while (ThroughputHistory.Count > MaxThroughputHistory)
                 ThroughputHistory.RemoveAt(0);
         }
-    }
-
-    /// <summary>Inject a fault into this station for demo purposes.</summary>
-    public void ForceInjectFault()
-    {
-        _station.InjectFault();
     }
 }
 

@@ -32,12 +32,4 @@ public partial class FactoryFloorControl : UserControl
             SelectedStation = station;
         }
     }
-
-    private void InjectFault_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is MenuItem mi && mi.Tag is StationViewModel station)
-        {
-            station.ForceInjectFault();
-        }
-    }
 }
