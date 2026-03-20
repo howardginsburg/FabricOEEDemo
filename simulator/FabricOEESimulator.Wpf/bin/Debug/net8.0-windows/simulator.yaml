@@ -1,0 +1,359 @@
+simulator:
+  telemetryIntervalSeconds: 10
+
+  broker:
+    # type: Console
+    # For EventHub:
+    # type: EventHub
+    # connection: ""
+    # hub: ""                # omit if EntityPath is in the connection string
+    #
+    # For MQTT:
+    type: Mqtt
+    host: iotopsdemo.eastus2.cloudapp.azure.com
+    port: 1883
+    topic: "oee/{lineId}/{deviceId}"
+    username: "iotops"
+    password: "garbage"
+
+  maintenance:
+    acknowledgeDelayMinSeconds: 30
+    acknowledgeDelayMaxSeconds: 120
+    inProgressDelayMinSeconds: 60
+    inProgressDelayMaxSeconds: 300
+    resolveDelayMinSeconds: 120
+    resolveDelayMaxSeconds: 600
+    technicians: [T001, T002, T003, T004, T005, T006, T007, T008]
+
+  # ---------------------------------------------------------------------------
+  # Production Lines
+  #
+  # Each line represents an ordered sequence of stations that parts flow through.
+  # Parts enter at station 1, pass through each station in order, and exit at
+  # the last station. Bounded buffers between stations create realistic
+  # starvation (upstream fault) and blocking (downstream full) cascades.
+  #
+  # Per-station parameters:
+  #   idealCycleTimeSeconds  — best-case processing time (used for OEE Performance calc)
+  #   maxCycleTimeSeconds    — worst-case processing time (actual is random between ideal and max)
+  #   faultProbability       — chance of fault per completed cycle (0.0 to 1.0)
+  #   rejectProbability      — chance of quality reject per part (0.0 to 1.0)
+  #   bufferCapacity         — max parts in the input buffer before upstream blocks
+  #   faultTypes             — possible fault categories (random pick on fault)
+  # ---------------------------------------------------------------------------
+  lines:
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # LINE-A: Precision Machining
+    # Raw bar stock → precision-machined automotive shaft
+    # 5 stations, bottleneck at CMM-Inspection (60s cycle)
+    # ═══════════════════════════════════════════════════════════════════════════
+    - id: Line-A
+      name: Precision Machining
+      purpose: Raw bar stock to precision-machined automotive shaft
+      stations:
+        - position: 1
+          machineType: CNC-Lathe
+          idealCycleTimeSeconds: 40
+          maxCycleTimeSeconds: 48
+          faultProbability: 0.005
+          rejectProbability: 0.02
+          bufferCapacity: 5
+          faultTypes: [Chuck-Jam, Bearing-Wear, Tool-Break]
+
+        - position: 2
+          machineType: CNC-Mill
+          idealCycleTimeSeconds: 45
+          maxCycleTimeSeconds: 54
+          faultProbability: 0.008
+          rejectProbability: 0.03
+          bufferCapacity: 5
+          faultTypes: [Spindle-Vibration, Coolant-Leak, Tool-Wear]
+
+        - position: 3
+          machineType: Surface-Grinder
+          idealCycleTimeSeconds: 35
+          maxCycleTimeSeconds: 42
+          faultProbability: 0.003
+          rejectProbability: 0.02
+          bufferCapacity: 5
+          faultTypes: [Wheel-Wear, Coolant-Clog, Alignment-Drift]
+
+        - position: 4
+          machineType: Deburring-Station
+          idealCycleTimeSeconds: 15
+          maxCycleTimeSeconds: 20
+          faultProbability: 0.002
+          rejectProbability: 0.01
+          bufferCapacity: 5
+          faultTypes: [Brush-Wear, Motor-Overheat, Jam]
+
+        - position: 5
+          machineType: CMM-Inspection
+          idealCycleTimeSeconds: 60
+          maxCycleTimeSeconds: 72
+          faultProbability: 0.004
+          rejectProbability: 0.05
+          bufferCapacity: 5
+          faultTypes: [Probe-Calibration, Air-Supply, Sensor-Fail]
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # LINE-B: Sheet Metal Forming
+    # Sheet metal → stamped/formed housing
+    # 4 stations, fast cycle, Hydraulic-Press is the weak link (1.5% fault rate)
+    # ═══════════════════════════════════════════════════════════════════════════
+    - id: Line-B
+      name: Sheet Metal Forming
+      purpose: Sheet metal to stamped and formed housing
+      stations:
+        - position: 1
+          machineType: Blanking-Press
+          idealCycleTimeSeconds: 8
+          maxCycleTimeSeconds: 11
+          faultProbability: 0.006
+          rejectProbability: 0.02
+          bufferCapacity: 5
+          faultTypes: [Die-Wear, Alignment-Fault, Feed-Jam]
+
+        - position: 2
+          machineType: Hydraulic-Press
+          idealCycleTimeSeconds: 12
+          maxCycleTimeSeconds: 18
+          faultProbability: 0.015
+          rejectProbability: 0.04
+          bufferCapacity: 5
+          faultTypes: [Pressure-Loss, Seal-Failure, Valve-Fault]
+
+        - position: 3
+          machineType: Trimming-Station
+          idealCycleTimeSeconds: 10
+          maxCycleTimeSeconds: 14
+          faultProbability: 0.004
+          rejectProbability: 0.02
+          bufferCapacity: 5
+          faultTypes: [Blade-Dull, Guard-Trip, Alignment-Shift]
+
+        - position: 4
+          machineType: Quality-Inspection
+          idealCycleTimeSeconds: 20
+          maxCycleTimeSeconds: 26
+          faultProbability: 0.002
+          rejectProbability: 0.03
+          bufferCapacity: 5
+          faultTypes: [Camera-Fault, Sensor-Drift, Light-Failure]
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # LINE-C: Welding & Assembly
+    # Components → welded and assembled subassembly
+    # 6 stations, diverse operations, Welding-Robot and Leak-Test are faultiest
+    # ═══════════════════════════════════════════════════════════════════════════
+    - id: Line-C
+      name: Welding and Assembly
+      purpose: Components to welded and assembled subassembly
+      stations:
+        - position: 1
+          machineType: Component-Loader
+          idealCycleTimeSeconds: 10
+          maxCycleTimeSeconds: 13
+          faultProbability: 0.001
+          rejectProbability: 0.0
+          bufferCapacity: 5
+          faultTypes: [Feed-Jam, Sensor-Block, Hopper-Empty]
+
+        - position: 2
+          machineType: Welding-Robot
+          idealCycleTimeSeconds: 25
+          maxCycleTimeSeconds: 32
+          faultProbability: 0.007
+          rejectProbability: 0.03
+          bufferCapacity: 5
+          faultTypes: [Wire-Feed-Jam, Tip-Wear, Gas-Flow-Low]
+
+        - position: 3
+          machineType: Weld-Inspection
+          idealCycleTimeSeconds: 30
+          maxCycleTimeSeconds: 38
+          faultProbability: 0.005
+          rejectProbability: 0.04
+          bufferCapacity: 5
+          faultTypes: [X-Ray-Tube-Fault, Calibration, Film-Jam]
+
+        - position: 4
+          machineType: Fastening-Station
+          idealCycleTimeSeconds: 15
+          maxCycleTimeSeconds: 19
+          faultProbability: 0.003
+          rejectProbability: 0.01
+          bufferCapacity: 5
+          faultTypes: [Torque-Drift, Bit-Break, Feeder-Jam]
+
+        - position: 5
+          machineType: Assembly-Robot
+          idealCycleTimeSeconds: 20
+          maxCycleTimeSeconds: 25
+          faultProbability: 0.004
+          rejectProbability: 0.02
+          bufferCapacity: 5
+          faultTypes: [Joint-Calibration, Gripper-Fail, Encoder-Fault]
+
+        - position: 6
+          machineType: Leak-Test
+          idealCycleTimeSeconds: 25
+          maxCycleTimeSeconds: 32
+          faultProbability: 0.006
+          rejectProbability: 0.03
+          bufferCapacity: 5
+          faultTypes: [Pressure-Sensor, Seal-Wear, Valve-Stuck]
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # LINE-D: Surface Treatment
+    # Raw part → painted and coated finished part
+    # 7 stations, long cycle Curing-Oven is the bottleneck (90s)
+    # ═══════════════════════════════════════════════════════════════════════════
+    - id: Line-D
+      name: Surface Treatment
+      purpose: Raw part to painted and coated finished part
+      stations:
+        - position: 1
+          machineType: Surface-Prep
+          idealCycleTimeSeconds: 20
+          maxCycleTimeSeconds: 26
+          faultProbability: 0.003
+          rejectProbability: 0.01
+          bufferCapacity: 5
+          faultTypes: [Abrasive-Wear, Motor-Fault, Dust-Overload]
+
+        - position: 2
+          machineType: Chemical-Wash
+          idealCycleTimeSeconds: 30
+          maxCycleTimeSeconds: 38
+          faultProbability: 0.004
+          rejectProbability: 0.01
+          bufferCapacity: 5
+          faultTypes: [Solution-Low, Pump-Fail, Temp-Drift]
+
+        - position: 3
+          machineType: Primer-Application
+          idealCycleTimeSeconds: 25
+          maxCycleTimeSeconds: 33
+          faultProbability: 0.005
+          rejectProbability: 0.03
+          bufferCapacity: 5
+          faultTypes: [Nozzle-Clog, Pressure-Drop, Viscosity-Off]
+
+        - position: 4
+          machineType: Paint-Booth
+          idealCycleTimeSeconds: 40
+          maxCycleTimeSeconds: 52
+          faultProbability: 0.008
+          rejectProbability: 0.04
+          bufferCapacity: 5
+          faultTypes: [Nozzle-Clog, Air-Filter-Saturated, Paint-Viscosity-Drift]
+
+        - position: 5
+          machineType: Curing-Oven
+          idealCycleTimeSeconds: 90
+          maxCycleTimeSeconds: 110
+          faultProbability: 0.006
+          rejectProbability: 0.02
+          bufferCapacity: 5
+          faultTypes: [Thermocouple-Drift, Door-Seal-Worn, Element-Burnout]
+
+        - position: 6
+          machineType: Coating-Inspection
+          idealCycleTimeSeconds: 15
+          maxCycleTimeSeconds: 20
+          faultProbability: 0.002
+          rejectProbability: 0.03
+          bufferCapacity: 5
+          faultTypes: [Camera-Fault, Light-Fail, Sensor-Drift]
+
+        - position: 7
+          machineType: Final-Packaging
+          idealCycleTimeSeconds: 10
+          maxCycleTimeSeconds: 14
+          faultProbability: 0.001
+          rejectProbability: 0.0
+          bufferCapacity: 5
+          faultTypes: [Conveyor-Jam, Seal-Bar-Temp, Film-Feed-Error]
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # LINE-E: Electronics Assembly
+    # Bare PCB → tested and coated electronics module
+    # 8 stations, longest line, Wave-Solder + SMT-Placement are faultiest
+    # ═══════════════════════════════════════════════════════════════════════════
+    - id: Line-E
+      name: Electronics Assembly
+      purpose: Bare PCB to tested and coated electronics module
+      stations:
+        - position: 1
+          machineType: PCB-Loader
+          idealCycleTimeSeconds: 5
+          maxCycleTimeSeconds: 7
+          faultProbability: 0.001
+          rejectProbability: 0.0
+          bufferCapacity: 5
+          faultTypes: [Feed-Jam, Magazine-Empty, Sensor-Block]
+
+        - position: 2
+          machineType: SMT-Placement
+          idealCycleTimeSeconds: 15
+          maxCycleTimeSeconds: 20
+          faultProbability: 0.006
+          rejectProbability: 0.03
+          bufferCapacity: 5
+          faultTypes: [Nozzle-Clog, Feeder-Jam, Vision-Fail]
+
+        - position: 3
+          machineType: Reflow-Oven
+          idealCycleTimeSeconds: 45
+          maxCycleTimeSeconds: 55
+          faultProbability: 0.004
+          rejectProbability: 0.02
+          bufferCapacity: 5
+          faultTypes: [Temp-Drift, Conveyor-Slip, Element-Fail]
+
+        - position: 4
+          machineType: AOI-Inspection
+          idealCycleTimeSeconds: 10
+          maxCycleTimeSeconds: 14
+          faultProbability: 0.003
+          rejectProbability: 0.04
+          bufferCapacity: 5
+          faultTypes: [Camera-Fault, Light-Fail, Calibration-Drift]
+
+        - position: 5
+          machineType: Through-Hole-Insert
+          idealCycleTimeSeconds: 20
+          maxCycleTimeSeconds: 26
+          faultProbability: 0.005
+          rejectProbability: 0.02
+          bufferCapacity: 5
+          faultTypes: [Lead-Bend, Insertion-Miss, Clinch-Fail]
+
+        - position: 6
+          machineType: Wave-Solder
+          idealCycleTimeSeconds: 35
+          maxCycleTimeSeconds: 44
+          faultProbability: 0.007
+          rejectProbability: 0.03
+          bufferCapacity: 5
+          faultTypes: [Solder-Temp-Drift, Flux-Low, Conveyor-Speed-Fault]
+
+        - position: 7
+          machineType: Functional-Test
+          idealCycleTimeSeconds: 30
+          maxCycleTimeSeconds: 38
+          faultProbability: 0.003
+          rejectProbability: 0.05
+          bufferCapacity: 5
+          faultTypes: [Fixture-Fault, Probe-Wear, Power-Supply-Fail]
+
+        - position: 8
+          machineType: Conformal-Coat
+          idealCycleTimeSeconds: 25
+          maxCycleTimeSeconds: 32
+          faultProbability: 0.004
+          rejectProbability: 0.02
+          bufferCapacity: 5
+          faultTypes: [Nozzle-Clog, Viscosity-Off, UV-Lamp-Fail]

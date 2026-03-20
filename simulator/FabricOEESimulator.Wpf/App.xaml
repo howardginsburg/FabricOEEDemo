@@ -1,0 +1,21 @@
+<Application x:Class="FabricOEESimulator.Wpf.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:converters="clr-namespace:FabricOEESimulator.Wpf.Converters"
+             ShutdownMode="OnMainWindowClose">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Themes/DarkTheme.xaml"/>
+                <ResourceDictionary Source="Assets/MachineIcons.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+
+            <!-- Converters -->
+            <converters:StatusToColorConverter x:Key="StatusToColor"/>
+            <converters:StatusToTextConverter x:Key="StatusToText"/>
+            <converters:MachineTypeToIconConverter x:Key="MachineTypeToIcon"/>
+            <converters:BufferFillConverter x:Key="BufferFill"/>
+            <converters:BoolToVisibilityConverter x:Key="BoolToVisibility"/>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

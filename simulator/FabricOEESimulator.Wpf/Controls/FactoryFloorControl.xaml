@@ -1,0 +1,176 @@
+<UserControl x:Class="FabricOEESimulator.Wpf.Controls.FactoryFloorControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:FabricOEESimulator.Wpf.ViewModels">
+    <Grid>
+        <!-- No line selected placeholder -->
+        <TextBlock Text="Select a production line" FontSize="14"
+                   HorizontalAlignment="Center" VerticalAlignment="Center">
+            <TextBlock.Style>
+                <Style TargetType="TextBlock" BasedOn="{StaticResource CaptionText}">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding}" Value="{x:Null}">
+                            <Setter Property="Visibility" Value="Visible"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </TextBlock.Style>
+        </TextBlock>
+
+        <!-- Factory Floor Content -->
+        <DockPanel Visibility="{Binding LineName, FallbackValue=Collapsed, 
+                   Converter={StaticResource BoolToVisibility}}">
+
+            <!-- Line header -->
+            <Border DockPanel.Dock="Top" Padding="16,10"
+                    Background="{StaticResource SurfaceBrush}">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="{Binding LineName}" Style="{StaticResource HeaderText}"/>
+                    <TextBlock Text=" — " Style="{StaticResource CaptionText}" VerticalAlignment="Center" Margin="4,0"/>
+                    <TextBlock Text="{Binding Purpose}" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Station flow area -->
+            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
+                          Padding="20">
+                <ItemsControl ItemsSource="{Binding Stations}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center"/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type vm:StationViewModel}">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <!-- Station Card -->
+                                <Border x:Name="StationCard" Width="160" MinHeight="200"
+                                        CornerRadius="8" Padding="10"
+                                        Background="{StaticResource SurfaceBrush}"
+                                        BorderThickness="2" Cursor="Hand"
+                                        MouseLeftButtonDown="StationCard_MouseLeftButtonDown"
+                                        Tag="{Binding}">
+                                    <Border.BorderBrush>
+                                        <Binding Path="Status" Converter="{StaticResource StatusToColor}"/>
+                                    </Border.BorderBrush>
+                                    <StackPanel>
+                                        <!-- Status indicator bar -->
+                                        <Border Height="4" CornerRadius="2" Margin="0,0,0,8"
+                                                Background="{Binding Status, Converter={StaticResource StatusToColor}}"/>
+
+                                        <!-- Machine icon -->
+                                        <Image Width="48" Height="48" Margin="0,0,0,6"
+                                               Source="{Binding MachineType, Converter={StaticResource MachineTypeToIcon}}"
+                                               RenderOptions.BitmapScalingMode="HighQuality"/>
+
+                                        <!-- Machine type -->
+                                        <TextBlock Text="{Binding MachineType}" Style="{StaticResource BodyText}"
+                                                   TextAlignment="Center" FontWeight="Medium" TextWrapping="Wrap"/>
+
+                                        <!-- Device ID -->
+                                        <TextBlock Text="{Binding DeviceId}" Style="{StaticResource CaptionText}"
+                                                   TextAlignment="Center" Margin="0,2,0,6"/>
+
+                                        <!-- Status text -->
+                                        <Border CornerRadius="3" Padding="6,2" HorizontalAlignment="Center"
+                                                Background="{Binding Status, Converter={StaticResource StatusToColor}}"
+                                                Opacity="0.85">
+                                            <TextBlock Text="{Binding Status, Converter={StaticResource StatusToText}}"
+                                                       Foreground="White" FontSize="10" FontWeight="Bold"/>
+                                        </Border>
+
+                                        <!-- Buffer bars -->
+                                        <Grid Margin="0,8,0,0">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="8"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                            </Grid.RowDefinitions>
+
+                                            <TextBlock Grid.Row="0" Grid.Column="0" Text="IN" 
+                                                       Style="{StaticResource CaptionText}" FontSize="9" TextAlignment="Center"/>
+                                            <TextBlock Grid.Row="0" Grid.Column="2" Text="OUT"
+                                                       Style="{StaticResource CaptionText}" FontSize="9" TextAlignment="Center"/>
+
+                                            <!-- Input buffer bar -->
+                                            <Border Grid.Row="1" Grid.Column="0" Height="6" CornerRadius="3"
+                                                    Background="#33FFFFFF">
+                                                <Border CornerRadius="3" Background="#FF3498DB"
+                                                        HorizontalAlignment="Left"
+                                                        RenderTransformOrigin="0,0.5">
+                                                    <Border.RenderTransform>
+                                                        <ScaleTransform>
+                                                            <ScaleTransform.ScaleX>
+                                                                <MultiBinding Converter="{StaticResource BufferFill}">
+                                                                    <Binding Path="InputBufferCount"/>
+                                                                    <Binding Path="BufferCapacity"/>
+                                                                </MultiBinding>
+                                                            </ScaleTransform.ScaleX>
+                                                        </ScaleTransform>
+                                                    </Border.RenderTransform>
+                                                </Border>
+                                            </Border>
+
+                                            <!-- Output buffer bar -->
+                                            <Border Grid.Row="1" Grid.Column="2" Height="6" CornerRadius="3"
+                                                    Background="#33FFFFFF">
+                                                <Border CornerRadius="3" Background="#FF9B59B6"
+                                                        HorizontalAlignment="Left"
+                                                        RenderTransformOrigin="0,0.5">
+                                                    <Border.RenderTransform>
+                                                        <ScaleTransform>
+                                                            <ScaleTransform.ScaleX>
+                                                                <MultiBinding Converter="{StaticResource BufferFill}">
+                                                                    <Binding Path="OutputBufferCount"/>
+                                                                    <Binding Path="BufferCapacity"/>
+                                                                </MultiBinding>
+                                                            </ScaleTransform.ScaleX>
+                                                        </ScaleTransform>
+                                                    </Border.RenderTransform>
+                                                </Border>
+                                            </Border>
+                                        </Grid>
+
+                                        <!-- Parts processed -->
+                                        <TextBlock Margin="0,6,0,0" TextAlignment="Center" FontSize="10"
+                                                   Style="{StaticResource CaptionText}">
+                                            <Run Text="{Binding TotalPartsProcessed, StringFormat=N0, Mode=OneWay}"/>
+                                            <Run Text=" parts"/>
+                                        </TextBlock>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- Conveyor belt between stations -->
+                                <Canvas Width="60" Height="20" VerticalAlignment="Center">
+                                    <!-- Conveyor belt line -->
+                                    <Line X1="0" Y1="10" X2="60" Y2="10"
+                                          Stroke="{StaticResource ConveyorBrush}" StrokeThickness="4"
+                                          StrokeDashArray="3,2">
+                                        <Line.Triggers>
+                                            <EventTrigger RoutedEvent="Loaded">
+                                                <BeginStoryboard>
+                                                    <Storyboard RepeatBehavior="Forever">
+                                                        <DoubleAnimation
+                                                            Storyboard.TargetProperty="StrokeDashOffset"
+                                                            From="0" To="-10" Duration="0:0:1"/>
+                                                    </Storyboard>
+                                                </BeginStoryboard>
+                                            </EventTrigger>
+                                        </Line.Triggers>
+                                    </Line>
+                                    <!-- Arrow head -->
+                                    <Polygon Points="52,4 60,10 52,16" Fill="{StaticResource ConveyorBrush}"/>
+                                </Canvas>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </DockPanel>
+    </Grid>
+</UserControl>
