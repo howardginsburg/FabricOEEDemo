@@ -25,6 +25,22 @@
                            VerticalAlignment="Center" DockPanel.Dock="Left"/>
 
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right">
+                    <!-- Overview toggle -->
+                    <Button Command="{Binding ToggleOverviewCommand}" Margin="8,0" Padding="10,4"
+                            Background="{StaticResource PanelBrush}" Foreground="#FFE0E0E0"
+                            BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Cursor="Hand">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Setter Property="Content" Value="&#xE8A0; Overview"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsOverviewMode}" Value="True">
+                                        <Setter Property="Content" Value="&#xE72B; Single Line"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+
                     <Border Style="{StaticResource PanelBorder}" Margin="8,0" Padding="10,4"
                             Background="{StaticResource PanelBrush}">
                         <StackPanel Orientation="Horizontal">
@@ -66,6 +82,16 @@
             <!-- LEFT: Line Selector -->
             <Border Grid.Column="0" Background="{StaticResource SurfaceBrush}"
                     BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Visibility" Value="Visible"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsOverviewMode}" Value="True">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
                 <DockPanel>
                     <TextBlock Text="Production Lines" Style="{StaticResource SubHeaderText}"
                                Margin="12,10" DockPanel.Dock="Top"/>
@@ -107,14 +133,57 @@
                 </DockPanel>
             </Border>
 
-            <!-- CENTER: Factory Floor -->
-            <controls:FactoryFloorControl Grid.Column="1"
-                                          DataContext="{Binding SelectedLine}"
-                                          SelectedStation="{Binding DataContext.SelectedStation, RelativeSource={RelativeSource AncestorType=Window}}"/>
+            <!-- CENTER: Factory Floor (single line) or All Lines Overview -->
+            <Grid Grid.Column="1">
+                <!-- Single line view -->
+                <controls:FactoryFloorControl DataContext="{Binding SelectedLine}"
+                                              SelectedStation="{Binding DataContext.SelectedStation, RelativeSource={RelativeSource AncestorType=Window}}">
+                    <controls:FactoryFloorControl.Style>
+                        <Style TargetType="controls:FactoryFloorControl">
+                            <Setter Property="Visibility" Value="Visible"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding DataContext.IsOverviewMode, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </controls:FactoryFloorControl.Style>
+                </controls:FactoryFloorControl>
+
+                <!-- All-lines overview -->
+                <controls:AllLinesOverview DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
+                    <controls:AllLinesOverview.Style>
+                        <Style TargetType="controls:AllLinesOverview">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding DataContext.IsOverviewMode, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </controls:AllLinesOverview.Style>
+                </controls:AllLinesOverview>
+
+                <!-- Toast notification overlay (top right) -->
+                <controls:ToastOverlay DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}"
+                                       HorizontalAlignment="Right" VerticalAlignment="Top"
+                                       Width="300" Margin="0,8,12,0"
+                                       IsHitTestVisible="True"/>
+            </Grid>
 
             <!-- RIGHT: Details Panel -->
             <Border Grid.Column="2" Background="{StaticResource SurfaceBrush}"
                     BorderBrush="{StaticResource BorderBrush}" BorderThickness="1,0,0,0">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Visibility" Value="Visible"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsOverviewMode}" Value="True">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="12,10">
                         <!-- Selected Station Details -->

@@ -6,6 +6,8 @@ namespace FabricOEESimulator.Wpf.ViewModels;
 public sealed class ProductionLineViewModel : ViewModelBase
 {
     private readonly ProductionLine _line;
+    private long _prevPartsProduced;
+    private int _throughputTickCounter;
 
     public ProductionLineViewModel(ProductionLine line)
     {
@@ -42,6 +44,11 @@ public sealed class ProductionLineViewModel : ViewModelBase
         set => SetProperty(ref _isSelected, value);
     }
 
+    // Throughput history for sparkline (sampled every 5 ticks = 2.5s, keep 30 = 75s)
+    public ObservableCollection<double> ThroughputHistory { get; } = [];
+    private const int MaxThroughputHistory = 30;
+    private const int ThroughputSampleInterval = 5;
+
     public void Refresh()
     {
         PartsProduced = _line.PartsProduced;
@@ -53,5 +60,17 @@ public sealed class ProductionLineViewModel : ViewModelBase
                 faults++;
         }
         FaultCount = faults;
+
+        // Track throughput every N ticks
+        _throughputTickCounter++;
+        if (_throughputTickCounter >= ThroughputSampleInterval)
+        {
+            _throughputTickCounter = 0;
+            var delta = PartsProduced - _prevPartsProduced;
+            _prevPartsProduced = PartsProduced;
+            ThroughputHistory.Add(delta);
+            while (ThroughputHistory.Count > MaxThroughputHistory)
+                ThroughputHistory.RemoveAt(0);
+        }
     }
 }

@@ -2,19 +2,19 @@ simulator:
   telemetryIntervalSeconds: 10
 
   broker:
-    # type: Console
+    type: Console
     # For EventHub:
     # type: EventHub
     # connection: ""
     # hub: ""                # omit if EntityPath is in the connection string
     #
     # For MQTT:
-    type: Mqtt
-    host: iotopsdemo.eastus2.cloudapp.azure.com
-    port: 1883
-    topic: "oee/{lineId}/{deviceId}"
-    username: "iotops"
-    password: "garbage"
+    # type: Mqtt
+    # host: iotopsdemo.eastus2.cloudapp.azure.com
+    # port: 1883
+    # topic: "oee/{lineId}/{deviceId}"
+    # username: "iotops"
+    # password: "garbage"
 
   maintenance:
     acknowledgeDelayMinSeconds: 30

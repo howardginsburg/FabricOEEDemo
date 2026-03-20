@@ -84,3 +84,7 @@ C:\Users\hoginsbu\OneDrive - Microsoft\Prototypes\FabricOEEDemo\simulator\Fabric
 C:\Users\hoginsbu\OneDrive - Microsoft\Prototypes\FabricOEEDemo\simulator\FabricOEESimulator.Wpf\obj\Debug\net8.0-windows\FabricOEESimulator.Wpf.pdb
 C:\Users\hoginsbu\OneDrive - Microsoft\Prototypes\FabricOEEDemo\simulator\FabricOEESimulator.Wpf\obj\Debug\net8.0-windows\FabricOEESimulator.Wpf.genruntimeconfig.cache
 C:\Users\hoginsbu\OneDrive - Microsoft\Prototypes\FabricOEEDemo\simulator\FabricOEESimulator.Wpf\obj\Debug\net8.0-windows\ref\FabricOEESimulator.Wpf.dll
+C:\Users\hoginsbu\OneDrive - Microsoft\Prototypes\FabricOEEDemo\simulator\FabricOEESimulator.Wpf\obj\Debug\net8.0-windows\Controls\ToastOverlay.baml
+C:\Users\hoginsbu\OneDrive - Microsoft\Prototypes\FabricOEEDemo\simulator\FabricOEESimulator.Wpf\obj\Debug\net8.0-windows\Controls\AllLinesOverview.g.cs
+C:\Users\hoginsbu\OneDrive - Microsoft\Prototypes\FabricOEEDemo\simulator\FabricOEESimulator.Wpf\obj\Debug\net8.0-windows\Controls\ToastOverlay.g.cs
+C:\Users\hoginsbu\OneDrive - Microsoft\Prototypes\FabricOEEDemo\simulator\FabricOEESimulator.Wpf\obj\Debug\net8.0-windows\Controls\AllLinesOverview.baml
