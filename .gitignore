@@ -5,8 +5,8 @@ dashboard/oee-dashboard.json
 simulator/FabricOEESimulator/simulator.yaml
 
 # .NET build outputs
-simulator/FabricOEESimulator/bin/
-simulator/FabricOEESimulator/obj/
+simulator/**/bin/
+simulator/**/obj/
 
 # IDE / editor
 .vs/

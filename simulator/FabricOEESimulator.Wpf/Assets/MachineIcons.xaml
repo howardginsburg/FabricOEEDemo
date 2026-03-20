@@ -1,0 +1,993 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Line-A: Precision Machining -->
+    
+    <!-- CNC-Lathe: Chuck circle (left) with tool post approaching from right -->
+    <DrawingImage x:Key="CNC-Lathe">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#FFCCCCCC" Thickness="1.5"/>
+                    </GeometryDrawing.Pen>
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <!-- Chuck circle -->
+                            <EllipseGeometry Center="14,24" RadiusX="10" RadiusY="10"/>
+                            <!-- Chuck jaws (3 lines from center) -->
+                            <LineGeometry StartPoint="14,14" EndPoint="14,10"/>
+                            <LineGeometry StartPoint="5.34,29" EndPoint="2.34,32"/>
+                            <LineGeometry StartPoint="22.66,29" EndPoint="25.66,32"/>
+                            <!-- Bed/rail -->
+                            <LineGeometry StartPoint="24,24" EndPoint="44,24"/>
+                            <!-- Tool post (triangle) -->
+                            <PathGeometry Figures="M38,18 L44,24 L38,30 Z"/>
+                            <!-- Tailstock -->
+                            <RectangleGeometry Rect="40,20,4,8" RadiusX="1" RadiusY="1"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <!-- CNC-Mill: Vertical spindle head over table -->
+    <DrawingImage x:Key="CNC-Mill">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#FFCCCCCC" Thickness="1.5"/>
+                    </GeometryDrawing.Pen>
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <!-- Column -->
+                            <RectangleGeometry Rect="20,4,8,20"/>
+                            <!-- Spindle -->
+                            <LineGeometry StartPoint="24,24" EndPoint="24,30"/>
+                            <!-- Tool bit -->
+                            <PathGeometry Figures="M22,30 L24,36 L26,30"/>
+                            <!-- Table -->
+                            <RectangleGeometry Rect="8,38,32,4" RadiusX="1" RadiusY="1"/>
+                            <!-- Workpiece on table -->
+                            <RectangleGeometry Rect="16,34,16,4"/>
+                            <!-- Base -->
+                            <RectangleGeometry Rect="12,42,24,4" RadiusX="1" RadiusY="1"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <!-- Surface-Grinder: Grinding wheel over flat surface -->
+    <DrawingImage x:Key="Surface-Grinder">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#FFCCCCCC" Thickness="1.5"/>
+                    </GeometryDrawing.Pen>
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <!-- Grinding wheel -->
+                            <EllipseGeometry Center="24,16" RadiusX="8" RadiusY="8"/>
+                            <!-- Spindle/arbor -->
+                            <LineGeometry StartPoint="24,8" EndPoint="24,4"/>
+                            <!-- Spark lines -->
+                            <LineGeometry StartPoint="18,22" EndPoint="14,28"/>
+                            <LineGeometry StartPoint="16,24" EndPoint="10,26"/>
+                            <LineGeometry StartPoint="30,22" EndPoint="34,28"/>
+                            <!-- Table surface -->
+                            <RectangleGeometry Rect="6,32,36,4" RadiusX="1" RadiusY="1"/>
+                            <!-- Workpiece -->
+                            <RectangleGeometry Rect="12,28,24,4"/>
+                            <!-- Base -->
+                            <RectangleGeometry Rect="10,36,28,4" RadiusX="1" RadiusY="1"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <!-- Deburring-Station: Rotary brush with spark lines -->
+    <DrawingImage x:Key="Deburring-Station">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#FFCCCCCC" Thickness="1.5"/>
+                    </GeometryDrawing.Pen>
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <!-- Brush wheel -->
+                            <EllipseGeometry Center="24,20" RadiusX="10" RadiusY="10"/>
+                            <!-- Bristle lines radiating -->
+                            <LineGeometry StartPoint="24,10" EndPoint="24,6"/>
+                            <LineGeometry StartPoint="34,20" EndPoint="38,20"/>
+                            <LineGeometry StartPoint="14,20" EndPoint="10,20"/>
+                            <LineGeometry StartPoint="31,13" EndPoint="35,9"/>
+                            <LineGeometry StartPoint="17,13" EndPoint="13,9"/>
+                            <!-- Sparks -->
+                            <LineGeometry StartPoint="30,28" EndPoint="36,34"/>
+                            <LineGeometry StartPoint="26,30" EndPoint="28,36"/>
+                            <!-- Workpiece -->
+                            <RectangleGeometry Rect="10,32,28,6" RadiusX="1" RadiusY="1"/>
+                            <!-- Base -->
+                            <RectangleGeometry Rect="14,38,20,4" RadiusX="1" RadiusY="1"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <!-- CMM-Inspection: Coordinate probe arm above a cube -->
+    <DrawingImage x:Key="CMM-Inspection">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#FFCCCCCC" Thickness="1.5"/>
+                    </GeometryDrawing.Pen>
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <!-- Gantry frame -->
+                            <LineGeometry StartPoint="8,8" EndPoint="40,8"/>
+                            <LineGeometry StartPoint="8,8" EndPoint="8,42"/>
+                            <LineGeometry StartPoint="40,8" EndPoint="40,42"/>
+                            <!-- Probe arm (horizontal) -->
+                            <LineGeometry StartPoint="10,16" EndPoint="28,16"/>
+                            <!-- Probe (vertical down) -->
+                            <LineGeometry StartPoint="28,16" EndPoint="28,28"/>
+                            <!-- Probe tip -->
+                            <EllipseGeometry Center="28,30" RadiusX="2" RadiusY="2"/>
+                            <!-- Workpiece cube -->
+                            <RectangleGeometry Rect="18,34,16,8" RadiusX="1" RadiusY="1"/>
+                            <!-- Table -->
+                            <LineGeometry StartPoint="6,42" EndPoint="42,42"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <!-- Line-B: Sheet Metal Forming -->
+
+    <!-- Blanking-Press: Ram/die press with sheet -->
+    <DrawingImage x:Key="Blanking-Press">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#FFCCCCCC" Thickness="1.5"/>
+                    </GeometryDrawing.Pen>
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <!-- Frame -->
+                            <RectangleGeometry Rect="10,4,28,40" RadiusX="2" RadiusY="2"/>
+                            <!-- Ram -->
+                            <RectangleGeometry Rect="14,8,20,12" RadiusX="1" RadiusY="1"/>
+                            <!-- Die (bottom) -->
+                            <RectangleGeometry Rect="14,36,20,6" RadiusX="1" RadiusY="1"/>
+                            <!-- Sheet metal (horizontal line through) -->
+                            <LineGeometry StartPoint="4,30" EndPoint="44,30"/>
+                            <!-- Punch arrow -->
+                            <LineGeometry StartPoint="24,20" EndPoint="24,28"/>
+                            <LineGeometry StartPoint="20,24" EndPoint="24,28"/>
+                            <LineGeometry StartPoint="28,24" EndPoint="24,28"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <!-- Hydraulic-Press: Hydraulic cylinder pushing down -->
+    <DrawingImage x:Key="Hydraulic-Press">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#FFCCCCCC" Thickness="1.5"/>
+                    </GeometryDrawing.Pen>
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <!-- Frame sides -->
+                            <LineGeometry StartPoint="8,4" EndPoint="8,44"/>
+                            <LineGeometry StartPoint="40,4" EndPoint="40,44"/>
+                            <!-- Top beam -->
+                            <RectangleGeometry Rect="8,4,32,4"/>
+                            <!-- Cylinder body -->
+                            <RectangleGeometry Rect="18,10,12,10" RadiusX="2" RadiusY="2"/>
+                            <!-- Piston rod -->
+                            <RectangleGeometry Rect="22,20,4,10"/>
+                            <!-- Press plate -->
+                            <RectangleGeometry Rect="14,30,20,4" RadiusX="1" RadiusY="1"/>
+                            <!-- Bed -->
+                            <RectangleGeometry Rect="8,40,32,4" RadiusX="1" RadiusY="1"/>
+                            <!-- Workpiece -->
+                            <RectangleGeometry Rect="16,34,16,6"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <!-- Trimming-Station: Shear blades cutting -->
+    <DrawingImage x:Key="Trimming-Station">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#FFCCCCCC" Thickness="1.5"/>
+                    </GeometryDrawing.Pen>
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <!-- Upper blade -->
+                            <PathGeometry Figures="M10,16 L38,16 L38,22 L10,22 Z"/>
+                            <!-- Lower blade -->
+                            <PathGeometry Figures="M10,26 L38,26 L38,32 L10,32 Z"/>
+                            <!-- Sheet going through -->
+                            <LineGeometry StartPoint="2,24" EndPoint="46,24"/>
+                            <!-- Cut mark -->
+                            <LineGeometry StartPoint="24,16" EndPoint="24,32"/>
+                            <!-- Frame -->
+                            <LineGeometry StartPoint="10,8" EndPoint="10,40"/>
+                            <LineGeometry StartPoint="38,8" EndPoint="38,40"/>
+                            <LineGeometry StartPoint="10,8" EndPoint="38,8"/>
+                            <LineGeometry StartPoint="10,40" EndPoint="38,40"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <!-- Quality-Inspection: Magnifying glass over checkmark -->
+    <DrawingImage x:Key="Quality-Inspection">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#FFCCCCCC" Thickness="1.5"/>
+                    </GeometryDrawing.Pen>
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <!-- Magnifying glass circle -->
+                            <EllipseGeometry Center="20,18" RadiusX="12" RadiusY="12"/>
+                            <!-- Handle -->
+                            <LineGeometry StartPoint="29,27" EndPoint="40,38"/>
+                            <!-- Checkmark inside lens -->
+                            <PathGeometry Figures="M14,18 L18,24 L28,12"/>
+                            <!-- Table/platform -->
+                            <RectangleGeometry Rect="6,40,36,4" RadiusX="1" RadiusY="1"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <!-- Line-C: Welding & Assembly -->
+
+    <!-- Component-Loader: Hopper/funnel feeding parts -->
+    <DrawingImage x:Key="Component-Loader">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#FFCCCCCC" Thickness="1.5"/>
+                    </GeometryDrawing.Pen>
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <!-- Hopper (trapezoid) -->
+                            <PathGeometry Figures="M10,6 L38,6 L32,22 L16,22 Z"/>
+                            <!-- Chute -->
+                            <RectangleGeometry Rect="20,22,8,10"/>
+                            <!-- Parts inside hopper (small circles) -->
+                            <EllipseGeometry Center="20,12" RadiusX="2" RadiusY="2"/>
+                            <EllipseGeometry Center="26,10" RadiusX="2" RadiusY="2"/>
+                            <EllipseGeometry Center="24,15" RadiusX="2" RadiusY="2"/>
+                            <!-- Conveyor -->
+                            <RectangleGeometry Rect="4,36,40,4" RadiusX="2" RadiusY="2"/>
+                            <!-- Part on conveyor -->
+                            <EllipseGeometry Center="24,34" RadiusX="3" RadiusY="2"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <!-- Welding-Robot: Articulated arm with welding torch -->
+    <DrawingImage x:Key="Welding-Robot">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#FFCCCCCC" Thickness="1.5"/>
+                    </GeometryDrawing.Pen>
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <!-- Base -->
+                            <RectangleGeometry Rect="8,38,12,6" RadiusX="2" RadiusY="2"/>
+                            <!-- Joint 1 (shoulder) -->
+                            <EllipseGeometry Center="14,38" RadiusX="3" RadiusY="3"/>
+                            <!-- Upper arm -->
+                            <LineGeometry StartPoint="14,38" EndPoint="24,18"/>
+                            <!-- Joint 2 (elbow) -->
+                            <EllipseGeometry Center="24,18" RadiusX="3" RadiusY="3"/>
+                            <!-- Forearm -->
+                            <LineGeometry StartPoint="24,18" EndPoint="38,28"/>
+                            <!-- Torch tip -->
+                            <PathGeometry Figures="M38,28 L40,32 L36,32 Z"/>
+                            <!-- Spark lines -->
+                            <LineGeometry StartPoint="38,32" EndPoint="42,38"/>
+                            <LineGeometry StartPoint="38,32" EndPoint="34,38"/>
+                            <LineGeometry StartPoint="38,32" EndPoint="38,40"/>
+                            <!-- Weld bead on workpiece -->
+                            <RectangleGeometry Rect="28,40,16,4" RadiusX="1" RadiusY="1"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <!-- Weld-Inspection: Camera/sensor scanning weld -->
+    <DrawingImage x:Key="Weld-Inspection">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#FFCCCCCC" Thickness="1.5"/>
+                    </GeometryDrawing.Pen>
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <!-- Camera body -->
+                            <RectangleGeometry Rect="16,6,16,12" RadiusX="2" RadiusY="2"/>
+                            <!-- Lens -->
+                            <EllipseGeometry Center="24,18" RadiusX="4" RadiusY="2"/>
+                            <!-- Scan lines (V shape down) -->
+                            <LineGeometry StartPoint="20,20" EndPoint="16,32"/>
+                            <LineGeometry StartPoint="28,20" EndPoint="32,32"/>
+                            <!-- Scan area highlight -->
+                            <LineGeometry StartPoint="16,32" EndPoint="32,32"/>
+                            <!-- Workpiece with weld bead -->
+                            <RectangleGeometry Rect="8,36,32,6" RadiusX="1" RadiusY="1"/>
+                            <!-- Weld bead (wavy line) -->
+                            <PathGeometry Figures="M10,36 Q16,33 22,36 Q28,39 34,36"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <!-- Fastening-Station: Bolt and torque driver -->
+    <DrawingImage x:Key="Fastening-Station">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#FFCCCCCC" Thickness="1.5"/>
+                    </GeometryDrawing.Pen>
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <!-- Torque driver body -->
+                            <RectangleGeometry Rect="20,4,8,20" RadiusX="2" RadiusY="2"/>
+                            <!-- Driver bit -->
+                            <RectangleGeometry Rect="22,24,4,8"/>
+                            <!-- Bolt head (hexagon approximated as circle) -->
+                            <EllipseGeometry Center="24,36" RadiusX="5" RadiusY="5"/>
+                            <!-- Bolt thread lines -->
+                            <LineGeometry StartPoint="21,38" EndPoint="27,38"/>
+                            <LineGeometry StartPoint="21,34" EndPoint="27,34"/>
+                            <!-- Workpiece -->
+                            <RectangleGeometry Rect="8,40,32,4" RadiusX="1" RadiusY="1"/>
+                            <!-- Rotation arrow -->
+                            <PathGeometry Figures="M32,8 A8,8 0 0 1 32,20"/>
+                            <LineGeometry StartPoint="32,20" EndPoint="36,18"/>
+                            <LineGeometry StartPoint="32,20" EndPoint="34,24"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <!-- Assembly-Robot: Robot arm with gripper -->
+    <DrawingImage x:Key="Assembly-Robot">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#FFCCCCCC" Thickness="1.5"/>
+                    </GeometryDrawing.Pen>
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <!-- Base -->
+                            <RectangleGeometry Rect="6,38,12,6" RadiusX="2" RadiusY="2"/>
+                            <!-- Joint 1 -->
+                            <EllipseGeometry Center="12,38" RadiusX="3" RadiusY="3"/>
+                            <!-- Upper arm -->
+                            <LineGeometry StartPoint="12,38" EndPoint="20,16"/>
+                            <!-- Joint 2 -->
+                            <EllipseGeometry Center="20,16" RadiusX="3" RadiusY="3"/>
+                            <!-- Forearm -->
+                            <LineGeometry StartPoint="20,16" EndPoint="36,24"/>
+                            <!-- Gripper fingers -->
+                            <LineGeometry StartPoint="36,24" EndPoint="34,32"/>
+                            <LineGeometry StartPoint="36,24" EndPoint="40,32"/>
+                            <!-- Component being held -->
+                            <RectangleGeometry Rect="32,32,10,6" RadiusX="1" RadiusY="1"/>
+                            <!-- Target position -->
+                            <RectangleGeometry Rect="28,40,16,4" RadiusX="1" RadiusY="1"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <!-- Leak-Test: Container with pressure gauge and bubbles -->
+    <DrawingImage x:Key="Leak-Test">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#FFCCCCCC" Thickness="1.5"/>
+                    </GeometryDrawing.Pen>
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <!-- Tank -->
+                            <RectangleGeometry Rect="8,16,32,24" RadiusX="3" RadiusY="3"/>
+                            <!-- Pressure gauge (circle) -->
+                            <EllipseGeometry Center="36,10" RadiusX="6" RadiusY="6"/>
+                            <!-- Gauge needle -->
+                            <LineGeometry StartPoint="36,10" EndPoint="40,7"/>
+                            <!-- Pipe from tank to gauge -->
+                            <LineGeometry StartPoint="36,16" EndPoint="36,16"/>
+                            <!-- Bubbles inside tank -->
+                            <EllipseGeometry Center="18,28" RadiusX="2" RadiusY="2"/>
+                            <EllipseGeometry Center="24,24" RadiusX="1.5" RadiusY="1.5"/>
+                            <EllipseGeometry Center="30,30" RadiusX="2" RadiusY="2"/>
+                            <EllipseGeometry Center="22,32" RadiusX="1" RadiusY="1"/>
+                            <!-- Part inside tank -->
+                            <RectangleGeometry Rect="14,26,20,8" RadiusX="1" RadiusY="1"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <!-- Line-D: Surface Treatment -->
+
+    <!-- Surface-Prep: Abrasive disc on surface -->
+    <DrawingImage x:Key="Surface-Prep">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#FFCCCCCC" Thickness="1.5"/>
+                    </GeometryDrawing.Pen>
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <!-- Handle -->
+                            <RectangleGeometry Rect="20,4,8,14" RadiusX="2" RadiusY="2"/>
+                            <!-- Disc -->
+                            <EllipseGeometry Center="24,24" RadiusX="12" RadiusY="4"/>
+                            <!-- Abrasive lines on disc -->
+                            <LineGeometry StartPoint="16,24" EndPoint="32,24"/>
+                            <LineGeometry StartPoint="18,22" EndPoint="30,22"/>
+                            <LineGeometry StartPoint="18,26" EndPoint="30,26"/>
+                            <!-- Workpiece surface -->
+                            <RectangleGeometry Rect="4,32,40,6" RadiusX="1" RadiusY="1"/>
+                            <!-- Dust particles -->
+                            <EllipseGeometry Center="10,28" RadiusX="1" RadiusY="1"/>
+                            <EllipseGeometry Center="38,28" RadiusX="1" RadiusY="1"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <!-- Chemical-Wash: Bath with liquid waves -->
+    <DrawingImage x:Key="Chemical-Wash">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#FFCCCCCC" Thickness="1.5"/>
+                    </GeometryDrawing.Pen>
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <!-- Tank -->
+                            <RectangleGeometry Rect="6,16,36,24" RadiusX="2" RadiusY="2"/>
+                            <!-- Liquid level wave -->
+                            <PathGeometry Figures="M8,22 Q14,19 20,22 Q26,25 32,22 Q38,19 40,22"/>
+                            <!-- Part being dipped (hanging) -->
+                            <RectangleGeometry Rect="18,12,12,18" RadiusX="1" RadiusY="1"/>
+                            <!-- Hook/crane arm -->
+                            <LineGeometry StartPoint="24,6" EndPoint="24,12"/>
+                            <LineGeometry StartPoint="16,6" EndPoint="32,6"/>
+                            <!-- Drip lines -->
+                            <LineGeometry StartPoint="18,30" EndPoint="18,34"/>
+                            <LineGeometry StartPoint="30,30" EndPoint="30,34"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <!-- Primer-Application: Spray gun with mist -->
+    <DrawingImage x:Key="Primer-Application">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#FFCCCCCC" Thickness="1.5"/>
+                    </GeometryDrawing.Pen>
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <!-- Gun body -->
+                            <PathGeometry Figures="M8,16 L24,16 L24,22 L8,22 Z"/>
+                            <!-- Nozzle -->
+                            <PathGeometry Figures="M24,17 L30,14 L30,24 L24,21"/>
+                            <!-- Handle -->
+                            <RectangleGeometry Rect="12,22,8,12" RadiusX="1" RadiusY="1"/>
+                            <!-- Trigger -->
+                            <LineGeometry StartPoint="20,22" EndPoint="18,28"/>
+                            <!-- Spray mist lines -->
+                            <LineGeometry StartPoint="30,16" EndPoint="42,10"/>
+                            <LineGeometry StartPoint="30,19" EndPoint="44,19"/>
+                            <LineGeometry StartPoint="30,22" EndPoint="42,28"/>
+                            <LineGeometry StartPoint="32,14" EndPoint="40,14"/>
+                            <LineGeometry StartPoint="32,24" EndPoint="40,24"/>
+                            <!-- Workpiece -->
+                            <RectangleGeometry Rect="36,8,6,28" RadiusX="1" RadiusY="1"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <!-- Paint-Booth: Enclosed booth with spray nozzle -->
+    <DrawingImage x:Key="Paint-Booth">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#FFCCCCCC" Thickness="1.5"/>
+                    </GeometryDrawing.Pen>
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <!-- Booth walls -->
+                            <RectangleGeometry Rect="6,6,36,36" RadiusX="2" RadiusY="2"/>
+                            <!-- Opening (front) -->
+                            <LineGeometry StartPoint="6,18" EndPoint="6,30"/>
+                            <!-- Nozzle (top) -->
+                            <PathGeometry Figures="M22,6 L22,12 L26,12 L26,6"/>
+                            <!-- Spray cone -->
+                            <LineGeometry StartPoint="22,12" EndPoint="16,26"/>
+                            <LineGeometry StartPoint="26,12" EndPoint="32,26"/>
+                            <!-- Spray dots -->
+                            <EllipseGeometry Center="24,18" RadiusX="1" RadiusY="1"/>
+                            <EllipseGeometry Center="20,22" RadiusX="1" RadiusY="1"/>
+                            <EllipseGeometry Center="28,20" RadiusX="1" RadiusY="1"/>
+                            <!-- Part on turntable -->
+                            <RectangleGeometry Rect="18,28,12,8" RadiusX="1" RadiusY="1"/>
+                            <!-- Exhaust vent (top right) -->
+                            <LineGeometry StartPoint="36,6" EndPoint="36,14"/>
+                            <LineGeometry StartPoint="38,6" EndPoint="38,14"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <!-- Curing-Oven: Oven box with heat waves -->
+    <DrawingImage x:Key="Curing-Oven">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#FFCCCCCC" Thickness="1.5"/>
+                    </GeometryDrawing.Pen>
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <!-- Oven body -->
+                            <RectangleGeometry Rect="6,14,36,26" RadiusX="2" RadiusY="2"/>
+                            <!-- Door outline -->
+                            <RectangleGeometry Rect="10,18,28,18" RadiusX="1" RadiusY="1"/>
+                            <!-- Heat waves rising -->
+                            <PathGeometry Figures="M14,10 Q17,6 20,10"/>
+                            <PathGeometry Figures="M22,8 Q25,4 28,8"/>
+                            <PathGeometry Figures="M30,10 Q33,6 36,10"/>
+                            <!-- Heating element (bottom) -->
+                            <PathGeometry Figures="M12,34 L16,32 L20,34 L24,32 L28,34 L32,32 L36,34"/>
+                            <!-- Part inside -->
+                            <RectangleGeometry Rect="16,24,16,6" RadiusX="1" RadiusY="1"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <!-- Coating-Inspection: Thickness gauge on surface -->
+    <DrawingImage x:Key="Coating-Inspection">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#FFCCCCCC" Thickness="1.5"/>
+                    </GeometryDrawing.Pen>
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <!-- Gauge body -->
+                            <RectangleGeometry Rect="16,4,16,16" RadiusX="2" RadiusY="2"/>
+                            <!-- Display -->
+                            <RectangleGeometry Rect="19,7,10,6" RadiusX="1" RadiusY="1"/>
+                            <!-- Probe -->
+                            <LineGeometry StartPoint="24,20" EndPoint="24,30"/>
+                            <!-- Probe tip -->
+                            <EllipseGeometry Center="24,32" RadiusX="2" RadiusY="2"/>
+                            <!-- Coated surface (two layers) -->
+                            <RectangleGeometry Rect="8,34,32,4"/>
+                            <RectangleGeometry Rect="8,38,32,6" RadiusX="1" RadiusY="1"/>
+                            <!-- Measurement arrows -->
+                            <LineGeometry StartPoint="6,34" EndPoint="6,38"/>
+                            <LineGeometry StartPoint="4,34" EndPoint="8,34"/>
+                            <LineGeometry StartPoint="4,38" EndPoint="8,38"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <!-- Final-Packaging: Open box with arrow going in -->
+    <DrawingImage x:Key="Final-Packaging">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#FFCCCCCC" Thickness="1.5"/>
+                    </GeometryDrawing.Pen>
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <!-- Box body -->
+                            <RectangleGeometry Rect="8,20,32,20" RadiusX="2" RadiusY="2"/>
+                            <!-- Box flaps (open) -->
+                            <PathGeometry Figures="M8,20 L4,12 L20,12"/>
+                            <PathGeometry Figures="M40,20 L44,12 L28,12"/>
+                            <!-- Arrow going down into box -->
+                            <LineGeometry StartPoint="24,2" EndPoint="24,16"/>
+                            <LineGeometry StartPoint="20,12" EndPoint="24,16"/>
+                            <LineGeometry StartPoint="28,12" EndPoint="24,16"/>
+                            <!-- Tape on side -->
+                            <LineGeometry StartPoint="24,20" EndPoint="24,40"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <!-- Line-E: Electronics Assembly -->
+
+    <!-- PCB-Loader: PCB board on feeder rail -->
+    <DrawingImage x:Key="PCB-Loader">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#FFCCCCCC" Thickness="1.5"/>
+                    </GeometryDrawing.Pen>
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <!-- PCB board -->
+                            <RectangleGeometry Rect="12,10,24,20" RadiusX="1" RadiusY="1"/>
+                            <!-- Traces on PCB -->
+                            <LineGeometry StartPoint="16,14" EndPoint="16,26"/>
+                            <LineGeometry StartPoint="16,20" EndPoint="24,20"/>
+                            <LineGeometry StartPoint="24,14" EndPoint="24,26"/>
+                            <LineGeometry StartPoint="30,14" EndPoint="30,20"/>
+                            <LineGeometry StartPoint="24,16" EndPoint="30,16"/>
+                            <!-- Component pads -->
+                            <EllipseGeometry Center="16,14" RadiusX="1.5" RadiusY="1.5"/>
+                            <EllipseGeometry Center="30,14" RadiusX="1.5" RadiusY="1.5"/>
+                            <EllipseGeometry Center="16,26" RadiusX="1.5" RadiusY="1.5"/>
+                            <EllipseGeometry Center="24,26" RadiusX="1.5" RadiusY="1.5"/>
+                            <!-- Rail guides -->
+                            <RectangleGeometry Rect="4,32,40,3" RadiusX="1" RadiusY="1"/>
+                            <RectangleGeometry Rect="4,37,40,3" RadiusX="1" RadiusY="1"/>
+                            <!-- Arrow showing feed direction -->
+                            <LineGeometry StartPoint="4,35" EndPoint="16,35"/>
+                            <LineGeometry StartPoint="12,33" EndPoint="16,35"/>
+                            <LineGeometry StartPoint="12,37" EndPoint="16,35"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <!-- SMT-Placement: Pick-and-place nozzle placing chip -->
+    <DrawingImage x:Key="SMT-Placement">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#FFCCCCCC" Thickness="1.5"/>
+                    </GeometryDrawing.Pen>
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <!-- Gantry rail -->
+                            <LineGeometry StartPoint="4,8" EndPoint="44,8"/>
+                            <!-- Head body -->
+                            <RectangleGeometry Rect="18,8,12,10" RadiusX="1" RadiusY="1"/>
+                            <!-- Nozzle -->
+                            <LineGeometry StartPoint="24,18" EndPoint="24,28"/>
+                            <!-- Component being held -->
+                            <RectangleGeometry Rect="20,28,8,4" RadiusX="0.5" RadiusY="0.5"/>
+                            <!-- PCB below -->
+                            <RectangleGeometry Rect="6,36,36,6" RadiusX="1" RadiusY="1"/>
+                            <!-- Existing components on PCB -->
+                            <RectangleGeometry Rect="10,36,4,3"/>
+                            <RectangleGeometry Rect="34,37,4,3"/>
+                            <!-- Target position marker -->
+                            <LineGeometry StartPoint="22,36" EndPoint="26,36"/>
+                            <LineGeometry StartPoint="24,34" EndPoint="24,38"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <!-- Reflow-Oven: Oven with conveyor and heat waves -->
+    <DrawingImage x:Key="Reflow-Oven">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#FFCCCCCC" Thickness="1.5"/>
+                    </GeometryDrawing.Pen>
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <!-- Oven body -->
+                            <RectangleGeometry Rect="4,10,40,24" RadiusX="2" RadiusY="2"/>
+                            <!-- Conveyor through oven -->
+                            <LineGeometry StartPoint="0,30" EndPoint="48,30"/>
+                            <!-- Zone dividers -->
+                            <LineGeometry StartPoint="16,10" EndPoint="16,28"/>
+                            <LineGeometry StartPoint="32,10" EndPoint="32,28"/>
+                            <!-- Heat waves in each zone -->
+                            <PathGeometry Figures="M8,16 Q10,13 12,16"/>
+                            <PathGeometry Figures="M22,14 Q24,11 26,14"/>
+                            <PathGeometry Figures="M36,16 Q38,13 40,16"/>
+                            <!-- PCB on conveyor -->
+                            <RectangleGeometry Rect="18,26,12,4" RadiusX="0.5" RadiusY="0.5"/>
+                            <!-- Heat arrows down -->
+                            <LineGeometry StartPoint="10,18" EndPoint="10,24"/>
+                            <LineGeometry StartPoint="24,16" EndPoint="24,22"/>
+                            <LineGeometry StartPoint="38,18" EndPoint="38,24"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <!-- AOI-Inspection: Camera over PCB with scan lines -->
+    <DrawingImage x:Key="AOI-Inspection">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#FFCCCCCC" Thickness="1.5"/>
+                    </GeometryDrawing.Pen>
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <!-- Camera body -->
+                            <RectangleGeometry Rect="16,4,16,10" RadiusX="2" RadiusY="2"/>
+                            <!-- Lens -->
+                            <EllipseGeometry Center="24,14" RadiusX="5" RadiusY="3"/>
+                            <!-- Scan beam lines -->
+                            <LineGeometry StartPoint="19,17" EndPoint="12,30"/>
+                            <LineGeometry StartPoint="29,17" EndPoint="36,30"/>
+                            <!-- Raster scan lines -->
+                            <LineGeometry StartPoint="14,24" EndPoint="34,24"/>
+                            <LineGeometry StartPoint="13,27" EndPoint="35,27"/>
+                            <!-- PCB being scanned -->
+                            <RectangleGeometry Rect="8,32,32,8" RadiusX="1" RadiusY="1"/>
+                            <!-- Components on PCB -->
+                            <RectangleGeometry Rect="12,34,6,3"/>
+                            <RectangleGeometry Rect="22,34,4,3"/>
+                            <RectangleGeometry Rect="30,35,6,3"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <!-- Through-Hole-Insert: Component legs through PCB -->
+    <DrawingImage x:Key="Through-Hole-Insert">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#FFCCCCCC" Thickness="1.5"/>
+                    </GeometryDrawing.Pen>
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <!-- Component body -->
+                            <RectangleGeometry Rect="16,8,16,10" RadiusX="2" RadiusY="2"/>
+                            <!-- Component legs -->
+                            <LineGeometry StartPoint="20,18" EndPoint="20,36"/>
+                            <LineGeometry StartPoint="28,18" EndPoint="28,36"/>
+                            <!-- PCB board -->
+                            <RectangleGeometry Rect="6,26,36,4" RadiusX="1" RadiusY="1"/>
+                            <!-- Holes in PCB -->
+                            <EllipseGeometry Center="20,28" RadiusX="2" RadiusY="2"/>
+                            <EllipseGeometry Center="28,28" RadiusX="2" RadiusY="2"/>
+                            <!-- Arrow showing insertion -->
+                            <LineGeometry StartPoint="24,2" EndPoint="24,8"/>
+                            <LineGeometry StartPoint="22,5" EndPoint="24,2"/>
+                            <LineGeometry StartPoint="26,5" EndPoint="24,2"/>
+                            <!-- Bent legs below PCB -->
+                            <PathGeometry Figures="M20,30 L20,36 L16,36"/>
+                            <PathGeometry Figures="M28,30 L28,36 L32,36"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <!-- Wave-Solder: PCB over solder wave -->
+    <DrawingImage x:Key="Wave-Solder">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#FFCCCCCC" Thickness="1.5"/>
+                    </GeometryDrawing.Pen>
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <!-- Solder bath -->
+                            <RectangleGeometry Rect="4,26,40,14" RadiusX="2" RadiusY="2"/>
+                            <!-- Solder wave -->
+                            <PathGeometry Figures="M8,26 Q16,18 24,26 Q32,18 40,26"/>
+                            <!-- PCB passing over wave -->
+                            <RectangleGeometry Rect="10,14,28,4" RadiusX="1" RadiusY="1"/>
+                            <!-- Component legs dangling -->
+                            <LineGeometry StartPoint="16,18" EndPoint="16,24"/>
+                            <LineGeometry StartPoint="24,18" EndPoint="24,22"/>
+                            <LineGeometry StartPoint="32,18" EndPoint="32,24"/>
+                            <!-- Conveyor direction arrow -->
+                            <LineGeometry StartPoint="2,16" EndPoint="10,16"/>
+                            <LineGeometry StartPoint="38,16" EndPoint="46,16"/>
+                            <LineGeometry StartPoint="42,14" EndPoint="46,16"/>
+                            <LineGeometry StartPoint="42,18" EndPoint="46,16"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <!-- Functional-Test: Oscilloscope probe on test points -->
+    <DrawingImage x:Key="Functional-Test">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#FFCCCCCC" Thickness="1.5"/>
+                    </GeometryDrawing.Pen>
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <!-- Oscilloscope body -->
+                            <RectangleGeometry Rect="4,4,20,16" RadiusX="2" RadiusY="2"/>
+                            <!-- Screen -->
+                            <RectangleGeometry Rect="7,7,14,10" RadiusX="1" RadiusY="1"/>
+                            <!-- Waveform on screen -->
+                            <PathGeometry Figures="M9,12 L11,8 L13,16 L15,8 L17,16 L19,12"/>
+                            <!-- Probe cable -->
+                            <PathGeometry Figures="M24,14 Q30,14 34,22"/>
+                            <!-- Probe tip -->
+                            <LineGeometry StartPoint="34,22" EndPoint="34,30"/>
+                            <!-- PCB with test points -->
+                            <RectangleGeometry Rect="10,34,28,8" RadiusX="1" RadiusY="1"/>
+                            <!-- Test points -->
+                            <EllipseGeometry Center="18,38" RadiusX="2" RadiusY="2"/>
+                            <EllipseGeometry Center="26,38" RadiusX="2" RadiusY="2"/>
+                            <EllipseGeometry Center="34,38" RadiusX="2" RadiusY="2"/>
+                            <!-- Probe touching test point -->
+                            <LineGeometry StartPoint="34,30" EndPoint="34,36"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <!-- Conformal-Coat: Spray dispenser coating board -->
+    <DrawingImage x:Key="Conformal-Coat">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#FFCCCCCC" Thickness="1.5"/>
+                    </GeometryDrawing.Pen>
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <!-- Dispenser nozzle rail -->
+                            <LineGeometry StartPoint="4,8" EndPoint="44,8"/>
+                            <!-- Nozzle head -->
+                            <RectangleGeometry Rect="18,8,12,8" RadiusX="1" RadiusY="1"/>
+                            <!-- Nozzle tip -->
+                            <PathGeometry Figures="M22,16 L24,22 L26,16"/>
+                            <!-- Spray fan pattern -->
+                            <LineGeometry StartPoint="22,18" EndPoint="16,28"/>
+                            <LineGeometry StartPoint="26,18" EndPoint="32,28"/>
+                            <!-- Coating dots -->
+                            <EllipseGeometry Center="20,24" RadiusX="1" RadiusY="1"/>
+                            <EllipseGeometry Center="24,22" RadiusX="1" RadiusY="1"/>
+                            <EllipseGeometry Center="28,24" RadiusX="1" RadiusY="1"/>
+                            <!-- PCB -->
+                            <RectangleGeometry Rect="8,30,32,8" RadiusX="1" RadiusY="1"/>
+                            <!-- Components on board -->
+                            <RectangleGeometry Rect="12,32,6,3"/>
+                            <RectangleGeometry Rect="22,32,4,3"/>
+                            <RectangleGeometry Rect="30,33,6,3"/>
+                            <!-- Coating layer (partial, covering left side) -->
+                            <LineGeometry StartPoint="8,30" EndPoint="24,30"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <!-- Fallback icon for unknown machine types -->
+    <DrawingImage x:Key="Unknown-Machine">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#FFCCCCCC" Thickness="1.5"/>
+                    </GeometryDrawing.Pen>
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <!-- Gear shape (generic machine) -->
+                            <EllipseGeometry Center="24,24" RadiusX="14" RadiusY="14"/>
+                            <EllipseGeometry Center="24,24" RadiusX="8" RadiusY="8"/>
+                            <!-- Gear teeth (8) -->
+                            <RectangleGeometry Rect="21,6,6,6"/>
+                            <RectangleGeometry Rect="21,36,6,6"/>
+                            <RectangleGeometry Rect="6,21,6,6"/>
+                            <RectangleGeometry Rect="36,21,6,6"/>
+                            <!-- Center dot -->
+                            <EllipseGeometry Center="24,24" RadiusX="3" RadiusY="3"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+</ResourceDictionary>
