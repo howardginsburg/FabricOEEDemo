@@ -41,6 +41,9 @@ public sealed class SimulationEngine : IHostedService
         _logger = loggerFactory.CreateLogger<SimulationEngine>();
     }
 
+    /// <summary>Whether the simulation loop is currently running.</summary>
+    public bool IsRunning => _runTask is not null && !_runTask.IsCompleted;
+
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         _logger.LogInformation("Initializing OEE Simulator with {LineCount} production lines...", _config.Lines.Count);
@@ -62,27 +65,39 @@ public sealed class SimulationEngine : IHostedService
             _lines.Add(line);
         }
 
-        _logger.LogInformation("Starting {LineCount} production lines ({StationCount} total stations)...",
+        _logger.LogInformation("Initialized {LineCount} production lines ({StationCount} total stations). Waiting for user to start.",
             _lines.Count, _lines.Sum(l => l.Stations.Count));
 
-        _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        // Don't auto-start the simulation loop; wait for StartSimulation().
+    }
+
+    /// <summary>Start (or resume) the simulation loop.</summary>
+    public void StartSimulation()
+    {
+        if (IsRunning) return;
+        _logger.LogInformation("Starting simulation...");
+        _cts = new CancellationTokenSource();
         _runTask = RunAllAsync(_cts.Token);
+    }
+
+    /// <summary>Stop the simulation loop. Can be restarted later.</summary>
+    public async Task StopSimulationAsync()
+    {
+        if (!IsRunning || _cts is null) return;
+        _logger.LogInformation("Stopping simulation...");
+        await _cts.CancelAsync();
+        if (_runTask is not null)
+        {
+            try { await _runTask; } catch (OperationCanceledException) { }
+        }
+        _cts.Dispose();
+        _cts = null;
     }
 
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         _logger.LogInformation("Shutting down simulator...");
-
-        if (_cts is not null)
-        {
-            await _cts.CancelAsync();
-            if (_runTask is not null)
-            {
-                try { await _runTask; } catch (OperationCanceledException) { }
-            }
-            _cts.Dispose();
-        }
-
+        await StopSimulationAsync();
         await _sink.DisposeAsync();
         _logger.LogInformation("Simulator stopped.");
     }

@@ -25,6 +25,24 @@
                            VerticalAlignment="Center" DockPanel.Dock="Left"/>
 
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right">
+                    <!-- Start / Stop simulation -->
+                    <Button Command="{Binding ToggleSimulationCommand}" Margin="8,0" Padding="12,4"
+                            Foreground="White" BorderThickness="0" Cursor="Hand"
+                            FontWeight="SemiBold">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Setter Property="Background" Value="#FF2ECC71"/>
+                                <Setter Property="Content" Value="&#x25B6; Start"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsRunning}" Value="True">
+                                        <Setter Property="Background" Value="#FFE74C3C"/>
+                                        <Setter Property="Content" Value="&#x25A0; Stop"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+
                     <!-- Overview toggle -->
                     <Button Command="{Binding ToggleOverviewCommand}" Margin="8,0" Padding="10,4"
                             Background="{StaticResource PanelBrush}" Foreground="#FFE0E0E0"

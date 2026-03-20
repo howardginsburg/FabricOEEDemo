@@ -49,6 +49,16 @@ public sealed class MainViewModel : ViewModelBase
             if (o is ToastNotification toast)
                 Toasts.Remove(toast);
         });
+
+        ToggleSimulationCommand = new RelayCommand(async _ =>
+        {
+            if (_engine is null) return;
+            if (IsRunning)
+                await _engine.StopSimulationAsync();
+            else
+                _engine.StartSimulation();
+            IsRunning = _engine.IsRunning;
+        });
     }
 
     public ObservableCollection<ProductionLineViewModel> Lines { get; } = [];
@@ -120,9 +130,17 @@ public sealed class MainViewModel : ViewModelBase
         private set => SetProperty(ref _totalStations, value);
     }
 
+    private bool _isRunning;
+    public bool IsRunning
+    {
+        get => _isRunning;
+        private set => SetProperty(ref _isRunning, value);
+    }
+
     public ICommand SelectLineCommand { get; }
     public ICommand ToggleOverviewCommand { get; }
     public ICommand DismissToastCommand { get; }
+    public ICommand ToggleSimulationCommand { get; }
 
     public void Initialize(SimulationEngine engine)
     {
