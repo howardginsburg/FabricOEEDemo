@@ -15,6 +15,7 @@ simulator/**/obj/
 *.user
 *.userosscache
 *.sln.docstates
+*.lscache
 
 # OS
 Thumbs.db
