@@ -1,0 +1,41 @@
+# Foundry agent metadata
+#
+# This file is the canonical record of the Foundry prompt agent backing
+# this demo. Fill in the IDs after running scripts/4-setup-foundry.sh and
+# completing the manual portal steps.
+
+name: oee-factory-iq
+display_name: "OEE Factory IQ"
+description: >
+  Multi-persona prompt agent for the Fabric RTI + Fabric IQ + AI Search +
+  Foundry IQ demo. Answers Corp Exec, Plant Manager, Line Manager,
+  Maintenance Tech, and Quality Worker questions by routing between live
+  OEE telemetry (Fabric Data Agent) and the 36-PDF SOP corpus (AI Search).
+
+model:
+  name: gpt-4.1
+  deployment: gpt-4.1
+  temperature: 0.2
+  top_p: 1.0
+  max_output_tokens: 1500
+
+project:
+  foundry_resource: "<FOUNDRY_RESOURCE_NAME>"
+  name: "<FOUNDRY_PROJECT_NAME>"
+  resource_group: "<RG>"
+  subscription: "<SUB_ID>"
+  endpoint: "<https://...>"
+
+knowledge_sources:
+  - id: fabric_data_agent
+    type: fabric-data-agent
+    identifier: "<FABRIC_DATA_AGENT_ID_OR_NAME>"
+    description_file: ../knowledge/fabric_data_agent.md
+
+  - id: aisearch_sops
+    type: azure-ai-search
+    endpoint: "<https://<search>.search.windows.net>"
+    index: oee-sops
+    description_file: ../knowledge/aisearch_sops.md
+    embedding_model: text-embedding-3-large
+    semantic_configuration: oee-semantic

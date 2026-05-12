@@ -273,6 +273,17 @@ MaintenanceEvents | take 10 | order by timestamp desc
 
 ---
 
+## Next: Fabric IQ + AI Search + Foundry Agent Service
+
+The AIO path lands data in the same Eventhouse as the direct path, so the AI layer is identical. After you have data flowing through AIO, follow these steps in [FABRIC_OEE_TUTORIAL.md](FABRIC_OEE_TUTORIAL.md):
+
+- **Step 8** — Create the Fabric Ontology and Data Agent.
+- **Step 9** — Provision the Microsoft Foundry resource + project and deploy the chat & embedding models.
+- **Step 10** — Index the 36-PDF SOP corpus in Azure AI Search (uses the Foundry AOAI endpoint from Step 9).
+- **Step 11** — Build the Foundry agent and attach the Fabric + AI Search knowledge tools in the Foundry portal.
+
+---
+
 ## Troubleshooting
 
 | Symptom | Check |

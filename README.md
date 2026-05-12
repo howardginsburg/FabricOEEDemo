@@ -13,7 +13,7 @@ This demo models **true production-line OEE** — parts flow sequentially throug
 
 **OEE = Availability × Performance × Quality**
 
-**NEW**: Includes a Fabric Ontology (6 entity types, 8 relationships) enabling natural language queries via Data Agent. Query production lines, stations, machine events, part history, and maintenance work orders using conversational language.
+**NEW — 4-pillar AI stack:** **Fabric RTI → Fabric IQ → Azure AI Search → Foundry Agent Service.** Live operational telemetry is fused with a 36-PDF SOP corpus and surfaced through a multi-persona Foundry agent. *(Work IQ integration coming next.)*
 
 ![OEE Dashboard](dashboard.png)
 
@@ -58,8 +58,77 @@ This demo models **true production-line OEE** — parts flow sequentially throug
                    │  OEE_5min Materialized View                           │
                    │  Real-Time Dashboard (5 pages)                        │
                    │  Activator (fault + maintenance alerts)               │
-                   └───────────────────────────────────────────────────────┘
+                   └──────────┬──────────────────────────┬──────────────────┘
+                              │                          │
+                              │ Fabric Ontology          │ (telemetry-only)
+                              ▼                          │
+                   ┌───────────────────────┐             │
+                   │  Fabric IQ            │             │
+                   │  Fabric Data Agent    │             │
+                   │  (NL → KQL)           │             │
+                   └──────────┬────────────┘             │
+                              │                          │
+                              │  KS#1 (live)             │
+                              ▼                          │
+                   ┌────────────────────────────────────┐│
+                   │  Foundry Agent Service             ││
+                   │  • System prompt (5 personas)      ││
+                   │  • Routes between KS#1 & KS#2      ││
+                   │  • Citations on every answer       ││
+                   └──────────▲────────────┬────────────┘│
+                              │            │             │
+                  KS#2 (static)│            │ Chat UI     │
+                              │            ▼             │
+                   ┌────────────────────────┐            │
+                   │  Azure AI Search       │            │
+                   │  Index: oee-sops       │            │
+                   │  36 PDFs · vector +    │            │
+                   │  semantic + filters    │            │
+                   └──────────▲─────────────┘            │
+                              │                          │
+                              │ Indexer (DocumentExtract │
+                              │  → Split → AOAI embed)   │
+                              │                          │
+                   ┌──────────┴─────────────┐            │
+                   │  Blob Storage          │            │
+                   │  Container: oee-sops   │            │
+                   │  36 SOP PDFs           │            │
+                   └────────────────────────┘            │
 ```
+
+> Work IQ integration is on the roadmap and not part of this checkpoint.
+
+## Demo Storyline
+
+The three persona vignettes below tie the four pillars together end-to-end.
+
+### 1. Maintenance Tech — *"Fix the Hydraulic-Press, fast."*
+
+A `Pressure-Loss` fault appears on Line-B station 02. The technician asks
+the agent: *"Line-B Hydraulic-Press just faulted with Pressure-Loss —
+walk me through the fix and confirm the work order is mine."* The agent
+hits **Fabric IQ** (open work-order ID, assigned technician) and **AI
+Search** filtered to `Line-B_02_Hydraulic-Press_Maintenance_SOP.pdf`
+(corrective procedure + LOTO callout). The reply is one paragraph, one
+numbered list, two citations.
+
+### 2. Line Manager — *"Why is Line-D under target?"*
+
+The Line-D OEE tile drops below 70 %. The Line Manager asks:
+*"Show me Line-D OEE for the last hour and tell me which station is
+the bottleneck right now."* Fabric IQ returns the trend and current
+per-station status; AI Search retrieves the Curing-Oven bottleneck note
+from `Production_Lines_Reference.pdf`. The agent recommends pausing
+Coating-Inspection per the Reject Disposition Policy if the rate
+crosses 5 %.
+
+### 3. Plant Manager — *"Are we hitting the corporate OEE commitment?"*
+
+Plant Manager asks: *"Which lines are below target right now, and what
+does our escalation matrix require?"* The agent fans out — Fabric IQ
+for live per-line OEE; AI Search for `OEE_Targets_and_Escalation.pdf`
+to quote the 60 %/15 min / 60 %/1 hr thresholds. Output is a short
+table with line, OEE, target, gap, and the required notification path.
 
 ## Production Lines
 
@@ -147,76 +216,15 @@ This demo models **true production-line OEE** — parts flow sequentially throug
 - Azure IoT Operations deployed ([Quickstart](https://github.com/howardginsburg/IoT-Operations-Quickstart))
 - Azure CLI 2.67.0+ with the `azure-iot-ops` extension
 
-## Quick Start
+## Get Started
 
-1. **Clone the repo:**
-   ```bash
-   git clone https://github.com/howardginsburg/FabricOEEDemo.git
-   cd FabricOEEDemo
-   ```
+Pick the path that fits how you want to learn:
 
-2. Setup Fabric (required for both paths):
+- **[QUICKSTART.md](QUICKSTART.md)** — script-driven fast path. Uses the provisioners under `scripts/` to stand up the full 4-pillar stack (Fabric RTI → Fabric IQ Data Agent → Azure AI Search → Foundry agent) end-to-end. Best when you want a working demo quickly.
+- **[FABRIC_OEE_TUTORIAL.md](FABRIC_OEE_TUTORIAL.md)** — manual step-by-step tutorial that builds the same stack through the Fabric and Azure portals. Best for learning the platform or for environments where the scripts cannot run.
+- **[AIO_OEE_TUTORIAL.md](AIO_OEE_TUTORIAL.md)** — manual step-by-step tutorial for the optional ingestion variant that routes simulator telemetry through an Azure IoT Operations MQTT broker before Fabric.
 
-      Follow [FABRIC_OEE_TUTORIAL.md](FABRIC_OEE_TUTORIAL.md) for a step-by-step guide on manually setting things up.
-
-      Alternatively, run the Fabric provisioner to create the Eventhouse, KQL Database, tables, reference data, materialized view, Eventstream with routing, and import the dashboard:
-   ```bash
-   bash scripts/1-setup-fabric.sh --workspace-name "My Workspace"
-   ```
-
-   **Optional — Create Ontology (Step 8):** Enable natural language querying with Data Agent by running the `notebooks/create_ontology.ipynb` notebook. Download the `fabriciq_ontology_accelerator` wheel from the [FabricIQ Accelerator releases](https://github.com/microsoft/fabriciq-accelerator/releases), upload it to your lakehouse, then follow Step 8 in the tutorial.
-
-3. Add Azure IoT Operations (optional):**
-
-   If routing telemetry through an AIO MQTT broker instead of connecting directly to Fabric, deploy the MQTT connector device and dataflow:
-
-   See [AIO_OEE_TUTORIAL.md](AIO_OEE_TUTORIAL.md) for a step-by-step walkthrough.
-
-   Alternatively, run these configuration steps:
-
-   1. Deploy the MQTT connector into AIO.  This is a manual step and you can follow the [instructions](https://learn.microsoft.com/en-us/azure/iot-operations/discover-manage-assets/howto-use-mqtt-connector).
-
-   2. Then run the script to create the Device with MQTT endpoint, wait for topic discovery, and promote discovered assets:
-
-   ```bash
-   
-   bash scripts/2-setup-iotops.sh \
-     --instance <your-aio-instance> \
-     --resource-group <your-resource-group> \
-     --workspace-name <fabric-workspace> \
-     --eventhub-namespace <host> \
-     --eventhub-name <es_xxx>
-   ```
-
-   3. After running the simulator for a while, you should see discovered assets in the AIO portal under the Device that is created. These assets then must be promoted to managed assets. The script promotes all station assets.
-
-   If assets need to be re-promoted later:
-   ```bash
-   bash scripts/3-setup-iotops-assets.sh \
-     --instance <your-aio-instance> \
-     --resource-group <your-resource-group>
-   ```
-   
-
-4. **Configure the simulator:**
-   ```bash
-   cd simulator/FabricOEESimulator
-   cp simulator.sample.yaml simulator.yaml
-   # Edit simulator.yaml — paste your Eventstream connection string (Option A)
-   # or MQTT broker address (Option B)
-   ```
-
-5. **Run the simulator:**
-   ```bash
-   dotnet run
-   ```
-   
-   Or with Docker:
-   ```bash
-   cd simulator
-   docker build -t oee-simulator .
-   docker run -it --rm -v "$(pwd)/FabricOEESimulator/simulator.yaml:/app/simulator.yaml" oee-simulator
-   ```
+The two manual tutorials and the quickstart all land at the same final architecture.
 
 ## Dashboard Pages
 
@@ -230,11 +238,15 @@ This demo models **true production-line OEE** — parts flow sequentially throug
 
 | Path | Description |
 |------|-------------|
+| `QUICKSTART.md` | Scripted fast-path setup (Fabric, optional AIO, Foundry resource, AI Search, agent) |
 | `FABRIC_OEE_TUTORIAL.md` | Step-by-step tutorial — direct to Fabric Eventstream (8 steps) |
 | `AIO_OEE_TUTORIAL.md` | Step-by-step tutorial — via Azure IoT Operations MQTT broker |
 | `scripts/1-setup-fabric.sh` | Automated Fabric provisioner script |
 | `scripts/2-setup-iotops.sh` | Script to deploy OEE assets and dataflow to AIO via az CLI |
 | `scripts/3-setup-iotops-assets.sh` | Bulk-promote discovered assets to managed assets |
+| `scripts/4-setup-foundry.sh` | Provision the Foundry resource + project and deploy chat + embedding models (run before the AI Search script) |
+| `scripts/5-setup-aisearch.sh` | Provision Azure AI Search + index the 36 SOP PDFs (uses the Foundry AOAI endpoint) |
+| `scripts/build-sops.sh` | Regenerate SOP PDFs from `knowledge/source/*.md` (developer only) |
 | `simulator/` | .NET 8 console app simulator |
 | `simulator/FabricOEESimulator/` | Simulator source code |
 | `simulator/FabricOEESimulator/simulator.sample.yaml` | Sample configuration file |
@@ -243,3 +255,5 @@ This demo models **true production-line OEE** — parts flow sequentially throug
 | `ontology/` | Ontology CSV definitions for Data Agent (6 entities, 8 relationships) |
 | `notebooks/create_ontology.ipynb` | Notebook to deploy ontology with validation and diagnostics |
 | `docs/ONTOLOGY_LESSONS.md` | Lessons learned from ontology deployment (materialized views, type mismatches, validation) |
+| `knowledge/` | 36 SOP PDFs + their markdown sources under `knowledge/source/` |
+| `agent/` | Foundry prompt-agent scaffolding (`agent.yaml`, `system-prompt.md`, knowledge-source descriptions, sample queries) |

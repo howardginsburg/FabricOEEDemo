@@ -1271,19 +1271,304 @@ Once the ontology is created, connect a Data Agent to ask natural language quest
 
 ---
 
-## Automated Setup (Alternative to Steps 1–6)
+## Step 9 — Provision the Foundry Resource and Deploy Models (Optional)
 
-Instead of following the manual steps, you can run the automated provisioner script:
+Adds the **agent runtime** pillar. The Microsoft Foundry resource + project hosts the chat model that powers the agent and exposes the OpenAI endpoint that Azure AI Search uses to generate embeddings for the SOP corpus in Step 10.
 
-```bash
-bash scripts/1-setup-fabric.sh --workspace-name "My Workspace"
-# -- or with device code auth --
-bash scripts/1-setup-fabric.sh --workspace-name "My Workspace" --use-device-code
+**Run Step 9 before Step 10** — the AI Search indexer needs the OpenAI endpoint produced by the embedding-model deployment in 9.3.
+
+This step uses the current Microsoft Foundry resource model (`AIServices` kind with project management enabled). For the underlying CLI commands, see the [Microsoft Foundry quickstart](https://learn.microsoft.com/azure/foundry/tutorials/quickstart-create-foundry-resources?tabs=azurecli).
+
+> Prefer the scripted path? See [QUICKSTART.md §6](QUICKSTART.md#6-optional-provision-the-foundry-resource-and-deploy-models).
+
+### 9.1 — Create the Foundry resource and project
+
+1. Open the [Microsoft Foundry portal](https://ai.azure.com) and sign in.
+2. Click **+ Create new** → **Foundry resource** (or **Microsoft Foundry resource**).
+3. Fill in:
+   - **Foundry resource name:** `oee-foundry` (or your preferred name).
+   - **Subscription / Resource group:** your Azure subscription and a new or existing resource group.
+   - **Region:** a region that has both `gpt-4.1` and `text-embedding-3-large` quota (e.g., `eastus2` or `westus3`).
+   - **Custom subdomain:** accept the default (`oee-foundry`) — it must be globally unique. This determines your OpenAI endpoint URL.
+   - Accept the default networking and identity options unless you have a corporate requirement.
+4. Click **Create**. Provisioning takes 2–3 minutes.
+5. Inside the new resource, click **+ Create project** and name it `oee-factory-iq`.
+6. After the project is created, open **Project overview** and copy its **resource ID** and **endpoint URL** — you reference both later when registering knowledge sources.
+
+### 9.2 — Deploy the chat model
+
+In the Foundry portal → **Project `oee-factory-iq`** → **Models + endpoints** → **+ Deploy model** → **Deploy base model**:
+
+1. **Model:** `gpt-4.1` (or your preferred chat model).
+2. **Deployment name:** `gpt-4.1`.
+3. **Model version:** `2025-04-14` (or the latest available).
+4. **Deployment type:** `Standard`.
+5. **Capacity:** 50K TPM (or your quota allocation).
+6. Click **Deploy**.
+
+Wait for status **Succeeded** before continuing.
+
+### 9.3 — Deploy the embedding model
+
+Still on the **Models + endpoints** page → **+ Deploy model** → **Deploy base model**:
+
+1. **Model:** `text-embedding-3-large`.
+2. **Deployment name:** `text-embedding-3-large`.
+3. **Model version:** `1` (or the latest available).
+4. **Deployment type:** `Standard`.
+5. **Capacity:** 50K TPM minimum (one indexer run against the 36 PDFs consumes ~3M tokens).
+6. Click **Deploy**.
+
+After the status is **Succeeded**, open the Foundry resource (not the project) → **Keys and Endpoint** and copy the **Azure OpenAI endpoint** (looks like `https://<custom-subdomain>.openai.azure.com`). This is the **OpenAI endpoint URL** you reference in Step 10 when configuring the AI Search indexer.
+
+---
+
+## Step 10 — Index the SOP Corpus in Azure AI Search (Optional)
+
+Adds the **static knowledge** pillar — 36 standard-operating-procedure PDFs (one per station + 6 cross-cutting policy documents) indexed with hybrid (keyword + vector + semantic) search. The Foundry agent in Step 11 will use this as its second knowledge source alongside the Fabric Data Agent.
+
+**What you get:** an Azure AI Search index named `oee-sops` that exposes per-page chunks with fields `id`, `parent_id`, `metadata_storage_name`, `line_id`, `station_position`, `chunk`, and `vector`. Filter by `line_id eq 'Line-D' and station_position eq '05'` to ground answers in a specific station's SOP, or drop the filter to surface cross-cutting policy.
+
+> Prefer the scripted path? See [QUICKSTART.md §7](QUICKSTART.md#7-optional-index-the-sop-corpus-in-azure-ai-search).
+
+### 10.1 — (Developer-only) Regenerate the PDFs
+
+The 36 PDFs are already committed under `knowledge/*.pdf`. Skip to 10.2 unless you have authored a new SOP or modified a markdown source in `knowledge/source/`.
+
+If you do need to rebuild, install `pandoc` plus either `wkhtmltopdf` (default) or `xelatex`, then run `bash scripts/build-sops.sh`. See [knowledge/README.md](knowledge/README.md) for the filename convention and source-of-truth rules.
+
+### 10.2 — Create a storage account and upload the PDFs
+
+1. In the [Azure portal](https://portal.azure.com), create or choose a **storage account** in the same region as your Foundry resource.
+   - Performance: **Standard**. Redundancy: **LRS** is fine for the demo.
+2. Open the storage account → **Containers** → **+ Container**. Name it **`oee-sops`** and leave the access level at **Private**.
+3. Open the new container → **Upload** → drag all 36 files from your local `knowledge/*.pdf` folder and upload them.
+
+You should end up with 36 PDF blobs whose names follow the convention `Line-X_NN_<StationName>_SOP.pdf` (per-station) or `<Topic>.pdf` (cross-cutting). The line and station tokens in the filename are what drive filtering later.
+
+### 10.3 — Create the Azure AI Search service
+
+1. In the Azure portal, **+ Create a resource** → **Azure AI Search**.
+2. Choose the same subscription and resource group; **Service name** must be globally unique (e.g., `oee-search-<initials>`).
+3. **Location:** same region as your Foundry resource and storage account.
+4. **Pricing tier:** **Standard (S1)** — required for vector and semantic search at the scale needed by this index.
+5. Click **Review + create**, then **Create**. Provisioning takes 2–3 minutes.
+6. Once deployed, open the service → **Semantic ranker** → enable the **Free** plan (sufficient for the demo).
+
+### 10.4 — Run the Import-and-Vectorize-Data wizard
+
+The portal wizard handles the bulk of the index, skillset, and indexer creation:
+
+1. Open the AI Search service → **Overview** → **Import and vectorize data**.
+2. **Data source:** **Azure Blob Storage**.
+   - Choose your storage account and the **`oee-sops`** container.
+   - Authentication: managed identity is cleanest; access key works too.
+3. **Vectorize your text:**
+   - **Kind:** **Azure OpenAI**.
+   - **AI service:** the Foundry AOAI endpoint from Step 9.3.
+   - **Model deployment:** `text-embedding-3-large`.
+   - **Authentication:** **API key** (paste a key from the Foundry portal → Project → Keys + endpoints).
+4. **Vectorize and enrich your images:** leave unchecked (the SOPs are text-only).
+5. **Advanced settings:**
+   - **Chunk length (characters):** `2000`.
+   - **Page overlap length:** `200`.
+6. **Objects name:** prefix `oee-sops`. The wizard will create:
+   - Index: `oee-sops`.
+   - Indexer: `oee-sops-indexer`.
+   - Skillset: `oee-sops-skillset`.
+   - Data source: `oee-sops-datasource`.
+7. Click **Create**. The wizard provisions everything and starts the indexer.
+
+Wait for the indexer's first run to finish (5–10 minutes for 36 PDFs).
+
+### 10.5 — Add `line_id` and `station_position` filterable fields
+
+The wizard creates the index but does not extract `line_id` / `station_position` from the filename. Add them by editing the index and indexer JSON.
+
+1. Open AI Search → **Indexes** → **`oee-sops`** → **Edit JSON**. Add these two fields to the `fields` array (keep the existing wizard-generated fields untouched):
+
+   ```json
+   { "name": "line_id",           "type": "Edm.String", "filterable": true, "facetable": true, "searchable": false, "retrievable": true },
+   { "name": "station_position",  "type": "Edm.String", "filterable": true, "facetable": true, "searchable": false, "retrievable": true }
+   ```
+
+   Click **Save**.
+
+2. Open AI Search → **Indexers** → **`oee-sops-indexer`** → **Indexer definition (JSON)**. In the `fieldMappings` array (add it if missing), append:
+
+   ```json
+   {
+     "sourceFieldName": "metadata_storage_name",
+     "targetFieldName": "line_id",
+     "mappingFunction": { "name": "extractTokenAtPosition", "parameters": { "delimiter": "_", "position": 0 } }
+   },
+   {
+     "sourceFieldName": "metadata_storage_name",
+     "targetFieldName": "station_position",
+     "mappingFunction": { "name": "extractTokenAtPosition", "parameters": { "delimiter": "_", "position": 1 } }
+   }
+   ```
+
+   Click **Save**.
+
+3. Open the indexer → **Reset** → confirm → **Run**. The reset re-emits every document so the new mappings populate the new fields. Wait for the run to complete.
+
+### 10.6 — Confirm the semantic configuration
+
+1. AI Search → **Indexes** → **`oee-sops`** → **Semantic configurations**.
+2. The wizard creates one named `oee-sops-semantic-configuration`. Rename it to **`oee-semantic`** (or recreate it under that name) so it matches the value the Foundry agent expects.
+3. Confirm the configuration prioritises the `chunk` field as the content field and `metadata_storage_name` as the title.
+
+### 10.7 — Verify the index
+
+Open the index → **Search explorer** and run:
+
+```json
+{
+  "search": "Pressure-Loss corrective action",
+  "queryType": "semantic",
+  "semanticConfiguration": "oee-semantic",
+  "filter": "line_id eq 'Line-B' and station_position eq '02'",
+  "select": "metadata_storage_name,line_id,station_position,chunk",
+  "top": 3
+}
 ```
 
-This script creates the Eventhouse, KQL Database, tables, reference data, materialized view, Eventstream with routing, and imports the dashboard — all via the Fabric REST API.
+You should see `Line-B_02_Hydraulic-Press_Maintenance_SOP.pdf` chunks containing section 4.1. Repeat with `"search": "Curing-Oven temperature drift"` and no filter — the top hit should be `Line-D_05_Curing-Oven_SOP.pdf`.
 
-> **⚠ Important:** After the script completes, open the Eventstream in the Fabric UI and verify it shows **Running**. The Eventstream sometimes does not start automatically after provisioning. If it is stopped or in draft state, click **Publish** to activate it. Data will not flow to the KQL tables until the Eventstream is running.
+### 10.8 — Capture the values for Step 11
+
+Before moving on, record these — Step 11.2 needs all of them:
+
+| Value | Where to find it |
+|---|---|
+| **Search endpoint** | AI Search → **Overview** → **URL** (looks like `https://<service>.search.windows.net`). |
+| **Query key** | AI Search → **Keys** → **Manage query keys** → use the read-only key. **Do not** use the admin key. |
+| **Index name** | `oee-sops` (or whatever you chose). |
+| **Embedding model** | `text-embedding-3-large` (must match the deployment in Step 9.3). |
+| **Semantic configuration** | `oee-semantic`. |
+
+### 10.9 — Pipeline reference
+
+| Step | Component | Notes |
+|---|---|---|
+| 1 | **Blob source** | Container `oee-sops` with 36 PDFs. |
+| 2 | **DocumentExtractionSkill** | Extracts text and metadata from each PDF. |
+| 3 | **SplitSkill** | Chunks pages (2000 chars, 200 overlap). |
+| 4 | **AzureOpenAIEmbeddingSkill** | Generates 3072-dim vectors via `text-embedding-3-large`. |
+| 5 | **Index projection** | One Search document per chunk, parent linked by `parent_id`. |
+| 6 | **Field mappings** | `line_id` and `station_position` extracted from `metadata_storage_name` by `extractTokenAtPosition` (underscore-delimited). |
+
+---
+
+## Step 11 — Build the Agent and Attach Knowledge Tools (Optional)
+
+Wires both knowledge sources behind a single Foundry agent that handles 5 personas (Corp Exec, Plant Manager, Line Manager, Maintenance Tech, Quality Worker). Routing is configured in the system prompt: live questions → Fabric Data Agent; procedure / policy → AI Search; combined → both.
+
+> **Why this section was rewritten.** The Microsoft Foundry portal moved from the legacy global *Foundry IQ → Knowledge* registry to a per-agent **Knowledge** panel under the Foundry Agent Service. Classic agents are deprecated and will be retired on **March 31, 2027** — this tutorial targets the current GA flow. References: [Foundry Agent Service overview](https://learn.microsoft.com/azure/foundry/agents/overview), [Azure AI Search tool](https://learn.microsoft.com/azure/foundry/agents/how-to/tools/ai-search), [Fabric data agent in Foundry](https://learn.microsoft.com/fabric/data-science/data-agent-foundry).
+
+This step is entirely manual in the Foundry portal today. All values you need came from Steps 9 and 10.
+
+### 11.1 — Grant the Foundry project access to AI Search
+
+The Foundry project's system-assigned managed identity needs to read the `oee-sops` index. From a terminal:
+
+```bash
+FOUNDRY_RG="iotopsrg"
+FOUNDRY_NAME="iotopsfoundry"
+SEARCH_NAME="<your-ai-search-service-name>"   # from Step 10
+SEARCH_RG="iotopssearch"                       # from Step 10
+
+# Get the Foundry account's MI principal ID
+FOUNDRY_PRINCIPAL=$(az cognitiveservices account show \
+  -g "$FOUNDRY_RG" -n "$FOUNDRY_NAME" \
+  --query identity.principalId -o tsv)
+
+# Search service resource ID
+SEARCH_ID=$(az search service show \
+  -g "$SEARCH_RG" --name "$SEARCH_NAME" --query id -o tsv)
+
+# Assign least-privilege roles
+az role assignment create --assignee-object-id "$FOUNDRY_PRINCIPAL" \
+  --assignee-principal-type ServicePrincipal \
+  --role "Search Index Data Reader" --scope "$SEARCH_ID"
+
+az role assignment create --assignee-object-id "$FOUNDRY_PRINCIPAL" \
+  --assignee-principal-type ServicePrincipal \
+  --role "Search Service Contributor" --scope "$SEARCH_ID"
+```
+
+`Search Index Data Reader` lets the agent query the index. `Search Service Contributor` lets the portal list/inspect the index when you wire up the connection.
+
+### 11.2 — Create the agent
+
+In the [Microsoft Foundry portal](https://ai.azure.com/) (`iotopsfoundry` project):
+
+1. Left pane → **Build and customize** → **Agents**.
+2. Click **+ New agent**. Foundry assigns a default name and ID — rename it to `OEE Factory IQ`.
+3. In the **Setup** pane on the right:
+   - **Model deployment:** the `gpt-4.1` deployment from Step 9.2.
+   - **Instructions:** paste the contents of [agent/system-prompt.md](agent/system-prompt.md) verbatim.
+4. Click **Save** at the top before attaching tools.
+
+The full agent definition is committed under [agent/agent.yaml](agent/agent.yaml) for reference and version control. The Foundry portal is the deployment target today; the YAML lives in source for review.
+
+### 11.3 — Attach Knowledge tool #1: Fabric Data Agent
+
+The Fabric Data Agent provides **live operational state** — `OEE_5min`, `MachineEvents`, `PartEvents`, `MaintenanceEvents`.
+
+> Prereq: the Fabric Data Agent from Step 8.6 must be **published** in Fabric. Open it in the Fabric portal and check the publish status — Foundry can only connect to a published endpoint. Foundry and Fabric must share the same tenant and signed-in account.
+
+From your agent's **Setup** pane, scroll to **Knowledge** → **Add**:
+
+1. Choose **Microsoft Fabric**.
+2. Click **New connection** (or pick an existing Fabric connection if you already created one).
+3. From your published Fabric Data Agent's URL — it has the form `https://<env>.fabric.microsoft.com/groups/<workspace-id>/aiskills/<artifact-id>` — copy:
+   - `workspace-id` — the GUID after `/groups/`.
+   - `artifact-id` — the GUID after `/aiskills/`.
+4. Paste both as custom keys in the connection dialog and check **Is secret** for each.
+5. Name the connection (e.g., `oee-fabric-data-agent`), choose whether to share it across projects, and click **Connect**.
+6. In the tool description field, paste the contents of [agent/knowledge/fabric_data_agent.md](agent/knowledge/fabric_data_agent.md) so the model knows when to call it.
+
+Only one Microsoft Fabric tool is allowed per agent.
+
+### 11.4 — Attach Knowledge tool #2: Azure AI Search
+
+The Azure AI Search index provides the **static SOP corpus** — 36 PDFs from Step 10.
+
+From the same **Knowledge** panel → **Add**:
+
+1. Choose **Azure AI Search**.
+2. Under **Connect to an index**, select **Indexes that are not part of this project**.
+3. **Azure AI Search resource connection** → **New connection**:
+   - **Service:** the AI Search service from Step 10.8 (subscription / resource group / name).
+   - **Authentication:** **Microsoft Entra ID (managed identity)** — keyless. (Possible because Step 11.1 granted the Foundry MI the right roles.)
+   - Click **Add connection**.
+4. **Azure AI Search index:** `oee-sops`.
+5. **Display name:** `oee-sops`.
+6. **Search type:** **Hybrid + semantic**.
+7. **Semantic configuration:** `oee-semantic` (from Step 10.5).
+8. Click **Connect**.
+9. In the tool description, paste the contents of [agent/knowledge/aisearch_sops.md](agent/knowledge/aisearch_sops.md).
+
+> The model deployment you picked in 11.2 is used only for **orchestration and response generation**. The Fabric Data Agent uses its own model for NL2SQL; Azure AI Search uses the `text-embedding-3-large` deployment configured on the index itself.
+
+### 11.5 — Run the sample queries
+
+Open the agent's **Try in playground** view and try the prompts from [agent/samples/queries.md](agent/samples/queries.md). The set is organised by persona and tagged with the expected knowledge source(s):
+
+- **Corp Exec** — "What's the site-wide OEE right now…"
+- **Plant Manager** — "Show me OEE for all 5 lines over the past hour…"
+- **Line Manager** — "On Line-B, list any stations currently in Fault…"
+- **Maintenance Tech** — "Line-D Curing-Oven just raised a `Thermocouple-Drift` fault…"
+- **Quality Worker** — "If Line-A CMM-Inspection rejects exceed 8 % in an hour…"
+
+Validate that each response:
+
+- Combines live state with procedure when the question demands it.
+- Cites Fabric Data Agent for operational claims (with the table/view it queried).
+- Cites the SOP PDF by filename for procedural claims (e.g., `Line-D_05_Curing-Oven_SOP.pdf`).
+- Disambiguates `line_id` + `station_position` when a station type appears on more than one line (e.g., `Nozzle-Clog` exists on Line-D Primer/Paint and Line-E SMT/Conformal).
 
 ---
 

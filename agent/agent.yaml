@@ -1,0 +1,84 @@
+# Foundry prompt agent definition — OEE Factory IQ
+#
+# This file is the source of truth for the prompt agent that gets created in
+# the Foundry portal (Step 11 of FABRIC_OEE_TUTORIAL.md). The portal is the
+# place where this YAML is consumed; the file is committed here so the
+# agent's configuration is reviewable and versionable alongside the rest of
+# the demo.
+
+apiVersion: foundry.azure.com/v1
+kind: PromptAgent
+metadata:
+  name: oee-factory-iq
+  description: >
+    Multi-persona OEE assistant. Routes between Fabric Data Agent (live
+    telemetry) and Azure AI Search (SOP corpus). Five personas: Corp Exec,
+    Plant Manager, Line Manager, Maintenance Tech, Quality Worker.
+
+spec:
+  model:
+    name: gpt-4.1
+    deployment: gpt-4.1
+    temperature: 0.2
+    max_output_tokens: 1500
+
+  system_prompt:
+    file: system-prompt.md
+
+  knowledge_sources:
+    - name: fabric_data_agent
+      type: fabric-data-agent
+      role: live
+      description: >
+        Live Fabric Data Agent backed by Eventhouse OEE_5min, MachineEvents,
+        PartEvents, MaintenanceEvents, and the ontology bindings. Use for
+        operational facts: current OEE, open work orders, recent faults,
+        reject rates, line-level KPIs, technician assignments.
+      details_file: knowledge/fabric_data_agent.md
+
+    - name: aisearch_sops
+      type: azure-ai-search
+      role: static
+      description: >
+        Azure AI Search index 'oee-sops' over 36 PDFs: 30 per-station SOPs
+        plus 6 cross-cutting documents (Maintenance Workflow, LOTO, Quality
+        Reject Disposition, OEE Targets, Shift Handover, Production Lines
+        Reference). Use for procedure, corrective action, KPI target,
+        policy, and bottleneck reference.
+      details_file: knowledge/aisearch_sops.md
+      semantic_configuration: oee-semantic
+      vector_field: vector
+      embedding:
+        model: text-embedding-3-large
+
+  routing:
+    rules:
+      - when: "Question is about current/recent operational state (status, OEE, open work orders, reject rates, faults, who is working on what)."
+        prefer: fabric_data_agent
+
+      - when: "Question is about a procedure, corrective action, KPI target, policy, or how-to for a specific station or for the factory overall."
+        prefer: aisearch_sops
+
+      - when: "Question references a specific line and station (e.g., 'Line-D Curing-Oven')."
+        prefer: aisearch_sops
+        filter: 'line_id eq ''{{line_id}}'' and station_position eq ''{{station_position}}'''
+
+      - when: "Question requires both live state and procedure (e.g., 'My Curing-Oven just faulted — what do I do?')."
+        prefer: both
+
+  citation_policy:
+    operational_claim_must_cite: fabric_data_agent
+    procedural_claim_must_cite: aisearch_sops
+    format: "Source: <metadata_storage_name>  ·  Data: <KQL query summary>"
+
+  guardrails:
+    refuse_topics:
+      - "Personally identifiable information about specific employees."
+      - "Safety overrides or LOTO bypass guidance."
+    fallback_message: >
+      I do not have a confident source for this. Live operational data is
+      provided by the Fabric Data Agent and procedural answers come from
+      the 36 SOP PDFs in the Azure AI Search index. If your question is
+      outside both, please consult your Line Manager or EHS.
+
+  sample_queries_file: samples/queries.md
