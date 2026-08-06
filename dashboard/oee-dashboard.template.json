@@ -225,7 +225,7 @@
         "kind": "inline",
         "dataSourceId": "b12979d1-e244-4088-b1ae-d91ca3ed9d9d"
       },
-      "text": "let created =\n    MaintenanceEvents\n    | where timestamp > ago(24h)\n    | where action == \"Created\"\n    | summarize create_time = min(timestamp) by work_order_id, device_id, machine_type,\n        line_id, station_position, issue_type;\nlet resolved =\n    MaintenanceEvents\n    | where timestamp > ago(24h)\n    | where action == \"Resolved\"\n    | summarize resolve_time = min(timestamp) by work_order_id;\ncreated\n| join kind=leftouter resolved on work_order_id\n| where isnull(resolve_time)\n| extend open_minutes = datetime_diff('minute', now(), create_time)\n| project work_order_id, device_id, machine_type, line_id, station_position,\n    issue_type, create_time, open_minutes\n| order by open_minutes desc",
+      "text": "let created =\n    MaintenanceEvents\n    | where timestamp > ago(24h)\n    | where action == \"Created\"\n    | summarize create_time = min(timestamp) by work_order_id, device_id, machine_type,\n        line_id, station_position, issue_type;\nlet resolved =\n    MaintenanceEvents\n    | where timestamp > ago(24h)\n    | where action == \"Resolved\"\n    | summarize resolve_time = min(timestamp) by work_order_id;\nlet techs =\n    MaintenanceEvents\n    | where timestamp > ago(24h)\n    | where isnotempty(technician_id)\n    | summarize technician_id = any(technician_id) by work_order_id;\ncreated\n| join kind=leftouter resolved on work_order_id\n| where isnull(resolve_time)\n| join kind=leftouter techs on work_order_id\n| lookup kind=leftouter TechnicianMaster on technician_id\n| extend technician = coalesce(name, technician_id, \"Unassigned\")\n| extend open_minutes = datetime_diff('minute', now(), create_time)\n| project work_order_id, device_id, machine_type, line_id, station_position,\n    issue_type, technician, create_time, open_minutes\n| order by open_minutes desc",
       "usedVariables": []
     },
     {
@@ -252,7 +252,7 @@
         "kind": "inline",
         "dataSourceId": "b12979d1-e244-4088-b1ae-d91ca3ed9d9d"
       },
-      "text": "MaintenanceEvents\n| where timestamp > ago(24h)\n| summarize\n    create_time  = minif(timestamp, action == \"Created\"),\n    ack_time     = minif(timestamp, action == \"Acknowledged\"),\n    start_time   = minif(timestamp, action == \"InProgress\"),\n    resolve_time = minif(timestamp, action == \"Resolved\"),\n    technician   = any(technician_id)\n    by work_order_id, device_id, machine_type, line_id, issue_type\n| extend\n    time_to_ack     = iif(isnotnull(ack_time), datetime_diff('minute', ack_time, create_time), int(null)),\n    time_to_resolve = iif(isnotnull(resolve_time), datetime_diff('minute', resolve_time, create_time), int(null))\n| project work_order_id, device_id, machine_type, line_id, issue_type, technician,\n    create_time, time_to_ack, time_to_resolve\n| order by create_time desc",
+      "text": "MaintenanceEvents\n| where timestamp > ago(24h)\n| summarize\n    create_time  = minif(timestamp, action == \"Created\"),\n    ack_time     = minif(timestamp, action == \"Acknowledged\"),\n    start_time   = minif(timestamp, action == \"InProgress\"),\n    resolve_time = minif(timestamp, action == \"Resolved\"),\n    technician_id = any(technician_id)\n    by work_order_id, device_id, machine_type, line_id, issue_type\n| lookup kind=leftouter TechnicianMaster on technician_id\n| extend technician = coalesce(name, technician_id)\n| extend\n    time_to_ack     = iif(isnotnull(ack_time), datetime_diff('minute', ack_time, create_time), int(null)),\n    time_to_resolve = iif(isnotnull(resolve_time), datetime_diff('minute', resolve_time, create_time), int(null))\n| project work_order_id, device_id, machine_type, line_id, issue_type, technician,\n    create_time, time_to_ack, time_to_resolve\n| order by create_time desc",
       "usedVariables": []
     },
     {
@@ -261,7 +261,7 @@
         "kind": "inline",
         "dataSourceId": "b12979d1-e244-4088-b1ae-d91ca3ed9d9d"
       },
-      "text": "MachineEvents\n| where timestamp between (_startTime .. _endTime)\n| join kind=inner StationMaster\n    on $left.line_id == $right.line_id, $left.station_position == $right.station_position\n| summarize\n    downtime    = countif(machine_status in (\"Fault\", \"Maintenance\")),\n    running     = countif(machine_status == \"Running\"),\n    avg_actual  = avgif(actual_cycle_time, machine_status == \"Running\"),\n    ideal       = avg(ideal_cycle_time),\n    total_parts = sum(total_parts_processed),\n    rejected    = sum(rejected_parts)\n    by machine_type, manufacturer\n| extend\n    availability = iif(running + downtime > 0, round(todouble(running) / todouble(running + downtime), 4), real(null)),\n    performance  = iif(avg_actual > 0, round(ideal / avg_actual, 4), real(null)),\n    quality      = iif(total_parts > 0, round(1.0 - todouble(rejected) / todouble(total_parts), 4), real(null))\n| extend\n    oee       = round(coalesce(availability, 0.0) * coalesce(performance, 0.0) * coalesce(quality, 0.0), 4)\n| project machine_type, manufacturer, availability = coalesce(availability, 0.0), performance = coalesce(performance, 0.0), quality = coalesce(quality, 0.0), oee\n| order by machine_type asc",
+      "text": "MachineEvents\n| where timestamp between (_startTime .. _endTime)\n| join kind=inner StationMaster\n    on $left.line_id == $right.line_id, $left.station_position == $right.station_position\n| summarize\n    downtime    = countif(machine_status in (\"Fault\", \"Maintenance\")),\n    running     = countif(machine_status == \"Running\"),\n    avg_actual  = avgif(actual_cycle_time, machine_status == \"Running\"),\n    ideal       = avg(ideal_cycle_time),\n    total_parts = sum(total_parts_processed),\n    rejected    = sum(rejected_parts)\n    by machine_type, line_id\n| extend\n    availability = iif(running + downtime > 0, todouble(running) / todouble(running + downtime), real(null)),\n    performance  = iif(avg_actual > 0, ideal / avg_actual, real(null)),\n    quality      = iif(total_parts > 0, 1.0 - todouble(rejected) / todouble(total_parts), real(null))\n| extend\n    oee = round(coalesce(availability, 0.0) * coalesce(performance, 0.0) * coalesce(quality, 0.0) * 100, 1)\n| project equipment = strcat(machine_type, \" (\", line_id, \")\"), oee\n| order by oee asc",
       "usedVariables": [
         "_startTime",
         "_endTime"
@@ -308,7 +308,7 @@
         "kind": "inline",
         "dataSourceId": "b12979d1-e244-4088-b1ae-d91ca3ed9d9d"
       },
-      "text": "MachineEvents\n| where timestamp > ago(8h)\n| where total_parts_processed > 0\n| extend shift = iff(hourofday(timestamp) >= 6 and hourofday(timestamp) < 18, \"Day\", \"Night\")\n| summarize\n    total_p    = sum(total_parts_processed),\n    rejected_p = sum(rejected_parts),\n    faults     = countif(machine_status == \"Fault\")\n    by shift, line_id\n| extend quality = round(1.0 - (todouble(rejected_p) / todouble(total_p)), 4)\n| project shift, line_id, total_p, rejected_p, quality, faults\n| order by line_id asc, shift asc",
+      "text": "MachineEvents\n| where timestamp > ago(8h)\n| where total_parts_processed > 0\n| extend shift = shift_id\n| summarize\n    total_p    = sum(total_parts_processed),\n    rejected_p = sum(rejected_parts),\n    faults     = countif(machine_status == \"Fault\")\n    by shift, line_id\n| extend quality = round(1.0 - (todouble(rejected_p) / todouble(total_p)), 4)\n| project shift, line_id, total_p, rejected_p, quality, faults\n| order by line_id asc, shift asc",
       "usedVariables": []
     },
     {
@@ -317,7 +317,7 @@
         "kind": "inline",
         "dataSourceId": "b12979d1-e244-4088-b1ae-d91ca3ed9d9d"
       },
-      "text": "MachineEvents\n| where timestamp > ago(8h)\n| extend shift = iff(hourofday(timestamp) >= 6 and hourofday(timestamp) < 18, \"Day\", \"Night\")\n| summarize device_total = max(total_parts_processed) by line_id, shift, device_id\n| summarize actual_parts = sum(device_total) by line_id, shift\n| join kind=inner ProductionSchedule on line_id, shift\n| extend adherence_pct = round(todouble(actual_parts) / todouble(planned_parts) * 100, 1)\n| project line_id, shift, actual_parts, planned_parts, adherence_pct\n| order by line_id asc, shift asc",
+      "text": "MachineEvents\n| where timestamp > ago(8h)\n| extend shift = shift_id\n| summarize device_total = max(total_parts_processed) by line_id, shift, device_id\n| summarize actual_parts = sum(device_total) by line_id, shift\n| join kind=inner ProductionSchedule on line_id, shift\n| extend adherence_pct = round(todouble(actual_parts) / todouble(planned_parts) * 100, 1)\n| project line_id, shift, actual_parts, planned_parts, adherence_pct\n| order by line_id asc, shift asc",
       "usedVariables": []
     },
     {
@@ -458,6 +458,45 @@
         "_startTime",
         "_endTime"
       ]
+    },
+    {
+      "id": "01000000-0000-4000-8000-000000000040",
+      "dataSource": {
+        "kind": "inline",
+        "dataSourceId": "b12979d1-e244-4088-b1ae-d91ca3ed9d9d"
+      },
+      "text": "MaintenanceEvents\n| where timestamp > ago(24h)\n| where action == \"Created\"\n| lookup kind=leftouter IssueTypeMaster on issue_type\n| extend category = coalesce(category, \"Uncategorized\")\n| summarize fault_count = count() by category\n| order by fault_count desc",
+      "usedVariables": []
+    },
+    {
+      "id": "01000000-0000-4000-8000-000000000041",
+      "dataSource": {
+        "kind": "inline",
+        "dataSourceId": "b12979d1-e244-4088-b1ae-d91ca3ed9d9d"
+      },
+      "text": "MachineEvents\n| where timestamp between (_startTime .. _endTime)\n| lookup kind=leftouter MachineTypeMaster on machine_type\n| extend category = coalesce(category, \"Other\")\n| join kind=inner StationMaster\n    on $left.line_id == $right.line_id, $left.station_position == $right.station_position\n| summarize\n    downtime    = countif(machine_status in (\"Fault\", \"Maintenance\")),\n    running     = countif(machine_status == \"Running\"),\n    avg_actual  = avgif(actual_cycle_time, machine_status == \"Running\"),\n    ideal       = avg(ideal_cycle_time),\n    total_parts = sum(total_parts_processed),\n    rejected    = sum(rejected_parts)\n    by category\n| extend\n    availability = iif(running + downtime > 0, round(todouble(running) / todouble(running + downtime), 4), real(null)),\n    performance  = iif(avg_actual > 0, round(ideal / avg_actual, 4), real(null)),\n    quality      = iif(total_parts > 0, round(1.0 - todouble(rejected) / todouble(total_parts), 4), real(null))\n| extend oee = round(coalesce(availability, 0.0) * coalesce(performance, 0.0) * coalesce(quality, 0.0), 4)\n| project category, availability = coalesce(availability, 0.0), performance = coalesce(performance, 0.0), quality = coalesce(quality, 0.0), oee\n| order by oee desc",
+      "usedVariables": [
+        "_startTime",
+        "_endTime"
+      ]
+    },
+    {
+      "id": "01000000-0000-4000-8000-000000000042",
+      "dataSource": {
+        "kind": "inline",
+        "dataSourceId": "b12979d1-e244-4088-b1ae-d91ca3ed9d9d"
+      },
+      "text": "let wos =\n    MaintenanceEvents\n    | where timestamp > ago(24h)\n    | summarize create_time = minif(timestamp, action == \"Created\"),\n        resolve_time = minif(timestamp, action == \"Resolved\"),\n        technician_id = any(technician_id)\n        by work_order_id\n    | where isnotempty(technician_id);\nwos\n| lookup kind=leftouter TechnicianMaster on technician_id\n| extend technician = coalesce(name, technician_id)\n| extend resolve_minutes = iif(isnotnull(resolve_time), datetime_diff('minute', resolve_time, create_time), int(null))\n| summarize total_wos = count(), open_wos = countif(isnull(resolve_time)), avg_resolve_min = round(avg(todouble(resolve_minutes)), 1) by technician\n| order by total_wos desc",
+      "usedVariables": []
+    },
+    {
+      "id": "01000000-0000-4000-8000-000000000043",
+      "dataSource": {
+        "kind": "inline",
+        "dataSourceId": "b12979d1-e244-4088-b1ae-d91ca3ed9d9d"
+      },
+      "text": "let avail =\n    MachineEvents\n    | where timestamp > ago(8h)\n    | summarize running = countif(machine_status == \"Running\"), downtime = countif(machine_status in (\"Fault\", \"Maintenance\")) by shift_id\n    | extend availability = iif(running + downtime > 0, todouble(running) / todouble(running + downtime), 0.0);\nlet perf =\n    MachineEvents\n    | where timestamp > ago(8h)\n    | where machine_status == \"Running\"\n    | join kind=inner StationMaster\n        on $left.line_id == $right.line_id, $left.station_position == $right.station_position\n    | summarize avg_actual = avg(actual_cycle_time), ideal = avg(ideal_cycle_time) by shift_id\n    | extend performance = iif(avg_actual > 0, min_of(ideal / avg_actual, 1.0), 0.0);\nlet qual =\n    PartEvents\n    | where timestamp > ago(8h)\n    | where action in (\"completed\", \"rejected\")\n    | summarize total_sum = count(), rejected_sum = countif(action == \"rejected\") by shift_id\n    | extend quality = iif(total_sum > 0, 1.0 - todouble(rejected_sum) / todouble(total_sum), 0.0);\navail\n| join kind=leftouter perf on shift_id\n| join kind=leftouter qual on shift_id\n| extend oee = round(coalesce(availability, 0.0) * coalesce(performance, 0.0) * coalesce(quality, 0.0) * 100, 1)\n| project shift = shift_id, oee\n| order by shift asc",
+      "usedVariables": []
     }
   ],
   "tiles": [
@@ -752,13 +791,13 @@
     },
     {
       "id": "02000000-0000-4000-8000-000000000016",
-      "title": "Equipment Age vs OEE",
+      "title": "OEE by Machine Type (%)",
       "pageId": "d4e5f6a7-b8c9-4d1e-af3a-b4c5d6e7f8a9",
       "queryRef": {
         "kind": "query",
         "queryId": "01000000-0000-4000-8000-000000000016"
       },
-      "visualType": "scatter",
+      "visualType": "bar",
       "layout": {
         "x": 0,
         "y": 16,
@@ -1018,6 +1057,74 @@
         "x": 0,
         "y": 0,
         "width": 8,
+        "height": 8
+      },
+      "visualOptions": {}
+    },
+    {
+      "id": "02000000-0000-4000-8000-000000000041",
+      "title": "OEE by Process Family",
+      "pageId": "a1b2c3d4-e5f6-4a8b-9c0d-e1f2a3b4c5d6",
+      "queryRef": {
+        "kind": "query",
+        "queryId": "01000000-0000-4000-8000-000000000041"
+      },
+      "visualType": "bar",
+      "layout": {
+        "x": 0,
+        "y": 24,
+        "width": 24,
+        "height": 8
+      },
+      "visualOptions": {}
+    },
+    {
+      "id": "02000000-0000-4000-8000-000000000040",
+      "title": "Top Fault Categories",
+      "pageId": "b2c3d4e5-f6a7-4b9c-8d1e-f2a3b4c5d6e7",
+      "queryRef": {
+        "kind": "query",
+        "queryId": "01000000-0000-4000-8000-000000000040"
+      },
+      "visualType": "bar",
+      "layout": {
+        "x": 0,
+        "y": 24,
+        "width": 12,
+        "height": 8
+      },
+      "visualOptions": {}
+    },
+    {
+      "id": "02000000-0000-4000-8000-000000000043",
+      "title": "Day vs Night OEE",
+      "pageId": "b2c3d4e5-f6a7-4b9c-8d1e-f2a3b4c5d6e7",
+      "queryRef": {
+        "kind": "query",
+        "queryId": "01000000-0000-4000-8000-000000000043"
+      },
+      "visualType": "column",
+      "layout": {
+        "x": 12,
+        "y": 24,
+        "width": 12,
+        "height": 8
+      },
+      "visualOptions": {}
+    },
+    {
+      "id": "02000000-0000-4000-8000-000000000042",
+      "title": "Technician Workload",
+      "pageId": "d4e5f6a7-b8c9-4d1e-af3a-b4c5d6e7f8a9",
+      "queryRef": {
+        "kind": "query",
+        "queryId": "01000000-0000-4000-8000-000000000042"
+      },
+      "visualType": "table",
+      "layout": {
+        "x": 0,
+        "y": 32,
+        "width": 24,
         "height": 8
       },
       "visualOptions": {}

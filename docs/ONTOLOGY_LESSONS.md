@@ -1,230 +1,189 @@
-# Fabric Ontology Deployment — Lessons Learned
+# Fabric Ontology — Architectural Rationale
 
-This document captures critical insights from deploying the OEE Manufacturing Ontology with **hybrid lakehouse + eventhouse bindings**. These lessons prevent **silent failures** where the ontology creates successfully (HTTP 200/201) but the graph remains empty (0 nodes, 0 edges).
+This document explains *why* the OEE ontology looks the way it does — the
+non-obvious design decisions that shaped both [`ontology/ontology.yaml`](../ontology/ontology.yaml)
+and the Silver-tier KQL enrichment functions in [`scripts/1-setup-fabric.sh`](../scripts/1-setup-fabric.sh).
 
----
-
-## Root Cause 1: Materialized Views Don't Replicate to OneLake
-
-### Problem
-KQL materialized views are not accessible via the lakehouse `dbo` schema because they don't replicate to OneLake. NonTimeSeries bindings that reference materialized views will fail silently — the ontology API returns success, but the entity type never appears in the graph.
-
-### Detection
-Run `spark.sql("DESCRIBE dbo.<table_name>")` for all NonTimeSeries binding sources:
-- Base tables succeed
-- Materialized views raise `TABLE_OR_VIEW_NOT_FOUND`
-
-### Solution
-**Option A — TimeSeries bindings only** (recommended for aggregated metrics):
-Remove all NonTimeSeries bindings for entities backed by materialized views. Keep only TimeSeries bindings (KQL queries). The entity won't be indexed in the graph knowledge base, but users can still query it via natural language.
-
-**Option B — Create a Delta table copy**:
-Sync the materialized view to a Delta Lake table via scheduled notebook:
-```python
-# Read from KQL materialized view
-df = spark.read \
-    .format("com.microsoft.kusto.spark.synapse.datasource") \
-    .option("kustoCluster", eventhouse_uri) \
-    .option("kustoDatabase", "MyDB") \
-    .option("kustoQuery", "MyMaterializedView") \
-    .load()
-
-# Write to Delta (merge/upsert for incremental updates)
-df.write.format("delta").mode("overwrite").saveAsTable("dbo.MyTable")
-```
-Trade-off: Requires orchestration to keep Delta table fresh.
-
-### Our Implementation
-We excluded the `OEEMetric` entity from the ontology because:
-- OEE_5min is a materialized view (5-minute rolling aggregates)
-- Creating a Delta copy would require continuous syncing
-- Users can query raw events (MachineEvent, PartEvent) and compute OEE on-demand
+It does **not** document the deployment workflow itself. For that, see
+[`ontology/README.md`](../ontology/README.md) and the publisher script
+[`scripts/6-publish-ontology.py`](../scripts/6-publish-ontology.py), whose
+structural validator catches binding mistakes (NonTimeSeries referencing
+timeseries properties, missing FK columns, dual-bind drift) before any
+REST call is made.
 
 ---
 
-## Root Cause 2: Property Data Type Mismatch (Silent Failure)
+## Decision 1 — No `OEEMetric` entity; no Gold tier
 
-### Problem
-If the declared `PropertyDataType` in the CSV doesn't **exactly** match the Spark/Delta column type, Fabric silently drops the entire entity type. No error is returned — the ontology creates successfully, but the graph shows 0 nodes.
+KQL materialized views are the natural home for rolling OEE
+(Availability × Performance × Quality), but they **do not replicate to OneLake**.
+NonTimeSeries bindings that reference a materialized view fail silently — the
+ontology creates successfully (HTTP 200) but the entity never appears in the
+graph because the lakehouse `dbo` schema can't see the view.
 
-### Common Mismatches
+The escape hatch is a Gold-tier Delta table populated by continuous export, but
+that adds an orchestration component and an extra 5-minute lag on top of the
+existing lakehouse mirror lag.
 
-| CSV Type | Spark Type | Valid? | Notes |
-|----------|------------|--------|-------|
-| `String` | `string` | ✅ | Perfect match |
-| `String` | `varchar` | ✅ | Accepted as string variant |
-| `BigInt` | `bigint` | ✅ | Perfect match |
-| `BigInt` | `long` | ✅ | Long is equivalent to BigInt |
-| `BigInt` | `int` | ✅ | Int is promoted to BigInt |
-| `Double` | `double` | ✅ | Perfect match |
-| `Double` | `float` | ✅ | Float is promoted to Double |
-| `DateTime` | `timestamp` | ✅ | Perfect match |
-| `DateTime` | `date` | ✅ | Date is accepted as DateTime |
-| `String` | `int` | ❌ | **Type mismatch — entity dropped** |
-| `BigInt` | `string` | ❌ | **Type mismatch — entity dropped** |
-| `DateTime` | `string` | ❌ | **Type mismatch — entity dropped** |
+**What we did instead:** drop `OEEMetric` from the ontology and skip the Gold
+tier entirely. Expose the *inputs* through the ontology and let the consumer
+(Data Agent, Activator, dashboard) compose OEE at query time — see Decision 3
+for the column-level mechanics.
 
-### Detection
-The notebook's diagnostic cell (Step 7b) runs `DESCRIBE` on all lakehouse tables and compares actual Spark types to declared CSV types:
+---
 
-```python
-SPARK_TO_ONTOLOGY = {
-    "string": "String", "varchar": "String",
-    "bigint": "BigInt", "long": "BigInt", "int": "BigInt",
-    "double": "Double", "float": "Double",
-    "timestamp": "DateTime", "date": "DateTime",
+## Decision 2 — Numeric proxy columns for every string status
+
+The Fabric Data Agent's `TimeSeriesSelector` is restricted to a single column
+with one of `Sum` / `Avg` / `Min` / `Max` / `Count`. It cannot run `countif`,
+multiply, divide, join across entity types, or use window functions. Ask
+*"how many minutes did Line-A run in the last hour?"* against a string column
+like `machine_status` and the agent either fails or returns nonsense.
+
+**Solution:** in the Silver-tier KQL update policy, add a boolean-as-int proxy
+column alongside every status string the agent needs to summarise:
+
+```kql
+.create-or-alter function EnrichMachineEvents() {
+    MachineEvents_Raw
+    | extend
+        is_running     = iff(machine_status == "Running", 1, 0),
+        is_fault       = iff(machine_status == "Fault", 1, 0),
+        is_idle        = iff(machine_status == "Idle", 1, 0),
+        is_maintenance = iff(machine_status == "Maintenance", 1, 0)
 }
-
-df = spark.sql(f"DESCRIBE dbo.{table_name}")
-for col in df.collect():
-    actual_type = col["data_type"]
-    expected_csv_type = SPARK_TO_ONTOLOGY.get(actual_type.lower())
-    if expected_csv_type != declared_csv_type:
-        print(f"MISMATCH: {col['col_name']} — CSV says {declared_csv_type}, table has {actual_type}")
 ```
 
-### Solution
-1. Run the diagnostic cell to identify mismatches
-2. Update `PropertyDataType` in **both** `entity_types.csv` and `binding_entity_types.csv`
-3. Re-upload CSVs to the lakehouse
-4. Delete the ontology and recreate
+Then `Avg(is_running)` over a window = fraction of time running = Availability.
+The proxy lives next to the source string in the same enrichment function, so
+both stay in sync. Storage cost is negligible (KQL packs int columns).
 
 ---
 
-## Root Cause 3: NonTimeSeries Bindings Referencing Timeseries Properties
+## Decision 3 — Push OEE math forward to query time
 
-### Problem
-NonTimeSeries bindings (used for graph indexing) can **only** reference properties with `IsTimeseries=FALSE`. If a NonTimeSeries binding row has `IsTimeseries=TRUE`, the ontology creation fails with:
+Given Decisions 1 and 2, OEE is **never stored**. Each component is exposed as
+a raw proxy column on the Silver event tables, and the caller multiplies them:
 
-```
-NonTimeSeries mapping at index N cannot reference timeseries property: <property_id>
-```
+| Component    | Source                                                                  | Computed at query time                     |
+|--------------|-------------------------------------------------------------------------|--------------------------------------------|
+| Availability | `MachineEvents.is_running` (Silver)                                     | `Avg(is_running)` over window              |
+| Performance  | `MachineEventsEnriched()` view function (`MachineEvents` ⋈ `StationMaster`) — `performance_ratio` is null when not running | `Avg(performance_ratio)` over running rows |
+| Quality      | `PartEvents.is_pass` filtered to `is_completed == 1`                    | `Avg(is_pass)` over completed parts        |
+| OEE          | —                                                                       | `Availability × Performance × Quality`     |
 
-### Detection
-The validation cell (Step 3b) checks this before deployment:
+`performance_ratio` and `ideal_cycle_time` are **not stored columns** on the
+`MachineEvents` Silver table. Eventhouse update policies cannot `lookup` or
+`join` other tables at ingest, so the Performance component is exposed through
+the `MachineEventsEnriched()` view function, which joins `MachineEvents` to
+`StationMaster` at query time. The dashboard, the Data Agent's KQL DB source,
+and the Activator low-OEE rule all use the same view — no metric drift between
+sources.
 
-```python
-for row in binding_rows:
-    if row["DataBindingType"] == "NonTimeSeries" and row["IsTimeseries"] == "TRUE":
-        raise ValueError(f"NonTimeSeries binding for {row['PropertyName']} is timeseries")
-```
-
-### Solution
-Split properties into two categories:
-
-**Static properties** (`IsTimeseries=FALSE`) → NonTimeSeries bindings:
-- Identifiers (device_id, part_id, work_order_id)
-- Foreign keys (line_id, station_position)
-- Display names (machine_type, line_name)
-
-**Telemetry properties** (`IsTimeseries=TRUE`) → TimeSeries bindings:
-- Timestamps
-- Metrics (actual_cycle_time, buffer_count, parts_processed)
-- Status fields (machine_status, idle_reason, event_type)
-
-**Identifier duplication pattern:**
-Identifiers appear in **both** binding types:
-- **NonTimeSeries row**: `device_id (IsTimeseries=FALSE)` → enables graph joins
-- **TimeSeries row**: `device_id (IsTimeseries=TRUE)` → enables KQL lookups
-
-This pattern is seen in the [FabricIQ-Accelerators robotics sample](https://github.com/microsoft/FabricIQ-Accelerators/tree/main/Samples/Robotics).
+**Trade-off:** the cost is a recomputation per query versus one rolling
+aggregation. At 5-line / 30-station scale with 5-minute Activator polling,
+the cost is irrelevant. At site-of-sites scale with minute-granularity polling
+it would not be.
 
 ---
 
-## Root Cause 4: Relationship Binding TargetKeyColumnNames
+## Decision 4 — Events are TimeSeries on dimensions, never entities
 
-### Problem
-`TargetKeyColumnNames` in `binding_relationship_types.csv` must reference columns that exist **in the SOURCE entity** (not the target). If the column is missing or misspelled, the relationship fails silently.
+The original design modelled `MachineEvent`, `PartEvent`, and `MaintenanceEvent`
+as standalone ontology entities. This failed at publish: Fabric's `NonTimeSeries`
+Lakehouse binding requires the source table to have **one row per identifier**,
+and the live event tables have huge duplication factors:
 
-### Detection
-The validation cell (Step 3b) verifies this:
+| Event entity | Source table | Rows | Distinct ids | Duplication |
+|---|---|---|---|---|
+| `MachineEvent` | `MachineEvents` | 85,312 | 30 device_ids | ~2843× |
+| `PartEvent` | `PartEvents` | 30,181 | 2,826 part_ids | ~10× |
+| `MaintenanceEvent` | `MaintenanceEvents` | 273 | 69 work_order_ids | ~4× |
 
-```python
-entity_props = {(r["EntityTypeName"], r["PropertyName"]) for r in entity_rows}
-for rel in rel_bind_rows:
-    src = rel["SourceEntityTypeName"]
-    for col in rel["TargetKeyColumnNames"].split(";"):
-        if (src, col) not in entity_props:
-            raise ValueError(f"TargetKeyCol '{col}' not found in {src}")
-```
+Fabric responds **HTTP 200** and silently drops the offending entity. Worse,
+every relationship that referenced a dropped entity cascade-drops, which is how
+`ProductionSchedule` disappeared from the graph in our last broken publish
+despite having a valid binding of its own.
 
-### Solution
-For a relationship `SourceEntity -> TargetEntity`:
-- `SourceKeyColumnNames`: Columns in the **source entity** definition
-- `TargetKeyColumnNames`: **Also** columns in the **source entity** (these are the FK column names)
-- Both must reference properties defined in the source entity's `entity_types.csv` rows
-- Both must have `IsTimeseries=FALSE` (joins don't work on time-series properties)
+The legal modelling is the FabricIQ canonical industrial-asset shape: **assets
+are entities; telemetry is time series attached to assets**. The slim ontology
+therefore has three entities — `ProductionLine`, `Station`, `ProductionSchedule`
+— each bound to its already-unique reference table on the Lakehouse side
+(`LineMaster`, `StationMaster`, `ProductionSchedule`) and to one or more event
+tables on the Eventhouse side via TimeSeries bindings. Each entity may carry
+multiple eventhouse bindings (Station has both `MachineEvents` and `PartEvents`),
+and the publisher's per-binding `timeseries:` allowlist controls which TS
+properties each source contributes.
 
-Example:
-```csv
-RelationshipName,SourceEntityTypeName,TargetEntityTypeName,SourceKeyColumnNames,TargetKeyColumnNames
-MachineEvent_RunsAt_Station,MachineEvent,Station,device_id,line_id;station_position
-```
-- `device_id`, `line_id`, and `station_position` must all exist in `MachineEvent` properties
-- `line_id;station_position` is a composite FK that joins to `Station(line_id, station_position)`
-
----
-
-## Best Practices
-
-### 1. Validation Before Deployment
-Always run the validation cell (Step 3b) before creating the ontology. It catches:
-- NonTimeSeries → timeseries violations
-- Missing TargetKeyColumnNames
-- Non-String/BigInt identifiers
-- Binding type inconsistencies
-
-### 2. Diagnostic After Empty Graph
-If the graph shows 0 nodes/edges despite successful creation, run the diagnostic cell (Step 7b) to compare CSV types against actual table schemas.
-
-### 3. OneLake Availability Check
-Verify OneLake availability is enabled on the KQL Database:
-```bash
-# Azure CLI
-az rest --method get \
-  --url "https://api.fabric.microsoft.com/v1/workspaces/{workspace_id}/kqlDatabases/{db_id}" \
-  --resource "https://api.fabric.microsoft.com"
-```
-Look for `"oneLakeFolder": { "enabled": true }` in the response.
-
-### 4. Test with Small Sample First
-Create a minimal ontology (1 dimension + 1 event entity) to validate your binding approach before scaling to the full schema.
-
-### 5. Document Type Mappings
-Maintain a reference table of how your data pipeline's types map to Fabric Ontology types:
-
-| Pipeline Type | Fabric CSV Type | Notes |
-|--------------|----------------|-------|
-| C# `int` | `BigInt` | C# int → Delta int → Ontology BigInt |
-| C# `long` | `BigInt` | C# long → Delta bigint → Ontology BigInt |
-| C# `double` | `Double` | Direct mapping |
-| C# `string` | `String` | Direct mapping |
-| C# `DateTime` | `DateTime` | C# DateTime → Delta timestamp → Ontology DateTime |
-| C# `bool` | `Boolean` | Direct mapping |
+Operational questions about individual parts and work orders — *"where is
+P-12345?"*, *"is there an open WO on Curing-Oven?"* — are answered by the Data
+Agent's **second data source**, the `ManufacturingEH` KQL Database, via NL2KQL
+against the live event tables. No deduped dim tables are needed. See Decision 5.
 
 ---
 
-## Ontology Architecture Summary
+## Decision 5 — Data Agent has two sources: slim ontology + KQL Database
 
-**Final working configuration:**
-- **6 entity types**: 3 dimensions (ProductionLine, Station, ProductionSchedule) + 3 events (MachineEvent, PartEvent, MaintenanceEvent)
-- **8 relationships**: All event types connect to ProductionLine and Station
-- **51 bindings**: 27 NonTimeSeries (identifiers, FKs, display names) + 24 TimeSeries (telemetry)
-- **OEEMetric excluded**: Backed by materialized view (no OneLake replication)
+The Fabric Data Agent supports multiple data sources on a single agent. We
+attach two:
 
-**Binding strategy:**
-- **Dimensions**: 100% NonTimeSeries → lakehouse tables (LineMaster, StationMaster, ProductionSchedule)
-- **Events**: Hybrid → identifiers/FKs via lakehouse, telemetry via KQL (MachineEvents, PartEvents, MaintenanceEvents)
+| Source | Purpose | Surface |
+|---|---|---|
+| **Ontology** (`OEEManufacturingOntology`) | Graph navigation, dimension lookups, time-series aggregates by line / station / shift | 3 entities, 2 relationships, `TimeSeriesSelector` |
+| **KQL Database** (`ManufacturingEH`) | Single-record lookups, multi-table joins, full KQL expressiveness (countif, windowing, arg_max), proxy-column composition of OEE | All Bronze + Silver tables in `ManufacturingEH` |
 
-**Key validation cells:**
-1. CSV consistency check (Step 3b): Catches binding/definition mismatches
-2. Type mismatch diagnostic (Step 7b): Compares CSV types to actual table schemas
+This split eliminates the binding-contract conflict at the root. The ontology
+keeps only what it can legally express; everything else falls through to
+NL2KQL against the live event tables — which is what the dashboard already
+does for every one of its 37 tiles. The KQL source is grounded with the same
+queries as few-shot examples (see [`agent/knowledge/fabric_data_agent.md`](../agent/knowledge/fabric_data_agent.md)).
+
+**No new Lakehouse tables. No scheduled pipelines. No `.set-or-replace` jobs.**
+The slim ontology binds tables that `scripts/1-setup-fabric.sh` already creates
+once at provisioning time; everything else is live Eventhouse data.
+
+---
+
+## Reference — Fabric Ontology property type mapping
+
+Fabric silently drops an entity when a declared property type doesn't match the
+actual Delta / KQL column type. The publisher's validator catches the YAML →
+schema side, but the underlying compatibility matrix is still worth keeping
+handy when adding new properties:
+
+| Pipeline type   | YAML / Ontology type | Notes                                       |
+|-----------------|----------------------|---------------------------------------------|
+| C# `int`        | `BigInt`             | C# int → Delta int → Ontology BigInt (promoted) |
+| C# `long`       | `BigInt`             | Direct                                      |
+| C# `double`     | `Double`             | Direct                                      |
+| C# `float`      | `Double`             | Float promotes to Double                    |
+| C# `string`     | `String`             | Direct (also accepts `varchar`)             |
+| C# `DateTime`   | `DateTime`           | C# DateTime → Delta timestamp → DateTime    |
+| C# `bool`       | `Boolean`            | Direct                                      |
+
+`String` ↔ numeric / `String` ↔ `DateTime` mismatches are the silent killers —
+if a Silver table column gets re-typed without updating `ontology.yaml`, the
+entity disappears from the graph with no error surfaced anywhere.
+
+---
+
+## Final shape
+
+- **3 entity types:** `ProductionLine`, `Station`, `ProductionSchedule`.
+- **2 relationships:** `Station_BelongsTo_ProductionLine`, `ProductionSchedule_For_ProductionLine`.
+- **Hybrid bindings:** every entity carries a Lakehouse NonTimeSeries binding
+  (its already-unique reference table) plus one or more Eventhouse TimeSeries
+  bindings (live event streams joined on the entity's identifier).
+- **Two-tier Medallion:** Bronze (`*_Raw`, Eventstream landing) → Silver
+  (enriched with numeric proxy columns + OneLake-mirrored at ~5 min). No Gold
+  tier and no materialized OEE view.
+- **Two Data Agent sources:** the ontology (graph + slicing) plus the
+  `ManufacturingEH` KQL Database (NL2KQL for single-record and complex queries).
 
 ---
 
 ## References
 
-- [FabricIQ-Accelerators](https://github.com/microsoft/FabricIQ-Accelerators) — Official Microsoft sample ontologies
-- [Robotics Sample](https://github.com/microsoft/FabricIQ-Accelerators/tree/main/Samples/Robotics) — Demonstrates identifier duplication pattern
-- [Fabric Ontology API Docs](https://learn.microsoft.com/fabric/real-time-intelligence/ontologies) — Official documentation
-- FabricOracleHFMDemo — Reference implementation that documented these failure modes
+- [FabricIQ-Accelerators](https://github.com/microsoft/FabricIQ-Accelerators) — official Microsoft sample ontologies
+- [Fabric Ontology API docs](https://learn.microsoft.com/fabric/real-time-intelligence/ontologies)
+- [Fabric Ontology definition reference](https://learn.microsoft.com/rest/api/fabric/articles/item-management/definitions/ontology-definition) — verbatim binding contract

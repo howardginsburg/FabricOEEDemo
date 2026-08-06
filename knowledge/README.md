@@ -54,7 +54,7 @@ files leave those fields empty.
 ## Source-of-truth alignment
 
 Each station SOP names every `faultType` from
-[`simulator/FabricOEESimulator/simulator.yaml`](../simulator/FabricOEESimulator/simulator.yaml)
+[`simulator/FabricOEESimulator.Wpf/simulator.yaml`](../simulator/FabricOEESimulator.Wpf/simulator.yaml)
 verbatim as a heading inside section 4. This is deliberate: the simulator
 emits those exact strings in the `fault_type` telemetry field, and the
 agent retrieves SOP chunks by matching them. If you add a new fault type to

@@ -2,7 +2,7 @@
 dashboard/oee-dashboard.json
 
 # Simulator runtime config (contains connection strings)
-simulator/FabricOEESimulator/simulator.yaml
+simulator/**/simulator.local.yaml
 
 # .NET build outputs
 simulator/**/bin/
@@ -25,6 +25,10 @@ Desktop.ini
 
 # Logs
 *.log
+
+# Python caches
+__pycache__/
+*.pyc
 
 # Local ontology accelerator package
 /ontology/*.whl

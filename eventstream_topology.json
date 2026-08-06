@@ -1,0 +1,564 @@
+{
+  "compatibilityLevel": "1.1",
+  "destinations": [
+    {
+      "id": "15e7e379-8296-4a12-9662-e8daa7557ed9",
+      "inputNodes": [
+        {
+          "name": "MachineTelemetryFilter"
+        }
+      ],
+      "name": "MachineEvents_Raw",
+      "properties": {
+        "dataIngestionMode": "ProcessedIngestion",
+        "databaseName": "ManufacturingEH",
+        "inputSerialization": {
+          "properties": {
+            "encoding": "UTF8"
+          },
+          "type": "Json"
+        },
+        "itemId": "962b57d8-1054-4f5c-8879-48929545502c",
+        "tableName": "MachineEvents_Raw",
+        "workspaceId": "d0b71536-46ef-45d8-b910-2bf1c885584e"
+      },
+      "status": "Running",
+      "type": "Eventhouse"
+    },
+    {
+      "id": "5767ac47-3719-430d-8988-665682e0515e",
+      "inputNodes": [
+        {
+          "name": "MaintenanceEventFilter"
+        }
+      ],
+      "name": "MaintenanceEvents_Raw",
+      "properties": {
+        "dataIngestionMode": "ProcessedIngestion",
+        "databaseName": "ManufacturingEH",
+        "inputSerialization": {
+          "properties": {
+            "encoding": "UTF8"
+          },
+          "type": "Json"
+        },
+        "itemId": "962b57d8-1054-4f5c-8879-48929545502c",
+        "tableName": "MaintenanceEvents_Raw",
+        "workspaceId": "d0b71536-46ef-45d8-b910-2bf1c885584e"
+      },
+      "status": "Running",
+      "type": "Eventhouse"
+    },
+    {
+      "id": "6a5f0cf6-4f24-4af0-8180-7ef2d1dfe714",
+      "inputNodes": [
+        {
+          "name": "PartEventFilter"
+        }
+      ],
+      "name": "PartEvents_Raw",
+      "properties": {
+        "dataIngestionMode": "ProcessedIngestion",
+        "databaseName": "ManufacturingEH",
+        "inputSerialization": {
+          "properties": {
+            "encoding": "UTF8"
+          },
+          "type": "Json"
+        },
+        "itemId": "962b57d8-1054-4f5c-8879-48929545502c",
+        "tableName": "PartEvents_Raw",
+        "workspaceId": "d0b71536-46ef-45d8-b910-2bf1c885584e"
+      },
+      "status": "Running",
+      "type": "Eventhouse"
+    }
+  ],
+  "operators": [
+    {
+      "inputNodes": [
+        {
+          "name": "manufacturing-telemetry-stream"
+        }
+      ],
+      "inputSchemas": [
+        {
+          "name": "manufacturing-telemetry-stream",
+          "schema": {
+            "columns": [
+              {
+                "fields": null,
+                "items": null,
+                "name": "event_type",
+                "type": "Nvarchar(max)"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "device_id",
+                "type": "Nvarchar(max)"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "machine_type",
+                "type": "Nvarchar(max)"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "machine_status",
+                "type": "Nvarchar(max)"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "idle_reason",
+                "type": "Nvarchar(max)"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "line_id",
+                "type": "Nvarchar(max)"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "station_position",
+                "type": "BigInt"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "actual_cycle_time",
+                "type": "Float"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "input_buffer_count",
+                "type": "BigInt"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "output_buffer_count",
+                "type": "BigInt"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "buffer_capacity",
+                "type": "BigInt"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "total_parts_processed",
+                "type": "BigInt"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "rejected_parts",
+                "type": "BigInt"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "current_part_id",
+                "type": "Nvarchar(max)"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "part_id",
+                "type": "Nvarchar(max)"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "action",
+                "type": "Nvarchar(max)"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "cycle_time",
+                "type": "Float"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "quality_pass",
+                "type": "Bit"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "work_order_id",
+                "type": "Nvarchar(max)"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "issue_type",
+                "type": "Nvarchar(max)"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "technician_id",
+                "type": "Nvarchar(max)"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "timestamp",
+                "type": "DateTime"
+              }
+            ]
+          }
+        }
+      ],
+      "name": "MachineTelemetryFilter",
+      "properties": {
+        "advancedSettings": null,
+        "query": "SELECT\n    event_type,\n    device_id,\n    machine_type,\n    machine_status,\n    idle_reason,\n    line_id,\n    CAST(station_position AS BIGINT)    AS station_position,\n    actual_cycle_time,\n    CAST(input_buffer_count AS BIGINT)  AS input_buffer_count,\n    CAST(output_buffer_count AS BIGINT) AS output_buffer_count,\n    CAST(buffer_capacity AS BIGINT)     AS buffer_capacity,\n    CAST(total_parts_processed AS BIGINT) AS total_parts_processed,\n    CAST(rejected_parts AS BIGINT)      AS rejected_parts,\n    current_part_id,\n    [timestamp]\nINTO [MachineEvents_Raw]\nFROM [manufacturing-telemetry-stream]\nWHERE event_type = 'machine_telemetry'"
+      },
+      "type": "SQL"
+    },
+    {
+      "inputNodes": [
+        {
+          "name": "manufacturing-telemetry-stream"
+        }
+      ],
+      "inputSchemas": [
+        {
+          "name": "manufacturing-telemetry-stream",
+          "schema": {
+            "columns": [
+              {
+                "fields": null,
+                "items": null,
+                "name": "event_type",
+                "type": "Nvarchar(max)"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "device_id",
+                "type": "Nvarchar(max)"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "machine_type",
+                "type": "Nvarchar(max)"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "machine_status",
+                "type": "Nvarchar(max)"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "idle_reason",
+                "type": "Nvarchar(max)"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "line_id",
+                "type": "Nvarchar(max)"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "station_position",
+                "type": "BigInt"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "actual_cycle_time",
+                "type": "Float"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "input_buffer_count",
+                "type": "BigInt"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "output_buffer_count",
+                "type": "BigInt"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "buffer_capacity",
+                "type": "BigInt"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "total_parts_processed",
+                "type": "BigInt"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "rejected_parts",
+                "type": "BigInt"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "current_part_id",
+                "type": "Nvarchar(max)"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "part_id",
+                "type": "Nvarchar(max)"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "action",
+                "type": "Nvarchar(max)"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "cycle_time",
+                "type": "Float"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "quality_pass",
+                "type": "Bit"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "work_order_id",
+                "type": "Nvarchar(max)"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "issue_type",
+                "type": "Nvarchar(max)"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "technician_id",
+                "type": "Nvarchar(max)"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "timestamp",
+                "type": "DateTime"
+              }
+            ]
+          }
+        }
+      ],
+      "name": "MaintenanceEventFilter",
+      "properties": {
+        "advancedSettings": null,
+        "query": "SELECT\n    event_type,\n    work_order_id,\n    device_id,\n    machine_type,\n    line_id,\n    CAST(station_position AS BIGINT) AS station_position,\n    issue_type,\n    action,\n    technician_id,\n    [timestamp]\nINTO [MaintenanceEvents_Raw]\nFROM [manufacturing-telemetry-stream]\nWHERE event_type = 'maintenance_event'"
+      },
+      "type": "SQL"
+    },
+    {
+      "inputNodes": [
+        {
+          "name": "manufacturing-telemetry-stream"
+        }
+      ],
+      "inputSchemas": [
+        {
+          "name": "manufacturing-telemetry-stream",
+          "schema": {
+            "columns": [
+              {
+                "fields": null,
+                "items": null,
+                "name": "event_type",
+                "type": "Nvarchar(max)"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "device_id",
+                "type": "Nvarchar(max)"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "machine_type",
+                "type": "Nvarchar(max)"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "machine_status",
+                "type": "Nvarchar(max)"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "idle_reason",
+                "type": "Nvarchar(max)"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "line_id",
+                "type": "Nvarchar(max)"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "station_position",
+                "type": "BigInt"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "actual_cycle_time",
+                "type": "Float"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "input_buffer_count",
+                "type": "BigInt"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "output_buffer_count",
+                "type": "BigInt"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "buffer_capacity",
+                "type": "BigInt"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "total_parts_processed",
+                "type": "BigInt"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "rejected_parts",
+                "type": "BigInt"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "current_part_id",
+                "type": "Nvarchar(max)"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "part_id",
+                "type": "Nvarchar(max)"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "action",
+                "type": "Nvarchar(max)"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "cycle_time",
+                "type": "Float"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "quality_pass",
+                "type": "Bit"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "work_order_id",
+                "type": "Nvarchar(max)"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "issue_type",
+                "type": "Nvarchar(max)"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "technician_id",
+                "type": "Nvarchar(max)"
+              },
+              {
+                "fields": null,
+                "items": null,
+                "name": "timestamp",
+                "type": "DateTime"
+              }
+            ]
+          }
+        }
+      ],
+      "name": "PartEventFilter",
+      "properties": {
+        "advancedSettings": null,
+        "query": "SELECT\n    event_type,\n    part_id,\n    line_id,\n    CAST(station_position AS BIGINT) AS station_position,\n    machine_type,\n    action,\n    cycle_time,\n    quality_pass,\n    [timestamp]\nINTO [PartEvents_Raw]\nFROM [manufacturing-telemetry-stream]\nWHERE event_type = 'part_event'"
+      },
+      "type": "SQL"
+    }
+  ],
+  "sources": [
+    {
+      "id": "f803f907-a653-4e54-923a-82796986b09a",
+      "name": "oee-simulator",
+      "properties": {},
+      "status": "Running",
+      "type": "CustomEndpoint"
+    }
+  ],
+  "streams": [
+    {
+      "id": "0183fd66-3c59-4611-b1d4-3cd9ad115ca0",
+      "inputNodes": [
+        {
+          "name": "oee-simulator"
+        }
+      ],
+      "name": "manufacturing-telemetry-stream",
+      "properties": {},
+      "status": "Created",
+      "type": "DefaultStream"
+    }
+  ]
+}

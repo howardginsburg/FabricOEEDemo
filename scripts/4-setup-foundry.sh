@@ -3,7 +3,7 @@
 # 4-setup-foundry.sh — Provision the Microsoft Foundry resource, project, and
 # chat + embedding model deployments.
 #
-# This is the FIRST script in the Fabric IQ + AI Search + Foundry IQ chain.
+# This is the FIRST script in the Fabric IQ + AI Search + Foundry agent chain.
 # It must run before scripts/5-setup-aisearch.sh because the embedding-model
 # deployment that AI Search uses is what this script provisions.
 #
@@ -20,11 +20,10 @@
 #   • Deploys the chat model       (default: gpt-4.1).
 #   • Deploys the embedding model  (default: text-embedding-3-large).
 #   • Prints the OpenAI endpoint, project ID, and all values needed for
-#     scripts/5-setup-aisearch.sh and for Step 11 of FABRIC_OEE_TUTORIAL.md.
+#     scripts/5-setup-aisearch.sh and the README agent setup section.
 #
 # What stays manual today (Foundry portal, after script 5):
-#   • Register both knowledge sources and create the prompt agent — covered in
-#     FABRIC_OEE_TUTORIAL.md Step 11.
+#   • Register both knowledge sources and create the prompt agent — covered in README.md.
 #
 # Prerequisites:
 #   - Azure CLI (az) 2.67.0 or later with an active login (`az login`).
@@ -265,7 +264,7 @@ if [[ -n "$SEARCH_SERVICE" ]]; then
     warn "AI Search '$SEARCH_SERVICE' not found yet — expected if scripts/5-setup-aisearch.sh has not run."
   fi
 else
-  warn "--search-service not provided. Run scripts/5-setup-aisearch.sh next, then collect its output for Step 11.2."
+  warn "--search-service not provided. Run scripts/5-setup-aisearch.sh next, then collect its output for the README agent setup."
 fi
 
 # ── 7. Summary + next steps ──────────────────────────────────────────────────
@@ -302,10 +301,10 @@ manual "      --search-service <UNIQUE_SEARCH_NAME> \\"
 manual "      --foundry-aoai-endpoint $OPENAI_ENDPOINT"
 manual ""
 manual "Step B — In the Foundry portal (https://ai.azure.com), register both"
-manual "knowledge sources and build the prompt agent (FABRIC_OEE_TUTORIAL.md Step 11):"
-manual "  1. Foundry IQ → Knowledge → Add knowledge source → Fabric Data Agent"
-manual "     • Identifier: the Fabric Data Agent created in Step 8.6 (display name or ID)"
-manual "  2. Foundry IQ → Knowledge → Add knowledge source → Azure AI Search"
+manual "knowledge sources and build the prompt agent (see README.md):"
+manual "  1. Knowledge → Add knowledge source → Fabric Data Agent"
+manual "     • Identifier: the published Fabric Data Agent display name or ID"
+manual "  2. Knowledge → Add knowledge source → Azure AI Search"
 manual "     • Endpoint:                from scripts/5-setup-aisearch.sh output"
 manual "     • Index:                   $SEARCH_INDEX"
 manual "     • Query key:               from scripts/5-setup-aisearch.sh output"

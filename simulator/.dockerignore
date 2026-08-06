@@ -1,8 +1,0 @@
-**/.git
-**/.vs
-**/bin
-**/obj
-**/logs
-**/*.user
-**/*.yaml
-!**/simulator.sample.yaml

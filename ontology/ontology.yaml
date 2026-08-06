@@ -1,0 +1,254 @@
+# OEE Manufacturing Ontology — single source of truth.
+#
+# Consumed by scripts/6-publish-ontology.py, which validates this file,
+# generates the Fabric Ontology multi-part REST definition, and creates
+# (or updates) the ontology item in the target workspace.
+#
+# Design (Option B — slim ontology + KQL DB Data Agent source):
+#   The Fabric Ontology REST contract requires every NonTimeSeries
+#   Lakehouse binding to have one row per identifier. Event streams
+#   (MachineEvents, PartEvents, MaintenanceEvents) violate that — they
+#   have ~10×–3000× duplicates per natural key. Modelling events as
+#   entities causes Fabric to silently drop 4 of 6 entities and all 8
+#   relationships at publish time (HTTP 200, empty graph).
+#
+#   This ontology models ONLY dimensions that already have a
+#   unique-per-identifier source table AND a meaningful graph edge:
+#   the three operational dimensions (ProductionLine, Station,
+#   ProductionSchedule) plus three connected static reference
+#   dimensions (Shift, MachineType, SOP) seeded by
+#   scripts/1-setup-fabric.sh. Pure lookup tables whose keys live only
+#   in event data (IssueType, Technician, Policy) are intentionally NOT
+#   ontology entities — as graph nodes they would have no edges, so
+#   they stay in the Data Agent's KQL source and are joined via NL2KQL.
+#   Operational questions about parts and work orders are answered by
+#   the Data Agent's second source — the ManufacturingEH KQL Database —
+#   via NL2KQL against the live event tables, joining the reference
+#   tables (e.g., IssueTypeMaster, TechnicianMaster) where helpful.
+#   See agent/knowledge/fabric_data_agent.md.
+#
+# Conventions encoded by the publisher:
+#   • Each entity declares static `properties:` (bound on the Lakehouse
+#     side as NonTimeSeries) and optional `timeseries:` (bound on the
+#     Eventhouse side as TimeSeries). An entity may have multiple
+#     eventhouse bindings (one per event table) — each declares which
+#     subset of the union TS properties it contributes via
+#     `timeseries: [...]` and its own `timestampProperty:`.
+#   • Fabric requires every TS property to map to exactly one source,
+#     so the per-binding `timeseries:` filters MUST be disjoint, and
+#     each eventhouse binding declares its OWN distinct DateTime
+#     timestamp property (e.g., `ts_machine`, `ts_part`). The source
+#     column name is renamed back to `timestamp` via `columns:`.
+#   • `displayName:` defaults to the first identifier when omitted.
+#   • `bindings:` lists per-source bindings. Two targets:
+#       - target: lakehouse  → LakehouseTable / NonTimeSeries
+#       - target: eventhouse → KustoTable / TimeSeries
+#     Column names default to property names; override with `columns:`.
+#   • Relationships join via the source entity's binding table.
+#
+# Hardcoded source items: ManufacturingLH (lakehouse), ManufacturingEH
+# (eventhouse + KQL database).
+
+ontology:
+  name: OEEManufacturingOntology
+
+entities:
+
+  # ── ProductionLine ────────────────────────────────────────────────────────
+  # Static identity: LineMaster (5 rows). Live aggregates: MachineEvents and
+  # PartEvents joined on line_id.
+
+  - name: ProductionLine
+    identifiers: [line_id]
+    displayName: line_id
+    properties:
+      - {name: line_id,       type: String}
+      - {name: line_name,     type: String}
+      - {name: purpose,       type: String}
+      - {name: station_count, type: BigInt}
+    timeseries:
+      - {name: ts_machine,          type: DateTime}
+      - {name: is_running,          type: BigInt}
+      - {name: is_fault,            type: BigInt}
+      - {name: is_idle,             type: BigInt}
+      - {name: is_maintenance,      type: BigInt}
+      - {name: actual_cycle_time,   type: Double}
+      - {name: ts_part,             type: DateTime}
+      - {name: is_pass,             type: BigInt}
+      - {name: is_completed,        type: BigInt}
+      - {name: is_rejected,         type: BigInt}
+      - {name: cycle_time,          type: Double}
+    bindings:
+      - target: lakehouse
+        table: LineMaster
+      - target: eventhouse
+        table: MachineEvents
+        timestampProperty: ts_machine
+        columns: {ts_machine: timestamp}
+        timeseries: [ts_machine, is_running, is_fault, is_idle, is_maintenance, actual_cycle_time]
+      - target: eventhouse
+        table: PartEvents
+        timestampProperty: ts_part
+        columns: {ts_part: timestamp}
+        timeseries: [ts_part, is_pass, is_completed, is_rejected, cycle_time]
+
+  # ── Station ───────────────────────────────────────────────────────────────
+  # Station IS the device (device_id ↔ (line_id, station_position) is 1:1).
+  # Static identity: StationMaster (30 rows). Live aggregates: MachineEvents
+  # and PartEvents joined on (line_id, station_position).
+
+  - name: Station
+    identifiers: [line_id, station_position]
+    displayName: machine_type
+    properties:
+      - {name: line_id,          type: String}
+      - {name: station_position, type: BigInt}
+      - {name: machine_type,     type: String}
+      - {name: ideal_cycle_time, type: Double}
+      - {name: manufacturer,     type: String}
+      - {name: install_year,     type: BigInt}
+      - {name: buffer_capacity,  type: BigInt}
+    timeseries:
+      - {name: ts_machine,          type: DateTime}
+      - {name: is_running,          type: BigInt}
+      - {name: is_fault,            type: BigInt}
+      - {name: is_idle,             type: BigInt}
+      - {name: is_maintenance,      type: BigInt}
+      - {name: actual_cycle_time,   type: Double}
+      - {name: input_buffer_count,  type: BigInt}
+      - {name: output_buffer_count, type: BigInt}
+      - {name: ts_part,             type: DateTime}
+      - {name: is_pass,             type: BigInt}
+      - {name: is_completed,        type: BigInt}
+      - {name: is_rejected,         type: BigInt}
+      - {name: cycle_time,          type: Double}
+    bindings:
+      - target: lakehouse
+        table: StationMaster
+      - target: eventhouse
+        table: MachineEvents
+        timestampProperty: ts_machine
+        columns: {ts_machine: timestamp}
+        timeseries: [ts_machine, is_running, is_fault, is_idle, is_maintenance, actual_cycle_time, input_buffer_count, output_buffer_count]
+      - target: eventhouse
+        table: PartEvents
+        timestampProperty: ts_part
+        columns: {ts_part: timestamp}
+        timeseries: [ts_part, is_pass, is_completed, is_rejected, cycle_time]
+
+  # ── ProductionSchedule ────────────────────────────────────────────────────
+  # Static identity: ProductionSchedule (10 rows: 5 lines × 2 shifts).
+  # Live aggregates: PartEvents joined on (line_id, shift) — the eventhouse
+  # column is `shift_id`, renamed via `columns:` on the binding.
+
+  - name: ProductionSchedule
+    identifiers: [line_id, shift]
+    timestampProperty: timestamp
+    properties:
+      - {name: line_id,       type: String}
+      - {name: shift,         type: String}
+      - {name: planned_parts, type: BigInt}
+    timeseries:
+      - {name: timestamp,    type: DateTime}
+      - {name: is_pass,      type: BigInt}
+      - {name: is_completed, type: BigInt}
+      - {name: is_rejected,  type: BigInt}
+    bindings:
+      - target: lakehouse
+        table: ProductionSchedule
+      - target: eventhouse
+        table: PartEvents
+        columns: {shift: shift_id}
+        timeseries: [timestamp, is_pass, is_completed, is_rejected]
+
+  # ── Shift ─────────────────────────────────────────────────────────────────
+  # Static reference dimension: ShiftMaster (2 rows). Gives ProductionSchedule a
+  # Day/Night node to roll up against. Lakehouse-only — no live event binding.
+
+  - name: Shift
+    identifiers: [shift]
+    properties:
+      - {name: shift,      type: String}
+      - {name: start_hour, type: BigInt}
+      - {name: end_hour,   type: BigInt}
+    bindings:
+      - target: lakehouse
+        table: ShiftMaster
+
+  # ── MachineType ───────────────────────────────────────────────────────────
+  # Static reference dimension: MachineTypeMaster (30 rows). The `category`
+  # property rolls the 30 machine types into 6 process families so the agent can
+  # group OEE/faults by Machining / Forming / Joining / Surface / Electronics /
+  # Inspection across lines. Lakehouse-only.
+
+  - name: MachineType
+    identifiers: [machine_type]
+    properties:
+      - {name: machine_type, type: String}
+      - {name: category,     type: String}
+    bindings:
+      - target: lakehouse
+        table: MachineTypeMaster
+
+  # ── SOP ───────────────────────────────────────────────────────────────────
+  # Static reference dimension: SopMaster (30 rows). One row per station-scoped
+  # knowledge doc. `file_name` is the PDF blob indexed by Azure AI Search, so
+  # after a graph lookup the agent retrieves full SOP text from the index.
+  # Lakehouse-only.
+
+  - name: SOP
+    identifiers: [sop_id]
+    displayName: title
+    properties:
+      - {name: sop_id,           type: String}
+      - {name: line_id,          type: String}
+      - {name: station_position, type: BigInt}
+      - {name: machine_type,     type: String}
+      - {name: doc_type,         type: String}
+      - {name: title,            type: String}
+      - {name: file_name,        type: String}
+    bindings:
+      - target: lakehouse
+        table: SopMaster
+
+relationships:
+
+  - name: Station_BelongsTo_ProductionLine
+    source: Station
+    target: ProductionLine
+    binding:
+      table: StationMaster
+      sourceKey: [line_id, station_position]
+      targetKey: [line_id]
+
+  - name: ProductionSchedule_For_ProductionLine
+    source: ProductionSchedule
+    target: ProductionLine
+    binding:
+      table: ProductionSchedule
+      sourceKey: [line_id, shift]
+      targetKey: [line_id]
+
+  - name: ProductionSchedule_For_Shift
+    source: ProductionSchedule
+    target: Shift
+    binding:
+      table: ProductionSchedule
+      sourceKey: [line_id, shift]
+      targetKey: [shift]
+
+  - name: Station_Is_Of_MachineType
+    source: Station
+    target: MachineType
+    binding:
+      table: StationMaster
+      sourceKey: [line_id, station_position]
+      targetKey: [machine_type]
+
+  - name: SOP_AppliesTo_Station
+    source: SOP
+    target: Station
+    binding:
+      table: SopMaster
+      sourceKey: [sop_id]
+      targetKey: [line_id, station_position]

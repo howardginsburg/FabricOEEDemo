@@ -1,20 +1,9 @@
 simulator:
   telemetryIntervalSeconds: 10
 
+  # Event Hub connection is set in simulator.local.yaml (git-ignored).
   broker:
-    type: Console
-    # For EventHub:
-    # type: EventHub
-    # connection: ""
-    # hub: ""                # omit if EntityPath is in the connection string
-    #
-    # For MQTT:
-    # type: Mqtt
-    # host: iotopsdemo.eastus2.cloudapp.azure.com
-    # port: 1883
-    # topic: "oee/{lineId}/{deviceId}"
-    # username: "iotops"
-    # password: "garbage"
+    connection: "<EventHubConnectionString>"
 
   maintenance:
     acknowledgeDelayMinSeconds: 30

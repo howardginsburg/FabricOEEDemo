@@ -29,9 +29,11 @@ OEE = Availability × Performance × Quality
 - **Performance** = ideal cycle time ÷ actual cycle time.
 - **Quality** = (parts produced − rejected parts) ÷ parts produced.
 
-The Fabric Eventhouse `OEE_5min` materialized view computes these
-components on rolling 5-minute windows by station and line. The Real-Time
-Dashboard surfaces them on the Plant Manager and Line Manager pages.
+The Real-Time Dashboard composes these components on the fly from the
+Silver-tier numeric proxy columns (`MachineEvents.is_running`,
+`MachineEventsEnriched.performance_ratio`, `PartEvents.is_pass` filtered to
+`is_completed == 1`) on rolling 5-minute windows by station and line.
+The Plant Manager and Line Manager pages surface them.
 
 ## 3. Site-level targets
 

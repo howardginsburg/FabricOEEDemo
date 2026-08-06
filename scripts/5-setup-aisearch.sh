@@ -4,7 +4,7 @@
 #
 # Runs AFTER scripts/4-setup-foundry.sh because it relies on the Foundry AOAI
 # endpoint (with text-embedding-3-large deployed) to generate the chunk
-# vectors. See FABRIC_OEE_TUTORIAL.md Step 10 for the end-to-end flow.
+# vectors. See README.md for the end-to-end flow.
 #
 # Builds the static knowledge layer of the Fabric IQ + AI Search demo:
 #   • Resource group (reuse or create)
@@ -568,7 +568,7 @@ ok "Search service:   $SEARCH_SERVICE   (endpoint: $SEARCH_ENDPOINT)"
 ok "Index:            $INDEX_NAME       (chunks: $DOC_COUNT)"
 
 echo
-manual "Use these values in the Foundry portal (FABRIC_OEE_TUTORIAL.md Step 11.2):"
+manual "Use these values in the Foundry portal when attaching the Azure AI Search knowledge source:"
 manual "  Endpoint:        https://${SEARCH_SERVICE}.search.windows.net"
 manual "  Index:           $INDEX_NAME"
 manual "  Query key:       $SEARCH_QUERY_KEY"

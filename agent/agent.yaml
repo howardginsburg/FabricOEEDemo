@@ -1,7 +1,7 @@
 # Foundry prompt agent definition — OEE Factory IQ
 #
 # This file is the source of truth for the prompt agent that gets created in
-# the Foundry portal (Step 11 of FABRIC_OEE_TUTORIAL.md). The portal is the
+# the Foundry portal. The portal is the
 # place where this YAML is consumed; the file is committed here so the
 # agent's configuration is reviewable and versionable alongside the rest of
 # the demo.
@@ -30,10 +30,21 @@ spec:
       type: fabric-data-agent
       role: live
       description: >
-        Live Fabric Data Agent backed by Eventhouse OEE_5min, MachineEvents,
-        PartEvents, MaintenanceEvents, and the ontology bindings. Use for
-        operational facts: current OEE, open work orders, recent faults,
-        reject rates, line-level KPIs, technician assignments.
+        Live Fabric Data Agent with TWO sources attached: (1) the slim
+        OEEManufacturingOntology (6 entities — three operational
+        dimensions ProductionLine, Station, ProductionSchedule, each
+        with NonTimeSeries Lakehouse identity and TimeSeries bindings to
+        MachineEvents + PartEvents on the Eventhouse side, plus three
+        reference dimensions Shift, MachineType, and SOP; 5 relationships) for clean aggregate-by-dimension
+        queries and category rollups, and
+        (2) the ManufacturingEH KQL Database for NL2KQL against the live
+        Bronze + Silver event tables (MachineEvents, PartEvents,
+        MaintenanceEvents) plus the MachineEventsEnriched() view
+        function. Single-record lookups (specific part, work order),
+        complex joins, and Performance/OEE composition go through the
+        KQL DB source; simple dimensional aggregates go through the
+        ontology. There is no precomputed OEE table — every component
+        is composed at query time from the Silver numeric proxy columns.
       details_file: knowledge/fabric_data_agent.md
 
     - name: aisearch_sops

@@ -47,12 +47,7 @@ public partial class App : Application
                     var config = sp.GetRequiredService<IOptions<SimulatorConfig>>().Value;
                     var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
 
-                    return config.Broker.Type.ToLowerInvariant() switch
-                    {
-                        "eventhub" => new EventHubSink(config.Broker, loggerFactory.CreateLogger<EventHubSink>()),
-                        "mqtt" or "mqtttls" => new MqttSink(config.Broker, loggerFactory.CreateLogger<MqttSink>()),
-                        _ => new ConsoleSink(loggerFactory.CreateLogger<ConsoleSink>())
-                    };
+                    return new EventHubSink(config.Broker, loggerFactory.CreateLogger<EventHubSink>());
                 });
 
                 services.AddSingleton<TelemetryLog>();

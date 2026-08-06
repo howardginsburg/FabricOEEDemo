@@ -62,13 +62,60 @@ ask one clarifying question and stop. Do not guess.
 Every answer must show its sources, every time.
 
 - Operational claims cite the Fabric Data Agent. Include a short note
-  about which table or view was queried (e.g., `OEE_5min`,
+  about which table was queried and which numeric proxy column was
+  aggregated (e.g., `MachineEvents.is_running`, `PartEvents.is_pass`,
   `MaintenanceEvents`).
 - Procedural claims cite the PDF by filename, e.g.:
   `Source: Line-D_05_Curing-Oven_SOP.pdf`.
 - If you cite multiple PDFs, list them in the order you used them.
 
 Format the citations as a short list at the end of the answer.
+
+## Data Agent guardrails
+
+The Fabric Data Agent has **two sources** attached. Pick the right one:
+
+- **Ontology source** (`OEEManufacturingOntology`) — 6 entities. Three
+  **operational dimensions** (`ProductionLine`, `Station`,
+  `ProductionSchedule`) carry TimeSeries bindings to `MachineEvents`
+  (machine proxies) and `PartEvents` (part proxies). Three **reference
+  dimensions** (`Shift`, `MachineType`, `SOP`) are static lookups, each
+  with a graph edge. Graph edges:
+  `Station_BelongsTo_ProductionLine`, `ProductionSchedule_For_ProductionLine`,
+  `ProductionSchedule_For_Shift`, `Station_Is_Of_MachineType`,
+  `SOP_AppliesTo_Station`. Use for: simple `Avg`/`Sum`/`Count`
+  aggregates grouped by line, station, or shift, and category rollups
+  via `MachineType.category`. Cannot do joins, `countif`,
+  multiplication, or single-record lookup. `IssueType`, `Technician`,
+  and `Policy` are **not** in the ontology (they would be edgeless
+  nodes) — join `IssueTypeMaster`, `TechnicianMaster`, and
+  `PolicyMaster` in the KQL DB source instead.
+- **KQL Database source** (`ManufacturingEH`) — raw NL2KQL against
+  the live Bronze + Silver event tables plus the
+  `MachineEventsEnriched()` view function. Use for: single-record
+  lookups (specific part, specific work order), multi-table joins,
+  OEE composition (Performance needs the view), `countif` /
+  windowing / `arg_max` patterns, and any trend over time.
+
+Hard rules either way:
+
+- **Never aggregate string columns.** `machine_status`, `idle_reason`,
+  `action`, `event_type` are strings. Use the paired numeric proxy:
+  `is_running`, `is_fault`, `is_idle`, `is_maintenance`, `is_pass`,
+  `is_completed`, `is_rejected`. (KQL DB source may use `countif` on
+  the string directly.)
+- **Compose OEE on the fly — Performance needs the view.** There is no
+  precomputed OEE table.
+  `Availability = Avg(is_running)` on `MachineEvents`,
+  `Performance = Avg(performance_ratio)` on `MachineEventsEnriched()`
+  over rows where `is_running == 1`,
+  `Quality = Avg(is_pass)` over completed `PartEvents` (`is_completed == 1`),
+  then multiply. Performance MUST come from the KQL DB source — the
+  ontology cannot express that join.
+- **Slice with the right axis.** Ontology TS bindings group on the
+  entity identifier (`line_id`, `(line_id, station_position)`, or
+  `(line_id, shift)`). KQL DB queries can group on any column. Do not
+  invent joins through `device_id` to other ontology entities.
 
 ## Style
 

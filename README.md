@@ -1,259 +1,190 @@
-# Real-Time OEE Dashboard on Microsoft Fabric
+# Fabric OEE Demo
 
-A real-time **Overall Equipment Effectiveness (OEE)** dashboard built on [Microsoft Fabric](https://learn.microsoft.com/fabric/). A .NET simulator models a factory floor with **5 production lines (30 machines)** that stream machine telemetry, part events, and maintenance work orders. Two ingestion paths are supported:
+This repository builds a real-time **Overall Equipment Effectiveness (OEE)** demo on Microsoft Fabric. A .NET 10 WPF desktop simulator models a factory floor with **5 production lines and 30 stations**, then streams machine telemetry, part events, and maintenance work orders into Fabric for live dashboards and AI-assisted operations.
 
-| Path | Tutorial | Description |
-|------|----------|-------------|
-| **Direct to Fabric** | [FABRIC_OEE_TUTORIAL.md](FABRIC_OEE_TUTORIAL.md) | Simulator connects directly to a Fabric Eventstream custom endpoint via Event Hub protocol. Simplest setup — no additional infrastructure required. |
-| **Via Azure IoT Operations** | [AIO_OEE_TUTORIAL.md](AIO_OEE_TUTORIAL.md) | Simulator publishes to an MQTT broker managed by Azure IoT Operations. Stations are modeled as AIO assets, and a dataflow forwards telemetry to Fabric Eventstream. Mirrors a real factory edge-to-cloud pattern. |
-
-Both paths land data in the same Fabric Eventhouse, KQL tables, materialized OEE view, and Real-Time Dashboard — the analytics layer is identical regardless of ingestion method.
-
-This demo models **true production-line OEE** — parts flow sequentially through ordered stations, faults cascade starvation and blocking via bounded buffers, and maintenance work orders gate machine recovery.
-
-**OEE = Availability × Performance × Quality**
-
-**NEW — 4-pillar AI stack:** **Fabric RTI → Fabric IQ → Azure AI Search → Foundry Agent Service.** Live operational telemetry is fused with a 36-PDF SOP corpus and surfaced through a multi-persona Foundry agent. *(Work IQ integration coming next.)*
+The simulator streams telemetry into Fabric through a Fabric Eventstream custom endpoint (Event Hubs protocol): Simulator -> Fabric Eventstream -> Eventhouse/KQL -> Dashboard. OEE is composed from Silver KQL tables at query time: **Availability x Performance x Quality**. There is no precomputed OEE table or materialized view.
 
 ![OEE Dashboard](dashboard.png)
 
+## What It Builds
+
+- **Simulator:** Windows .NET 10 WPF desktop app with a live factory-floor visualization, cascading faults, bounded buffers, part traceability, and maintenance work orders.
+- **Fabric RTI:** Eventstream, Eventhouse, KQL database, Bronze raw tables, Silver enriched tables, reference tables, OneLake mirroring, and a five-page Real-Time Dashboard.
+- **Optional Fabric IQ:** Fabric Ontology plus Data Agent over live KQL and graph-shaped operational context.
+- **Optional AI layer:** Foundry resource, chat and embedding model deployments, Azure AI Search over 36 SOP PDFs, and a Foundry prompt agent that routes between live telemetry and SOP knowledge.
+
 ## Architecture
 
+```text
+                         +-------------------------------+
+                         | .NET WPF OEE Simulator        |
+                         | 5 lines / 30 stations         |
+                         +---------------+---------------+
+                                         |
+                                Event Hubs protocol
+                                         |
+                         +---------------v---------------+
+                         | Fabric Eventstream             |
+                         | routes by event_type           |
+                         +---------------+---------------+
+                                         |
+                         +---------------v---------------+
+                         | ManufacturingEH Eventhouse/KQL |
+                         | Bronze *_Raw tables            |
+                         | Silver enriched tables         |
+                         | reference/master data          |
+                         +------+------------------+------+
+                                |                  |
+                    +-----------v-----+    +-------v--------+
+                    | RT Dashboard    |    | Fabric Ontology |
+                    | Activator-ready |    | Data Agent      |
+                    +-----------------+    +-------+--------+
+                                                   |
+                                   +---------------v---------------+
+                                   | Foundry Agent Service          |
+                                   | + Azure AI Search SOP corpus   |
+                                   +-------------------------------+
 ```
-                   ┌───────────────────────────────────────────┐
-                   │  .NET Simulator (5 lines, 30 stations)    │
-                   │  Events: machine_telemetry | part_event   │
-                   │          | maintenance_event              │
-                   └─────────┬─────────────────┬───────────────┘
-                             │                 │
-            Option A (Direct)│                 │Option B (AIO)
-                             │                 │
-                 Event Hub Protocol        MQTT (port 1883)
-                             │                 │
-                             │                 ▼
-                             │   ┌─────────────────────────────┐
-                             │   │  Azure IoT Operations       │
-                             │   │  MQTT Broker                │
-                             │   │  ┌───────────────────────┐  │
-                             │   │  │ Assets (30 stations)  │  │
-                             │   │  └───────────────────────┘  │
-                             │   │  Dataflow ──────────────────┼── Kafka (9093)
-                             │   └─────────────────────────────┘       │
-                             │                                         │
-                             ▼                                         ▼
-                   ┌──────────────────────────────────────────────────────────────┐
-                   │  Fabric Eventstream                                          │
-                   │  ├─ SQL: event_type='machine_telemetry'  ► MachineEvents     │
-                   │  ├─ SQL: event_type='part_event'         ► PartEvents        │
-                   │  └─ SQL: event_type='maintenance_event'  ► MaintenanceEvents │
-                   └──────────────────────┬───────────────────────────────────────┘
-                                          │
-                                          ▼
-                   ┌───────────────────────────────────────────────────────┐
-                   │  Eventhouse — KQL Database                            │
-                   │  [StationMaster]      ← reference (cycle times)       │
-                   │  [LineMaster]         ← reference (line meta)         │
-                   │  [ProductionSchedule] ← reference (shift plan)        │
-                   │                                                       │
-                   │  OEE_5min Materialized View                           │
-                   │  Real-Time Dashboard (5 pages)                        │
-                   │  Activator (fault + maintenance alerts)               │
-                   └──────────┬──────────────────────────┬──────────────────┘
-                              │                          │
-                              │ Fabric Ontology          │ (telemetry-only)
-                              ▼                          │
-                   ┌───────────────────────┐             │
-                   │  Fabric IQ            │             │
-                   │  Fabric Data Agent    │             │
-                   │  (NL → KQL)           │             │
-                   └──────────┬────────────┘             │
-                              │                          │
-                              │  KS#1 (live)             │
-                              ▼                          │
-                   ┌────────────────────────────────────┐│
-                   │  Foundry Agent Service             ││
-                   │  • System prompt (5 personas)      ││
-                   │  • Routes between KS#1 & KS#2      ││
-                   │  • Citations on every answer       ││
-                   └──────────▲────────────┬────────────┘│
-                              │            │             │
-                  KS#2 (static)│            │ Chat UI     │
-                              │            ▼             │
-                   ┌────────────────────────┐            │
-                   │  Azure AI Search       │            │
-                   │  Index: oee-sops       │            │
-                   │  36 PDFs · vector +    │            │
-                   │  semantic + filters    │            │
-                   └──────────▲─────────────┘            │
-                              │                          │
-                              │ Indexer (DocumentExtract │
-                              │  → Split → AOAI embed)   │
-                              │                          │
-                   ┌──────────┴─────────────┐            │
-                   │  Blob Storage          │            │
-                   │  Container: oee-sops   │            │
-                   │  36 SOP PDFs           │            │
-                   └────────────────────────┘            │
-```
-
-> Work IQ integration is on the roadmap and not part of this checkpoint.
-
-## Demo Storyline
-
-The three persona vignettes below tie the four pillars together end-to-end.
-
-### 1. Maintenance Tech — *"Fix the Hydraulic-Press, fast."*
-
-A `Pressure-Loss` fault appears on Line-B station 02. The technician asks
-the agent: *"Line-B Hydraulic-Press just faulted with Pressure-Loss —
-walk me through the fix and confirm the work order is mine."* The agent
-hits **Fabric IQ** (open work-order ID, assigned technician) and **AI
-Search** filtered to `Line-B_02_Hydraulic-Press_Maintenance_SOP.pdf`
-(corrective procedure + LOTO callout). The reply is one paragraph, one
-numbered list, two citations.
-
-### 2. Line Manager — *"Why is Line-D under target?"*
-
-The Line-D OEE tile drops below 70 %. The Line Manager asks:
-*"Show me Line-D OEE for the last hour and tell me which station is
-the bottleneck right now."* Fabric IQ returns the trend and current
-per-station status; AI Search retrieves the Curing-Oven bottleneck note
-from `Production_Lines_Reference.pdf`. The agent recommends pausing
-Coating-Inspection per the Reject Disposition Policy if the rate
-crosses 5 %.
-
-### 3. Plant Manager — *"Are we hitting the corporate OEE commitment?"*
-
-Plant Manager asks: *"Which lines are below target right now, and what
-does our escalation matrix require?"* The agent fans out — Fabric IQ
-for live per-line OEE; AI Search for `OEE_Targets_and_Escalation.pdf`
-to quote the 60 %/15 min / 60 %/1 hr thresholds. Output is a short
-table with line, OEE, target, gap, and the required notification path.
-
-## Production Lines
-
-| Line | Name | Stations | Purpose |
-|------|------|----------|---------|
-| Line-A | Precision Machining | 5 | Raw bar stock → machined shaft |
-| Line-B | Sheet Metal Forming | 4 | Sheet metal → stamped housing |
-| Line-C | Welding & Assembly | 6 | Components → welded subassembly |
-| Line-D | Surface Treatment | 7 | Raw part → painted/coated finished part |
-| Line-E | Electronics Assembly | 8 | Bare PCB → tested electronics module |
-
-### Station Details
-
-#### Line-A: Precision Machining (Raw bar stock → machined shaft)
-
-| # | Station | Ideal Cycle | Fault Rate | Reject Rate | Notes |
-|---|---------|-------------|------------|-------------|-------|
-| 1 | CNC-Lathe | 40 s | 0.5 % | 2 % | Turns raw bar stock into rough shaft profile |
-| 2 | CNC-Mill | 45 s | 0.8 % | 3 % | Machines keyways, flats, and features |
-| 3 | Surface-Grinder | 35 s | 0.3 % | 2 % | Grinds critical surfaces to final tolerance |
-| 4 | Deburring-Station | 15 s | 0.2 % | 1 % | Removes machining burrs and sharp edges |
-| 5 | CMM-Inspection | 60 s | 0.4 % | 5 % | Coordinate measuring machine validates dimensions (**bottleneck**) |
-
-#### Line-B: Sheet Metal Forming (Sheet metal → stamped housing)
-
-| # | Station | Ideal Cycle | Fault Rate | Reject Rate | Notes |
-|---|---------|-------------|------------|-------------|-------|
-| 1 | Blanking-Press | 8 s | 0.6 % | 2 % | Punches flat blanks from sheet metal |
-| 2 | Hydraulic-Press | 12 s | 1.5 % | 4 % | Deep draws blanks into 3-D housing shape (**faultiest station**) |
-| 3 | Trimming-Station | 10 s | 0.4 % | 2 % | Trims excess material and flash from formed part |
-| 4 | Quality-Inspection | 20 s | 0.2 % | 3 % | Vision system checks dimensions and surface defects |
-
-#### Line-C: Welding & Assembly (Components → welded subassembly)
-
-| # | Station | Ideal Cycle | Fault Rate | Reject Rate | Notes |
-|---|---------|-------------|------------|-------------|-------|
-| 1 | Component-Loader | 10 s | 0.1 % | 0 % | Feeds raw components onto the line |
-| 2 | Welding-Robot | 25 s | 0.7 % | 3 % | MIG/TIG robotic welding of joints |
-| 3 | Weld-Inspection | 30 s | 0.5 % | 4 % | X-ray / ultrasonic non-destructive weld testing |
-| 4 | Fastening-Station | 15 s | 0.3 % | 1 % | Torque-controlled bolt and fastener insertion |
-| 5 | Assembly-Robot | 20 s | 0.4 % | 2 % | Robotic pick-and-place final assembly |
-| 6 | Leak-Test | 25 s | 0.6 % | 3 % | Pressurized leak detection on sealed assemblies |
-
-#### Line-D: Surface Treatment (Raw part → painted/coated finished part)
-
-| # | Station | Ideal Cycle | Fault Rate | Reject Rate | Notes |
-|---|---------|-------------|------------|-------------|-------|
-| 1 | Surface-Prep | 20 s | 0.3 % | 1 % | Sand-blasts / abrasive-cleans the surface |
-| 2 | Chemical-Wash | 30 s | 0.4 % | 1 % | Acid / alkaline wash to remove oils and oxides |
-| 3 | Primer-Application | 25 s | 0.5 % | 3 % | Spray-applies primer coat |
-| 4 | Paint-Booth | 40 s | 0.8 % | 4 % | Electrostatic or robotic paint application |
-| 5 | Curing-Oven | 90 s | 0.6 % | 2 % | Heat-cures the paint/coating (**bottleneck**) |
-| 6 | Coating-Inspection | 15 s | 0.2 % | 3 % | Vision + thickness gauge quality check |
-| 7 | Final-Packaging | 10 s | 0.1 % | 0 % | Wraps and boxes finished parts for shipment |
-
-#### Line-E: Electronics Assembly (Bare PCB → tested electronics module)
-
-| # | Station | Ideal Cycle | Fault Rate | Reject Rate | Notes |
-|---|---------|-------------|------------|-------------|-------|
-| 1 | PCB-Loader | 5 s | 0.1 % | 0 % | Loads bare PCBs from magazine onto conveyor |
-| 2 | SMT-Placement | 15 s | 0.6 % | 3 % | Pick-and-place mounts surface-mount components |
-| 3 | Reflow-Oven | 45 s | 0.4 % | 2 % | Melts solder paste to bond SMT components |
-| 4 | AOI-Inspection | 10 s | 0.3 % | 4 % | Automated optical inspection of solder joints |
-| 5 | Through-Hole-Insert | 20 s | 0.5 % | 2 % | Inserts through-hole connectors and tall components |
-| 6 | Wave-Solder | 35 s | 0.7 % | 3 % | Wave-solders through-hole leads (**faultiest station**) |
-| 7 | Functional-Test | 30 s | 0.3 % | 5 % | Powers up board and runs electrical test suite |
-| 8 | Conformal-Coat | 25 s | 0.4 % | 2 % | UV-cure conformal coating for environmental protection |
-
-### Key Behaviors
-
-- **Cascading faults:** A downed station starves downstream and blocks upstream via bounded buffers (capacity: 5 parts)
-- **Maintenance gating:** Faulted machines enter Maintenance state and cannot resume until the work order is resolved
-- **Part tracking:** Every part has a unique ID and full station-by-station traceability
-- **OEE formula:** Availability = Running / (Running + Fault + Maintenance) — Starved/Blocked time is excluded
 
 ## Prerequisites
 
-**Both paths:**
-- Microsoft Fabric capacity (F2 or higher) with Real-Time Intelligence enabled
-- A Fabric workspace with contributor access
-- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) installed (to build and run the simulator)
-- OR [Docker](https://docs.docker.com/get-docker/) installed
+Required for the core Fabric path:
 
-**Azure IoT Operations path only (Option B):**
-- Azure IoT Operations deployed ([Quickstart](https://github.com/howardginsburg/IoT-Operations-Quickstart))
-- Azure CLI 2.67.0+ with the `azure-iot-ops` extension
+- Microsoft Fabric capacity (F2 or higher) with Real-Time Intelligence enabled.
+- A Fabric workspace where you have contributor access.
+- Azure CLI 2.x logged in with `az login`.
+- `bash`, `jq`, and `curl` available from Git Bash, WSL, Linux, or macOS.
+- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) on Windows to build and run the WPF desktop simulator.
 
-## Get Started
+Additional prerequisites for the optional AI stack:
 
-Pick the path that fits how you want to learn:
+- Permission to create a Microsoft Foundry resource and project.
+- Quota for `gpt-4.1` and `text-embedding-3-large` in your target region.
+- Python 3.10+ with `pyyaml` for ontology publishing.
 
-- **[QUICKSTART.md](QUICKSTART.md)** — script-driven fast path. Uses the provisioners under `scripts/` to stand up the full 4-pillar stack (Fabric RTI → Fabric IQ Data Agent → Azure AI Search → Foundry agent) end-to-end. Best when you want a working demo quickly.
-- **[FABRIC_OEE_TUTORIAL.md](FABRIC_OEE_TUTORIAL.md)** — manual step-by-step tutorial that builds the same stack through the Fabric and Azure portals. Best for learning the platform or for environments where the scripts cannot run.
-- **[AIO_OEE_TUTORIAL.md](AIO_OEE_TUTORIAL.md)** — manual step-by-step tutorial for the optional ingestion variant that routes simulator telemetry through an Azure IoT Operations MQTT broker before Fabric.
+## Setup
 
-The two manual tutorials and the quickstart all land at the same final architecture.
+Clone the repo and authenticate first:
 
-## Dashboard Pages
+```bash
+git clone https://github.com/howardginsburg/FabricOEEDemo.git
+cd FabricOEEDemo
+az login
+```
 
-1. **Corporate Executive** — Factory OEE gauge, factory snapshot, line OEE trend, live OEE scores, OEE loss waterfall, machine status distribution
-2. **Plant Manager** — OEE components breakdown, part throughput per line, MTTR by machine type, fault type Pareto, shift KPI summary, schedule adherence, completed vs rejected by line
-3. **Line Manager** — Station pipeline, per-station OEE, cascade alerts (starved/blocked), actual vs ideal cycle time, parts funnel by station, quality trend, parts funnel (entered > passed > rejected)
-4. **Maintenance Technician** — Faults by station, open work orders, work order lifecycle, equipment age vs OEE, cycle time anomaly detection, station availability heatmap, fault distribution treemap
-5. **Quality / Station Worker** — Station status (live), factory KPIs, rejection rate by station, part journey (traceability), total parts produced, avg cycle time (time series)
+> **Tip:** Run `bash scripts/0-check-prereqs.sh` first. It verifies every prerequisite (Azure CLI login, `jq`, `python3` + `pyyaml`, the .NET SDK) and prints exact remediation commands for anything missing.
 
-## Repository Contents
+### 1. Provision the Fabric Foundation
+
+This step is required. It creates `ManufacturingEH`, the KQL database, `ManufacturingLH`, raw and enriched tables, reference data, update policies, OneLake mirroring policies, Eventstream routing, lakehouse shortcuts for the ontology path, and the Real-Time Dashboard. It also creates the **Fabric IQ ontology** and the **OEE Data Agent** (draft) automatically — pass `--skip-fabric-iq` to opt out, or omit it if `python3`/`pyyaml` are unavailable (the script skips that part with a warning).
+
+```bash
+bash scripts/1-setup-fabric.sh --workspace-name "<FABRIC_WORKSPACE>"
+```
+
+After it completes, open the `manufacturing-telemetry` Eventstream in Fabric and confirm it is **Running**. If it is stopped or in draft state, click **Publish**. The script also prints the remaining manual portal steps for the Data Agent (see step 3).
+
+### 2. Get the Eventstream Connection String
+
+In the Fabric Eventstream, open the `oee-simulator` custom endpoint source and copy the primary connection string. Keep it handy — you will use it when you run the simulator in the final step.
+
+### 3. Add Fabric IQ: Ontology and Data Agent (Optional)
+
+Enable this when you want natural-language queries over the live operations model. **Step 1 already creates the ontology and the `OEE Data Agent` (draft) for you** (unless you passed `--skip-fabric-iq`). Two actions remain, and they must be done in the **Fabric portal** — the Fabric *public* REST API has no endpoint to attach an ontology datasource or to publish a Data Agent:
+
+1. In Fabric, open the **OEE Data Agent**.
+2. **Add data source → Ontology**, and select **`OEEManufacturingOntology`**. (The KQL source `ManufacturingEH` and the agent instructions are already configured.)
+3. Click **Publish** to make the agent queryable.
+
+> The ontology relies on OneLake availability for the `ManufacturingEH` KQL Database. Step 1 enables the mirroring/shortcuts automatically, but if the ontology shows no data, open **ManufacturingEH → Settings → Database details → OneLake availability** to confirm it is on, wait 2-3 minutes, then re-run `scripts/1-setup-fabric.sh`.
+
+If you ran Step 1 with `--skip-fabric-iq` (or without Python), create the ontology and Data Agent manually before doing the portal steps above:
+
+```bash
+pip install pyyaml
+python scripts/6-publish-ontology.py  --workspace-name "<FABRIC_WORKSPACE>"
+python scripts/7-setup-data-agent.py --workspace-name "<FABRIC_WORKSPACE>" --data-agent-name "OEE Data Agent"
+```
+
+### 4. Add SOP Search and Foundry Agent (Optional)
+
+Run these after the Data Agent if you want the full assistant experience.
+
+1. Provision Foundry and deploy the chat + embedding models:
+
+   ```bash
+   bash scripts/4-setup-foundry.sh \
+     --foundry-resource <FOUNDRY_RESOURCE_NAME> \
+     --project <FOUNDRY_PROJECT_NAME> \
+     --resource-group <RESOURCE_GROUP> \
+     --location <AZURE_REGION>
+   ```
+
+2. Provision Azure AI Search and index the SOP PDFs:
+
+   ```bash
+   bash scripts/5-setup-aisearch.sh \
+     --resource-group <RESOURCE_GROUP> \
+     --location <AZURE_REGION> \
+     --search-service <UNIQUE_SEARCH_SERVICE_NAME> \
+     --foundry-aoai-endpoint https://<FOUNDRY_OPENAI_SUBDOMAIN>.openai.azure.com
+   ```
+
+3. In the Foundry portal, create a prompt agent using [agent/system-prompt.md](agent/system-prompt.md), attach the published Fabric Data Agent as one knowledge source, and attach the Azure AI Search index `oee-sops` as the second knowledge source. Use [agent/knowledge/fabric_data_agent.md](agent/knowledge/fabric_data_agent.md), [agent/knowledge/aisearch_sops.md](agent/knowledge/aisearch_sops.md), and [agent/samples/queries.md](agent/samples/queries.md) for the portal descriptions and smoke tests.
+
+### 5. Run the Simulator
+
+This is the final step. With the Fabric foundation (and any optional setup) in place, configure the simulator with the Eventstream connection string and start it.
+
+The simulator is a Windows desktop (WPF) app. Run it from the repo on a Windows machine:
+
+```bash
+cd simulator/FabricOEESimulator.Wpf
+```
+
+Create `simulator.local.yaml` next to `simulator.yaml`:
+
+```yaml
+simulator:
+  broker:
+    connection: "Endpoint=sb://...;EntityPath=es_..."
+    hub: "es_..." # optional when EntityPath is already in the connection string
+```
+
+Then launch the desktop app and click **Start**:
+
+```bash
+dotnet run
+```
+
+## Script Reference
+
+| Script | Purpose | Run When |
+|---|---|---|
+| `scripts/1-setup-fabric.sh` | Creates the Fabric RTI foundation: Eventhouse, KQL DB, tables, update policies, Eventstream, dashboard, lakehouse, and ontology shortcuts. | Always first. Re-run after enabling OneLake availability. |
+| `scripts/4-setup-foundry.sh` | Creates Foundry resource/project and deploys chat + embedding models. | Optional AI stack, before AI Search. |
+| `scripts/5-setup-aisearch.sh` | Creates storage, uploads SOP PDFs, creates AI Search index/skillset/indexer. | Optional AI stack, after Foundry. |
+| `scripts/6-publish-ontology.py` | Validates and publishes `ontology/ontology.yaml`. | Optional Fabric IQ stack. |
+| `scripts/7-setup-data-agent.py` | Creates or updates the Fabric Data Agent draft. | Optional Fabric IQ stack; publish in portal after running. |
+| `scripts/build-sops.sh` | Regenerates SOP PDFs from `knowledge/source/*.md`. | Developer-only content refresh. |
+
+All setup scripts are intended to be idempotent. Re-running the relevant script is the normal recovery path after a transient Azure or Fabric failure.
+
+## Repository Map
 
 | Path | Description |
-|------|-------------|
-| `QUICKSTART.md` | Scripted fast-path setup (Fabric, optional AIO, Foundry resource, AI Search, agent) |
-| `FABRIC_OEE_TUTORIAL.md` | Step-by-step tutorial — direct to Fabric Eventstream (8 steps) |
-| `AIO_OEE_TUTORIAL.md` | Step-by-step tutorial — via Azure IoT Operations MQTT broker |
-| `scripts/1-setup-fabric.sh` | Automated Fabric provisioner script |
-| `scripts/2-setup-iotops.sh` | Script to deploy OEE assets and dataflow to AIO via az CLI |
-| `scripts/3-setup-iotops-assets.sh` | Bulk-promote discovered assets to managed assets |
-| `scripts/4-setup-foundry.sh` | Provision the Foundry resource + project and deploy chat + embedding models (run before the AI Search script) |
-| `scripts/5-setup-aisearch.sh` | Provision Azure AI Search + index the 36 SOP PDFs (uses the Foundry AOAI endpoint) |
-| `scripts/build-sops.sh` | Regenerate SOP PDFs from `knowledge/source/*.md` (developer only) |
-| `simulator/` | .NET 8 console app simulator |
-| `simulator/FabricOEESimulator/` | Simulator source code |
-| `simulator/FabricOEESimulator/simulator.sample.yaml` | Sample configuration file |
-| `simulator/Dockerfile` | Docker build for the simulator |
-| `dashboard/oee-dashboard.template.json` | Importable 5-page Real-Time Dashboard template |
-| `ontology/` | Ontology CSV definitions for Data Agent (6 entities, 8 relationships) |
-| `notebooks/create_ontology.ipynb` | Notebook to deploy ontology with validation and diagnostics |
-| `docs/ONTOLOGY_LESSONS.md` | Lessons learned from ontology deployment (materialized views, type mismatches, validation) |
-| `knowledge/` | 36 SOP PDFs + their markdown sources under `knowledge/source/` |
-| `agent/` | Foundry prompt-agent scaffolding (`agent.yaml`, `system-prompt.md`, knowledge-source descriptions, sample queries) |
+|---|---|
+| `simulator/FabricOEESimulator.Wpf/` | Self-contained Windows WPF desktop simulator (simulation engine, telemetry sinks, and UI). |
+| `dashboard/oee-dashboard.template.json` | Real-Time Dashboard template imported by script 1. |
+| `eventstream_topology.json` | Eventstream topology reference. |
+| `ontology/` | Fabric Ontology manifest and notes; current graph shape is 6 entities and 5 relationships. |
+| `knowledge/` | SOP PDFs plus Markdown sources under `knowledge/source/`. |
+| `agent/` | Foundry prompt-agent source files, knowledge descriptions, and sample queries. |
+| `docs/ONTOLOGY_LESSONS.md` | Rationale for the slim ontology and OEE composition design. |
+| `scripts/` | Provisioning and deployment scripts. |
+
+## Operations Notes
+
+- The Eventstream may need a manual **Publish** click after script 1.
+- `simulator.local.yaml` is ignored by git; use it for local secrets.
+- OEE is composed from live Silver tables. Do not create or depend on an `OEE_5min` materialized view.
