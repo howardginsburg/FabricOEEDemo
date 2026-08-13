@@ -44,15 +44,32 @@
 #
 # Arguments:
 #   --resource-group         (required)
-#   --location               (required) Azure region
+#   --location               (required) Azure region for storage + (default) search
 #   --search-service         (required) Search service name (global-unique)
 #   --foundry-aoai-endpoint  (required) https URL of the AOAI/Foundry endpoint
-#   --storage-account        (optional) Storage acct name; auto-named if blank
+#   --storage-account        (optional) Storage acct name; auto-named if blank.
+#                             Tip: pass an explicit name so re-runs reuse it
+#                             instead of creating a new (orphan) account.
 #   --container-name         (optional) Blob container (default: oee-sops)
 #   --index-name             (optional) Search index (default: oee-sops)
 #   --sku                    (optional) Search SKU (default: basic)
+#   --search-location        (optional) Region for the AI Search service only.
+#                             Defaults to --location. Use a different region when
+#                             --location is capacity-constrained for Search
+#                             ("InsufficientResourcesAvailable"); the service can
+#                             read storage and call AOAI cross-region.
 #   --embedding-model        (optional) Default text-embedding-3-large
 #   --embedding-deployment   (optional) Deployment name (default same as model)
+#
+# Notes learned in the field:
+#   • Storage is created with public network access ENABLED. If an Azure Policy
+#     later disables it, AAD data-plane calls (uploads, the indexer) fail with a
+#     403 that the CLI mis-reports as "blocked by network rules". Re-enable via
+#     'az storage account update -n <acct> -g <rg> --public-network-access Enabled'.
+#   • Role assignments use the ARM REST API when the 'az role assignment' command
+#     is unavailable in your environment (some tenants return MissingSubscription).
+#   • RBAC on the Search managed identity can take >30s to reach the storage data
+#     plane; the indexer run is retried to absorb that propagation delay.
 # =============================================================================
 set -euo pipefail
 
@@ -68,6 +85,7 @@ STORAGE_ACCOUNT=""
 CONTAINER_NAME="oee-sops"
 INDEX_NAME="oee-sops"
 SKU="basic"
+SEARCH_LOCATION=""
 EMBED_MODEL="text-embedding-3-large"
 EMBED_DEPLOYMENT=""
 
@@ -95,6 +113,7 @@ while [[ $# -gt 0 ]]; do
     --container-name)        CONTAINER_NAME="$2"; shift 2 ;;
     --index-name)            INDEX_NAME="$2"; shift 2 ;;
     --sku)                   SKU="$2"; shift 2 ;;
+    --search-location)       SEARCH_LOCATION="$2"; shift 2 ;;
     --embedding-model)       EMBED_MODEL="$2"; shift 2 ;;
     --embedding-deployment)  EMBED_DEPLOYMENT="$2"; shift 2 ;;
     --help|-h)
@@ -110,11 +129,54 @@ done
 [[ -z "$FOUNDRY_AOAI_ENDPOINT" ]] && die "--foundry-aoai-endpoint is required"
 
 [[ -z "$EMBED_DEPLOYMENT" ]] && EMBED_DEPLOYMENT="$EMBED_MODEL"
+[[ -z "$SEARCH_LOCATION"  ]] && SEARCH_LOCATION="$LOCATION"
 
 # ── Dependency check ──────────────────────────────────────────────────────────
 for cmd in az jq curl; do
   command -v "$cmd" &>/dev/null || die "'$cmd' is required but not installed."
 done
+
+# ── Robust role assignment (ARM REST fallback) ───────────────────────────────
+# Some environments/tenants return "MissingSubscription" from the
+# 'az role assignment' command. This helper tries that command first and falls
+# back to a direct ARM REST PUT, which works regardless of that CLI quirk.
+_role_def_id() { # <role display name> -> built-in role definition GUID
+  case "$1" in
+    "Storage Blob Data Contributor")  echo "ba92f5b4-2d11-453d-a403-e96b0029c9fe" ;;
+    "Storage Blob Data Reader")       echo "2a2b9908-6ea1-4ae2-8e65-a410df84e7d1" ;;
+    "Cognitive Services OpenAI User") echo "5e0bd9bd-7b93-4f28-af87-19fc36ad61bd" ;;
+    *) return 1 ;;
+  esac
+}
+# ensure_role <principalId> <User|ServicePrincipal> <role name> <scope resourceId>
+ensure_role() {
+  local principal="$1" ptype="$2" role="$3" scope="$4"
+  # Fast path: az role assignment (skip if it already exists)
+  if az role assignment list --assignee "$principal" --scope "$scope" --role "$role" \
+       --query "[0].id" -o tsv 2>/dev/null | grep -q .; then
+    return 0
+  fi
+  if az role assignment create --assignee-object-id "$principal" \
+       --assignee-principal-type "$ptype" --role "$role" --scope "$scope" -o none 2>/dev/null; then
+    return 0
+  fi
+  # Fallback: ARM REST PUT
+  local sub defguid roledef guid
+  sub=$(az account show --query id -o tsv)
+  defguid=$(_role_def_id "$role") || { warn "unknown role '$role'"; return 1; }
+  roledef="/subscriptions/${sub}/providers/Microsoft.Authorization/roleDefinitions/${defguid}"
+  local existing
+  existing=$(az rest --method get \
+    --url "https://management.azure.com${scope}/providers/Microsoft.Authorization/roleAssignments?api-version=2022-04-01&\$filter=principalId+eq+'${principal}'" \
+    --query "value[?properties.roleDefinitionId=='${roledef}'] | [0].id" -o tsv 2>/dev/null || true)
+  [[ -n "$existing" && "$existing" != "null" ]] && return 0
+  guid=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || python -c "import uuid;print(uuid.uuid4())")
+  az rest --method put \
+    --url "https://management.azure.com${scope}/providers/Microsoft.Authorization/roleAssignments/${guid}?api-version=2022-04-01" \
+    --headers "Content-Type=application/json" \
+    --body "{\"properties\":{\"roleDefinitionId\":\"${roledef}\",\"principalId\":\"${principal}\",\"principalType\":\"${ptype}\"}}" \
+    -o none
+}
 
 step "Checking knowledge/*.pdf"
 shopt -s nullglob
@@ -154,8 +216,24 @@ else
     -n "$STORAGE_ACCOUNT" -g "$RESOURCE_GROUP" -l "$LOCATION" \
     --sku Standard_LRS --kind StorageV2 --min-tls-version TLS1_2 \
     --allow-blob-public-access false \
+    --public-network-access Enabled \
     --allow-shared-key-access false -o none
-  ok "Created (shared key auth disabled)"
+  ok "Created (shared key auth disabled; public network access enabled)"
+fi
+
+# Reconcile: an Azure Policy may disable public network access after creation,
+# which breaks AAD uploads and the indexer (403 mis-reported as "network rules").
+PNA=$(az storage account show -n "$STORAGE_ACCOUNT" -g "$RESOURCE_GROUP" \
+  --query publicNetworkAccess -o tsv 2>/dev/null || echo "")
+if [[ "$PNA" == "Disabled" ]]; then
+  warn "Public network access is Disabled — attempting to re-enable"
+  if az storage account update -n "$STORAGE_ACCOUNT" -g "$RESOURCE_GROUP" \
+       --public-network-access Enabled -o none 2>/dev/null; then
+    ok "Public network access re-enabled"
+  else
+    warn "Could not re-enable public network access (Azure Policy may enforce Disabled)."
+    warn "  Ask an admin to allow it, or add your client IP to the storage firewall, then re-run."
+  fi
 fi
 
 STORAGE_ID=$(az storage account show -n "$STORAGE_ACCOUNT" -g "$RESOURCE_GROUP" --query id -o tsv)
@@ -166,20 +244,11 @@ CURRENT_USER_OID=$(az ad signed-in-user show --query id -o tsv 2>/dev/null || tr
 if [[ -z "$CURRENT_USER_OID" ]]; then
   warn "Could not resolve signed-in user object id — you may need to assign Storage Blob Data Contributor manually."
 else
-  if az role assignment list \
-       --assignee "$CURRENT_USER_OID" \
-       --scope "$STORAGE_ID" \
-       --role "Storage Blob Data Contributor" \
-       --query "[0].id" -o tsv 2>/dev/null | grep -q .; then
-    ok "Role already assigned"
+  if ensure_role "$CURRENT_USER_OID" User "Storage Blob Data Contributor" "$STORAGE_ID"; then
+    ok "Role assigned (or already present) — sleeping 45s for AAD propagation"
+    sleep 45
   else
-    az role assignment create \
-      --assignee-object-id "$CURRENT_USER_OID" \
-      --assignee-principal-type User \
-      --role "Storage Blob Data Contributor" \
-      --scope "$STORAGE_ID" -o none
-    ok "Role assigned — sleeping 30s for AAD propagation"
-    sleep 30
+    die "Failed to assign Storage Blob Data Contributor to the current user."
   fi
 fi
 
@@ -250,21 +319,30 @@ else
     --model-name "$EMBED_MODEL" \
     --model-version "1" \
     --model-format "OpenAI" \
-    --sku-capacity 50 --sku-name "Standard" -o none
+    --sku-capacity 50 --sku-name "GlobalStandard" -o none
   ok "Deployment created"
 fi
 
 # ── 6. Search service ────────────────────────────────────────────────────────
-step "AI Search service: $SEARCH_SERVICE (SKU: $SKU)"
+step "AI Search service: $SEARCH_SERVICE (SKU: $SKU, region: $SEARCH_LOCATION)"
 if az search service show -n "$SEARCH_SERVICE" -g "$RESOURCE_GROUP" &>/dev/null; then
   ok "Already exists"
 else
-  az search service create \
-    -n "$SEARCH_SERVICE" -g "$RESOURCE_GROUP" -l "$LOCATION" \
+  if ! az search service create \
+    -n "$SEARCH_SERVICE" -g "$RESOURCE_GROUP" -l "$SEARCH_LOCATION" \
     --sku "$SKU" --partition-count 1 --replica-count 1 \
     --identity-type SystemAssigned \
     --auth-options aadOrApiKey \
-    --aad-auth-failure-mode http403 -o none
+    --aad-auth-failure-mode http403 -o none 2>/tmp/search_create_err; then
+    ERR="$(cat /tmp/search_create_err 2>/dev/null)"
+    if echo "$ERR" | grep -qi "InsufficientResourcesAvailable"; then
+      die "Region '$SEARCH_LOCATION' is out of AI Search capacity. Re-run with --search-location <other region> (the service can read storage and call AOAI cross-region)."
+    fi
+    # 'az search service create' has been observed to crash with a Python import
+    # deadlock (_ModuleLock('requests.models')) on some CLI builds. It is safe to
+    # simply re-run this idempotent script; the service create will retry.
+    die "AI Search service create failed: ${ERR:0:400}"
+  fi
   ok "Created (system-assigned MI + Entra-or-key data-plane auth)"
 fi
 
@@ -298,23 +376,14 @@ for role_scope in \
   "Cognitive Services OpenAI User|$AOAI_ID"; do
   ROLE="${role_scope%%|*}"
   SCOPE="${role_scope##*|}"
-  if az role assignment list \
-       --assignee "$SEARCH_MI_OID" \
-       --scope "$SCOPE" \
-       --role "$ROLE" \
-       --query "[0].id" -o tsv 2>/dev/null | grep -q .; then
-    ok "$ROLE already assigned on $(basename "$SCOPE")"
+  if ensure_role "$SEARCH_MI_OID" ServicePrincipal "$ROLE" "$SCOPE"; then
+    ok "$ROLE assigned (or already present) on $(basename "$SCOPE")"
   else
-    az role assignment create \
-      --assignee-object-id "$SEARCH_MI_OID" \
-      --assignee-principal-type ServicePrincipal \
-      --role "$ROLE" \
-      --scope "$SCOPE" -o none
-    ok "$ROLE assigned on $(basename "$SCOPE")"
+    die "$ROLE assignment failed on $(basename "$SCOPE")"
   fi
 done
-ok "Sleeping 30s for RBAC propagation"
-sleep 30
+ok "Sleeping 60s for RBAC propagation"
+sleep 60
 
 SEARCH_ADMIN_KEY=$(az search admin-key show \
   --service-name "$SEARCH_SERVICE" -g "$RESOURCE_GROUP" \
@@ -521,27 +590,41 @@ IDX_BODY=$(jq -n --arg name "$IDX_NAME" --arg ds "$DS_NAME" \
 check_http "$(search_put "/indexers/$IDX_NAME" "$IDX_BODY")" "Indexer: $IDX_NAME"
 
 # ── 11. Run the indexer ──────────────────────────────────────────────────────
+# The Search MI's Storage Blob Data Reader role can take a couple of minutes to
+# reach the storage data plane; the first run may 403. Retry a few times.
 step "Running indexer (initial run)"
-curl -sS -X POST \
-  -H "api-key: $SEARCH_ADMIN_KEY" \
-  "${SEARCH_ENDPOINT}/indexers/${IDX_NAME}/run?api-version=${SEARCH_API}" >/dev/null
-ok "Indexer run started"
+run_indexer() {
+  curl -sS -X POST -H "api-key: $SEARCH_ADMIN_KEY" \
+    "${SEARCH_ENDPOINT}/indexers/${IDX_NAME}/run?api-version=${SEARCH_API}" >/dev/null
+}
 
-elapsed=0
-while (( elapsed < 600 )); do
-  status_json=$(curl -sS -H "api-key: $SEARCH_ADMIN_KEY" \
-    "${SEARCH_ENDPOINT}/indexers/${IDX_NAME}/status?api-version=${SEARCH_API}")
-  status=$(echo "$status_json" | jq -r '.lastResult.status // .status // "unknown"')
-  case "$status" in
-    success)         ok "Indexer succeeded"; break ;;
-    transientFailure|persistentFailure|error)
-      err_msg=$(echo "$status_json" | jq -r '.lastResult.errorMessage // "see status"')
-      die "Indexer failed: $err_msg" ;;
-    inProgress|reset|*)
-      printf "   indexer status: %s …\n" "$status"
-      sleep 15; elapsed=$((elapsed + 15)) ;;
-  esac
+INDEXER_OK=0
+for attempt in 1 2 3 4; do
+  run_indexer
+  ok "Indexer run started (attempt $attempt)"
+  elapsed=0
+  while (( elapsed < 600 )); do
+    status_json=$(curl -sS -H "api-key: $SEARCH_ADMIN_KEY" \
+      "${SEARCH_ENDPOINT}/indexers/${IDX_NAME}/status?api-version=${SEARCH_API}")
+    status=$(echo "$status_json" | jq -r '.lastResult.status // .status // "unknown"')
+    case "$status" in
+      success)         ok "Indexer succeeded"; INDEXER_OK=1; break ;;
+      transientFailure|persistentFailure|error)
+        err_msg=$(echo "$status_json" | jq -r '.lastResult.errorMessage // "see status"')
+        warn "Indexer failed (attempt $attempt): $err_msg"
+        break ;;
+      inProgress|reset|*)
+        printf "   indexer status: %s …\n" "$status"
+        sleep 15; elapsed=$((elapsed + 15)) ;;
+    esac
+  done
+  (( INDEXER_OK == 1 )) && break
+  if (( attempt < 4 )); then
+    warn "Retrying indexer in 45s (RBAC propagation to the storage data plane can lag)…"
+    sleep 45
+  fi
 done
+(( INDEXER_OK == 1 )) || die "Indexer did not succeed after retries. Confirm the Search MI has 'Storage Blob Data Reader' on $STORAGE_ACCOUNT and that storage public network access is Enabled, then re-run."
 
 DOC_COUNT=$(curl -sS -H "api-key: $SEARCH_ADMIN_KEY" \
   "${SEARCH_ENDPOINT}/indexes/${INDEX_NAME}/stats?api-version=${SEARCH_API}" \
@@ -568,7 +651,14 @@ ok "Search service:   $SEARCH_SERVICE   (endpoint: $SEARCH_ENDPOINT)"
 ok "Index:            $INDEX_NAME       (chunks: $DOC_COUNT)"
 
 echo
-manual "Use these values in the Foundry portal when attaching the Azure AI Search knowledge source:"
+manual "Next — create the prompt agent + knowledge-source connections (scripted):"
+manual "    python scripts/8-setup-foundry-agent.py \\"
+manual "      --foundry-resource <FOUNDRY_RESOURCE> --project <PROJECT> \\"
+manual "      --resource-group $RESOURCE_GROUP \\"
+manual "      --search-service $SEARCH_SERVICE --search-index $INDEX_NAME \\"
+manual "      --fabric-workspace-id <WORKSPACE_GUID> --fabric-artifact-id <DATA_AGENT_GUID>"
+manual ""
+manual "Or attach in the Foundry portal manually with these values:"
 manual "  Endpoint:        https://${SEARCH_SERVICE}.search.windows.net"
 manual "  Index:           $INDEX_NAME"
 manual "  Query key:       $SEARCH_QUERY_KEY"

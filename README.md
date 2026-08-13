@@ -58,9 +58,10 @@ Required for the core Fabric path:
 
 Additional prerequisites for the optional AI stack:
 
+- **Azure CLI 2.67 or later** — `scripts/4-setup-foundry.sh` uses `--allow-project-management` and the `az cognitiveservices account project` subcommands, which older builds (e.g. 2.58) reject. Upgrade with `az upgrade`.
 - Permission to create a Microsoft Foundry resource and project.
-- Quota for `gpt-4.1` and `text-embedding-3-large` in your target region.
-- Python 3.10+ with `pyyaml` for ontology publishing.
+- **Consumption (pay-as-you-go) model quota — no PTU.** Deployments default to the `GlobalStandard` SKU. You need `GlobalStandard` quota for a chat model and for `text-embedding-3-large` in your region. Note: some subscriptions have **no consumption quota for `gpt-4.1`** in a given region (only Batch) — `gpt-4o` (version `2024-11-20`) on `GlobalStandard` is a widely available fallback and is what the agent script defaults to.
+- Python 3.10+ with `pyyaml` (ontology publishing) and, for the scripted Foundry agent, `azure-ai-projects` (2.x) + `azure-identity` (`pip install azure-ai-projects azure-identity openai httpx` — `httpx`/`openai` cover a transitive import and the `--smoke` test).
 
 ## Setup
 
@@ -120,6 +121,8 @@ Run these after the Data Agent if you want the full assistant experience.
      --location <AZURE_REGION>
    ```
 
+   Deployments use the `GlobalStandard` (consumption) SKU by default — no PTU. The script runs a quota preflight and, if the default `gpt-4.1` has no consumption quota in your region, prints the exact override. To force the widely available fallback: add `--chat-model gpt-4o --chat-model-version 2024-11-20`.
+
 2. Provision Azure AI Search and index the SOP PDFs:
 
    ```bash
@@ -130,7 +133,24 @@ Run these after the Data Agent if you want the full assistant experience.
      --foundry-aoai-endpoint https://<FOUNDRY_OPENAI_SUBDOMAIN>.openai.azure.com
    ```
 
-3. In the Foundry portal, create a prompt agent using [agent/system-prompt.md](agent/system-prompt.md), attach the published Fabric Data Agent as one knowledge source, and attach the Azure AI Search index `oee-sops` as the second knowledge source. Use [agent/knowledge/fabric_data_agent.md](agent/knowledge/fabric_data_agent.md), [agent/knowledge/aisearch_sops.md](agent/knowledge/aisearch_sops.md), and [agent/samples/queries.md](agent/samples/queries.md) for the portal descriptions and smoke tests.
+   Tips: pass `--storage-account <NAME>` so re-runs reuse one account instead of creating orphans. If your region is capacity-constrained for AI Search (`InsufficientResourcesAvailable`), put the search service in another region with `--search-location <REGION>` — it reads storage and calls AOAI cross-region. If an Azure Policy disables storage public network access, the script re-enables it (uploads/indexer use your Entra identity over the public endpoint).
+
+3. Create the prompt agent and wire both knowledge sources (**now scripted** — formerly manual portal steps):
+
+   ```bash
+   python scripts/8-setup-foundry-agent.py \
+     --foundry-resource <FOUNDRY_RESOURCE_NAME> \
+     --project <FOUNDRY_PROJECT_NAME> \
+     --resource-group <RESOURCE_GROUP> \
+     --search-service <SEARCH_SERVICE_NAME> \
+     --fabric-workspace-id <WORKSPACE_GUID> \
+     --fabric-artifact-id <DATA_AGENT_GUID> \
+     --smoke
+   ```
+
+   This creates the two project connections (Azure AI Search + Fabric Data Agent) and a `PromptAgentDefinition` agent (default name `oee-factory-iq`, model `gpt-4o`) whose tools are the AI Search `oee-sops` index and the `MicrosoftFabricPreviewTool`, using [agent/system-prompt.md](agent/system-prompt.md). The Fabric workspace/artifact GUIDs come from the published data agent URL: `https://<env>.fabric.microsoft.com/groups/<workspace-id>/aiskills/<artifact-id>`. `--smoke` runs one SOP and one live-telemetry question to verify both tools.
+
+   The Fabric tool uses **identity passthrough (On-Behalf-Of)**: you (and any demo user) must have READ on the OEE Data Agent and its underlying sources. Prefer the portal instead? Open `https://ai.azure.com` → your project → Agents, attach an Azure AI Search knowledge source (index `oee-sops`, semantic config `oee-semantic`) and a Microsoft Fabric connection (workspace + artifact), and paste [agent/system-prompt.md](agent/system-prompt.md) as the system message. See [agent/knowledge/fabric_data_agent.md](agent/knowledge/fabric_data_agent.md), [agent/knowledge/aisearch_sops.md](agent/knowledge/aisearch_sops.md), and [agent/samples/queries.md](agent/samples/queries.md).
 
 ### 5. Run the Simulator
 
@@ -162,10 +182,11 @@ dotnet run
 | Script | Purpose | Run When |
 |---|---|---|
 | `scripts/1-setup-fabric.sh` | Creates the Fabric RTI foundation: Eventhouse, KQL DB, tables, update policies, Eventstream, dashboard, lakehouse, and ontology shortcuts. | Always first. Re-run after enabling OneLake availability. |
-| `scripts/4-setup-foundry.sh` | Creates Foundry resource/project and deploys chat + embedding models. | Optional AI stack, before AI Search. |
-| `scripts/5-setup-aisearch.sh` | Creates storage, uploads SOP PDFs, creates AI Search index/skillset/indexer. | Optional AI stack, after Foundry. |
+| `scripts/4-setup-foundry.sh` | Creates Foundry resource/project and deploys chat + embedding models (GlobalStandard/consumption, no PTU) with a quota preflight. Needs Azure CLI 2.67+. | Optional AI stack, before AI Search. |
+| `scripts/5-setup-aisearch.sh` | Creates storage, uploads SOP PDFs, creates AI Search index/skillset/indexer. Handles storage public-network-access, `--search-location` region fallback, and RBAC-propagation retries. | Optional AI stack, after Foundry. |
 | `scripts/6-publish-ontology.py` | Validates and publishes `ontology/ontology.yaml`. | Optional Fabric IQ stack. |
 | `scripts/7-setup-data-agent.py` | Creates or updates the Fabric Data Agent draft. | Optional Fabric IQ stack; publish in portal after running. |
+| `scripts/8-setup-foundry-agent.py` | Creates the AI Search + Fabric project connections and the OEE Factory IQ prompt agent (both tools). Needs `azure-ai-projects` + `azure-identity`. | Optional AI stack, after AI Search and after publishing the Fabric Data Agent. |
 | `scripts/build-sops.sh` | Regenerates SOP PDFs from `knowledge/source/*.md`. | Developer-only content refresh. |
 
 All setup scripts are intended to be idempotent. Re-running the relevant script is the normal recovery path after a transient Azure or Fabric failure.
@@ -188,3 +209,14 @@ All setup scripts are intended to be idempotent. Re-running the relevant script 
 - The Eventstream may need a manual **Publish** click after script 1.
 - `simulator.local.yaml` is ignored by git; use it for local secrets.
 - OEE is composed from live Silver tables. Do not create or depend on an `OEE_5min` materialized view.
+
+### AI stack — lessons learned
+
+- **Azure CLI 2.67+** is required for the Foundry scripts (`--allow-project-management`, `az cognitiveservices account project`). Run `az upgrade` if `scripts/4-setup-foundry.sh` reports an "unrecognized arguments" or version error.
+- **Consumption only, no PTU.** Model deployments use `GlobalStandard` (token-based). If `gpt-4.1` has no consumption quota in your region (some subscriptions only expose Batch), the script's quota preflight tells you; use `--chat-model gpt-4o --chat-model-version 2024-11-20`.
+- **AI Search capacity:** if a region returns `InsufficientResourcesAvailable`, deploy the search service in another region via `--search-location`. It reads storage and calls the AOAI embedding endpoint cross-region.
+- **Storage public network access:** if an Azure Policy disables it, AAD uploads and the indexer fail with a 403 that the CLI mis-reports as "blocked by network rules". Script 5 creates the account with public access enabled and re-enables it if a policy flipped it; if a policy hard-enforces Disabled, an admin must allow it (or add your client IP to the storage firewall).
+- **RBAC propagation:** the Search managed identity's `Storage Blob Data Reader` grant can take a couple of minutes to reach the storage data plane, so the first indexer run may 403. Script 5 retries the indexer to absorb this.
+- **Role assignments:** in environments where `az role assignment` returns `MissingSubscription`, script 5 falls back to the ARM REST role-assignment API automatically.
+- **Foundry connections** occasionally return a transient HTTP 500 (`ServiceError`) from the account resource provider; `scripts/8-setup-foundry-agent.py` retries connection PUTs.
+- **Fabric tool auth:** the Fabric Data Agent tool uses identity passthrough (On-Behalf-Of). Every user of the agent needs READ on the data agent and its underlying data sources; service-principal auth is not supported. The Fabric Data Agent must be **published** first.

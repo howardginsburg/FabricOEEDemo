@@ -11,6 +11,18 @@
 # with `--allow-project-management`), per:
 #   https://learn.microsoft.com/azure/foundry/tutorials/quickstart-create-foundry-resources?tabs=azurecli
 #
+# IMPORTANT — Azure CLI version: `--allow-project-management` and the
+# `az cognitiveservices account project` subcommands require Azure CLI 2.67.0
+# or later. Older builds (e.g. 2.58) fail with "unrecognized arguments".
+# Upgrade with `az upgrade` (or the MSI) before running this script.
+#
+# IMPORTANT — model SKU / quota (consumption, no PTU): deployments default to
+# `GlobalStandard` (pay-as-you-go, token-based — NOT Provisioned/PTU). Some
+# subscriptions have no consumption quota for `gpt-4.1` in a given region (only
+# Batch); if the quota preflight below reports 0, either request quota or pass
+# `--chat-model gpt-4o --chat-model-version 2024-11-20`, which is widely
+# available on GlobalStandard.
+#
 # What is automated:
 #   • Creates the resource group (if missing).
 #   • Creates the Foundry resource (`az cognitiveservices account create
@@ -43,10 +55,13 @@
 #   --chat-model-version <VER>      Default: 2025-04-14.
 #   --chat-deployment <NAME>        Default: same as --chat-model.
 #   --chat-capacity <N>             TPM in thousands (default: 50).
+#   --chat-sku <NAME>               Deployment SKU (default: GlobalStandard —
+#                                    consumption/pay-as-you-go, no PTU).
 #   --embedding-model <NAME>        Default: text-embedding-3-large.
 #   --embedding-model-version <VER> Default: 1.
 #   --embedding-deployment <NAME>   Default: same as --embedding-model.
 #   --embedding-capacity <N>        TPM in thousands (default: 50).
+#   --embedding-sku <NAME>          Deployment SKU (default: GlobalStandard).
 #   --search-service <NAME>         If scripts/5-setup-aisearch.sh has already
 #                                    run, supply the AI Search service name so
 #                                    this script can pre-resolve endpoint + key.
@@ -68,11 +83,16 @@ CHAT_MODEL="gpt-4.1"
 CHAT_MODEL_VERSION="2025-04-14"
 CHAT_DEPLOYMENT=""
 CHAT_CAPACITY="50"
+CHAT_SKU="GlobalStandard"
 
 EMBED_MODEL="text-embedding-3-large"
 EMBED_MODEL_VERSION="1"
 EMBED_DEPLOYMENT=""
 EMBED_CAPACITY="50"
+EMBED_SKU="GlobalStandard"
+
+# Minimum Azure CLI for --allow-project-management + project subcommands
+MIN_AZ_VERSION="2.67.0"
 
 SEARCH_SERVICE=""
 SEARCH_INDEX="oee-sops"
@@ -100,10 +120,12 @@ while [[ $# -gt 0 ]]; do
     --chat-model-version)      CHAT_MODEL_VERSION="$2"; shift 2 ;;
     --chat-deployment)         CHAT_DEPLOYMENT="$2"; shift 2 ;;
     --chat-capacity)           CHAT_CAPACITY="$2"; shift 2 ;;
+    --chat-sku)                CHAT_SKU="$2"; shift 2 ;;
     --embedding-model)         EMBED_MODEL="$2"; shift 2 ;;
     --embedding-model-version) EMBED_MODEL_VERSION="$2"; shift 2 ;;
     --embedding-deployment)    EMBED_DEPLOYMENT="$2"; shift 2 ;;
     --embedding-capacity)      EMBED_CAPACITY="$2"; shift 2 ;;
+    --embedding-sku)           EMBED_SKU="$2"; shift 2 ;;
     --search-service)          SEARCH_SERVICE="$2"; shift 2 ;;
     --search-index)            SEARCH_INDEX="$2"; shift 2 ;;
     --help|-h)
@@ -125,6 +147,14 @@ done
 for cmd in az jq; do
   command -v "$cmd" &>/dev/null || die "'$cmd' is required but not installed."
 done
+
+# ── Azure CLI version guard ───────────────────────────────────────────────────
+# --allow-project-management and `az cognitiveservices account project` need 2.67+.
+ver_ge() { [[ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -n1)" == "$2" ]]; }
+AZ_VER="$(az version --query '"azure-cli"' -o tsv 2>/dev/null || echo 0)"
+if ! ver_ge "$AZ_VER" "$MIN_AZ_VERSION"; then
+  die "Azure CLI $AZ_VER is too old — this script needs >= $MIN_AZ_VERSION for '--allow-project-management' and 'az cognitiveservices account project'. Upgrade with 'az upgrade' (or reinstall the MSI) and retry."
+fi
 
 # ── 0. Subscription ──────────────────────────────────────────────────────────
 step "Verifying Azure login"
@@ -205,7 +235,24 @@ PROJECT_ID=$(az cognitiveservices account project show \
   --query id -o tsv)
 
 # ── 4. Deploy chat model ─────────────────────────────────────────────────────
-step "Chat model deployment: $CHAT_DEPLOYMENT ($CHAT_MODEL v$CHAT_MODEL_VERSION)"
+# Quota preflight (consumption): warn early if the target model+SKU has no quota
+# in this region so you can switch model/SKU instead of failing mid-deploy.
+quota_for() { # <sku> <model>
+  az cognitiveservices usage list -l "$LOCATION" -o json 2>/dev/null \
+    | jq -r --arg n "OpenAI.$1.$2" \
+        '[.[] | select(.name.value==$n)][0] | if . == null then "MISSING" else "\(.limit-.currentValue)/\(.limit)" end'
+}
+step "Quota preflight (region: $LOCATION)"
+CHAT_QUOTA="$(quota_for "$CHAT_SKU" "$CHAT_MODEL")"
+if [[ "$CHAT_QUOTA" == "MISSING" || "$CHAT_QUOTA" == 0/* ]]; then
+  warn "No '$CHAT_SKU' consumption quota for '$CHAT_MODEL' in $LOCATION (available: $CHAT_QUOTA)."
+  warn "  → Request quota, choose another region, or use a model that has quota, e.g.:"
+  warn "      --chat-model gpt-4o --chat-model-version 2024-11-20   (GlobalStandard, widely available)"
+else
+  ok "Chat quota ($CHAT_SKU $CHAT_MODEL): $CHAT_QUOTA TPM (k) available"
+fi
+
+step "Chat model deployment: $CHAT_DEPLOYMENT ($CHAT_MODEL v$CHAT_MODEL_VERSION, $CHAT_SKU)"
 if az cognitiveservices account deployment show \
      --name "$FOUNDRY_RESOURCE" \
      --resource-group "$RESOURCE_GROUP" \
@@ -219,14 +266,21 @@ else
     --model-name "$CHAT_MODEL" \
     --model-version "$CHAT_MODEL_VERSION" \
     --model-format OpenAI \
-    --sku-name Standard \
+    --sku-name "$CHAT_SKU" \
     --sku-capacity "$CHAT_CAPACITY" \
     -o none
   ok "Created"
 fi
 
 # ── 5. Deploy embedding model ────────────────────────────────────────────────
-step "Embedding model deployment: $EMBED_DEPLOYMENT ($EMBED_MODEL v$EMBED_MODEL_VERSION)"
+EMBED_QUOTA="$(quota_for "$EMBED_SKU" "$EMBED_MODEL")"
+if [[ "$EMBED_QUOTA" == "MISSING" || "$EMBED_QUOTA" == 0/* ]]; then
+  warn "No '$EMBED_SKU' consumption quota for '$EMBED_MODEL' in $LOCATION (available: $EMBED_QUOTA). Request quota or pick another region/SKU."
+else
+  ok "Embedding quota ($EMBED_SKU $EMBED_MODEL): $EMBED_QUOTA TPM (k) available"
+fi
+
+step "Embedding model deployment: $EMBED_DEPLOYMENT ($EMBED_MODEL v$EMBED_MODEL_VERSION, $EMBED_SKU)"
 if az cognitiveservices account deployment show \
      --name "$FOUNDRY_RESOURCE" \
      --resource-group "$RESOURCE_GROUP" \
@@ -240,7 +294,7 @@ else
     --model-name "$EMBED_MODEL" \
     --model-version "$EMBED_MODEL_VERSION" \
     --model-format OpenAI \
-    --sku-name Standard \
+    --sku-name "$EMBED_SKU" \
     --sku-capacity "$EMBED_CAPACITY" \
     -o none
   ok "Created"
@@ -300,22 +354,23 @@ manual "      --location $LOCATION \\"
 manual "      --search-service <UNIQUE_SEARCH_NAME> \\"
 manual "      --foundry-aoai-endpoint $OPENAI_ENDPOINT"
 manual ""
-manual "Step B — In the Foundry portal (https://ai.azure.com), register both"
-manual "knowledge sources and build the prompt agent (see README.md):"
-manual "  1. Knowledge → Add knowledge source → Fabric Data Agent"
-manual "     • Identifier: the published Fabric Data Agent display name or ID"
-manual "  2. Knowledge → Add knowledge source → Azure AI Search"
-manual "     • Endpoint:                from scripts/5-setup-aisearch.sh output"
-manual "     • Index:                   $SEARCH_INDEX"
-manual "     • Query key:               from scripts/5-setup-aisearch.sh output"
-manual "     • Embedding model:         $EMBED_MODEL"
-manual "     • Semantic configuration:  oee-semantic"
-manual "  3. Agents → Build a prompt agent"
-manual "     • Model:        $CHAT_DEPLOYMENT"
-manual "     • System message: paste contents of agent/system-prompt.md"
-manual "     • Attach both knowledge sources from steps 1 and 2."
+manual "Step B — Build the prompt agent + knowledge-source connections. This is now"
+manual "scripted (formerly manual portal steps). After scripts/5-setup-aisearch.sh:"
+manual "    python scripts/8-setup-foundry-agent.py \\"
+manual "      --foundry-resource $FOUNDRY_RESOURCE \\"
+manual "      --project $PROJECT \\"
+manual "      --resource-group $RESOURCE_GROUP \\"
+manual "      --search-service <UNIQUE_SEARCH_NAME> \\"
+manual "      --fabric-workspace-id <WORKSPACE_GUID> \\"
+manual "      --fabric-artifact-id <DATA_AGENT_GUID>"
 manual ""
-manual "Step C — When complete, fill in agent/.foundry/agent-metadata.yaml with the IDs."
+manual "  (workspace/artifact GUIDs come from the published Fabric data agent URL:"
+manual "   https://<env>.fabric.microsoft.com/groups/<workspace-id>/aiskills/<artifact-id>)"
+manual ""
+manual "  Prefer the portal instead? https://ai.azure.com → project → Agents:"
+manual "  attach an Azure AI Search knowledge source (index $SEARCH_INDEX, semantic"
+manual "  config oee-semantic) and a Microsoft Fabric connection (workspace + artifact),"
+manual "  then paste agent/system-prompt.md as the system message on model $CHAT_DEPLOYMENT."
 
 step "Done"
 ok "Foundry resource, project, and model deployments are ready."

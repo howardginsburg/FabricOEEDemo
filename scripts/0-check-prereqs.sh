@@ -16,7 +16,10 @@
 #   FABRIC IQ       scripts/6-publish-ontology.py, scripts/7-setup-data-agent.py
 #                     → python3, PyYAML
 #   FOUNDRY/SEARCH  scripts/4-setup-foundry.sh, scripts/5-setup-aisearch.sh
-#                     → (uses CORE only; just needs Foundry quota/region)
+#                     → Azure CLI 2.67+ (Foundry project management), plus
+#                       consumption (GlobalStandard) model quota in your region
+#   FOUNDRY AGENT   scripts/8-setup-foundry-agent.py
+#                     → python3 + azure-ai-projects (2.x) + azure-identity
 #   LOCAL SIM       running the simulator locally with 'dotnet run'
 #                     → .NET SDK 10
 #   DEV (optional)  scripts/build-sops.sh — regenerate SOP PDFs (committed already)
@@ -72,6 +75,13 @@ group "CORE — required by scripts/1-setup-fabric.sh and all others"
 if have az; then
   AZ_VER="$(az version --query '"azure-cli"' -o tsv 2>/dev/null || echo '?')"
   pass "Azure CLI present (az $AZ_VER)"
+  # Foundry (scripts 4/8) need 2.67+ for --allow-project-management / project subcommands
+  if [[ "$AZ_VER" != "?" ]]; then
+    if [[ "$(printf '2.67.0\n%s\n' "$AZ_VER" | sort -V | head -n1)" != "2.67.0" ]]; then
+      warn "Azure CLI $AZ_VER is older than 2.67.0 — scripts/4-setup-foundry.sh needs 2.67+ (Foundry project management). Core Fabric scripts still work."
+      fix "az upgrade   # or reinstall the MSI from https://aka.ms/installazurecliwindows"
+    fi
+  fi
   if az account show -o none >/dev/null 2>&1; then
     AZ_ACCT="$(az account show --query name -o tsv 2>/dev/null || echo '?')"
     pass "Azure CLI logged in (subscription: $AZ_ACCT)"
@@ -138,6 +148,21 @@ else
   fail "Python 3 not found"
   fix "$PKG_HINT python3   # Windows: winget install Python.Python.3.12  (need <3.13 for some SDKs)"
   FABRIC_IQ_MISSING=$((FABRIC_IQ_MISSING + 1))
+fi
+
+# ── FOUNDRY AGENT (prompt agent automation) ───────────────────────────────────
+group "FOUNDRY AGENT — scripts/8-setup-foundry-agent.py"
+
+if [[ -n "$PY" ]]; then
+  if $PY -c 'import azure.ai.projects, azure.identity, httpx' >/dev/null 2>&1; then
+    pass "azure-ai-projects + azure-identity present"
+  else
+    warn "azure-ai-projects / azure-identity not installed (only needed to script the Foundry agent)"
+    fix "$PY -m pip install azure-ai-projects azure-identity openai httpx"
+  fi
+else
+  warn "Python 3 not found — needed for scripts/8-setup-foundry-agent.py"
+  fix "$PKG_HINT python3"
 fi
 
 # ── LOCAL SIMULATOR RUN ───────────────────────────────────────────────────────
