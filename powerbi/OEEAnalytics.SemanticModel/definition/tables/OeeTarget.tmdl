@@ -1,0 +1,45 @@
+/// Per-line OEE targets set from the Power BI report via the translytical task flow
+/// (Component C). Surfaced into ManufacturingLH/dbo.OeeTarget via a OneLake shortcut
+/// over the OeeGovernance Fabric SQL database. Empty until Component C is deployed.
+/// Related to DimLine on line_id; drives the target-vs-actual visuals.
+table OeeTarget
+
+	column line_id
+		dataType: string
+		sourceColumn: line_id
+		summarizeBy: none
+		lineageTag: 3f2a9d10-2009-4b7c-9e11-aa0000018001
+
+	column target_oee
+		dataType: double
+		formatString: 0.0%;-0.0%;0.0%
+		sourceColumn: target_oee
+		summarizeBy: none
+		lineageTag: 3f2a9d10-2009-4b7c-9e11-aa0000018002
+
+	column effective_date
+		dataType: dateTime
+		formatString: Short Date
+		sourceColumn: effective_date
+		summarizeBy: none
+		lineageTag: 3f2a9d10-2009-4b7c-9e11-aa0000018003
+
+	column set_by
+		dataType: string
+		sourceColumn: set_by
+		summarizeBy: none
+		lineageTag: 3f2a9d10-2009-4b7c-9e11-aa0000018004
+
+	column updated_at
+		dataType: dateTime
+		formatString: General Date
+		sourceColumn: updated_at
+		summarizeBy: none
+		lineageTag: 3f2a9d10-2009-4b7c-9e11-aa0000018005
+
+	partition OeeTarget = entity
+		mode: directLake
+		source
+			entityName: OeeTarget
+			schemaName: dbo
+			expressionSource: 'DirectLake - ManufacturingLH'

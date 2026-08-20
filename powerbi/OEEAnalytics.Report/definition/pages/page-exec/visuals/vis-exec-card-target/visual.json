@@ -1,0 +1,21 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.12.0/schema.json",
+  "name": "vis-exec-card-target",
+  "position": { "x": 16, "y": 478, "z": 0, "width": 200, "height": 120, "tabOrder": 8 },
+  "visual": {
+    "visualType": "card",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            { "field": { "Measure": { "Expression": { "SourceRef": { "Entity": "_Measures" } }, "Property": "Target OEE" } }, "queryRef": "_Measures.Target OEE", "nativeQueryRef": "Target OEE" }
+          ]
+        }
+      }
+    },
+    "visualContainerObjects": {
+      "title": [ { "properties": { "text": { "expr": { "Literal": { "Value": "'Target OEE'" } } } } } ]
+    },
+    "drillFilterOtherVisuals": true
+  }
+}

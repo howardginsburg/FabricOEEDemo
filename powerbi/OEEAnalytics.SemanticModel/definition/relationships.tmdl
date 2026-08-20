@@ -1,0 +1,59 @@
+relationship 3f2a9d10-4000-0001-0000-000000000001
+	fromColumn: MachineEvents.device_id
+	toColumn: StationDim.device_id
+
+relationship 3f2a9d10-4000-0001-0000-000000000002
+	fromColumn: MachineEvents.line_id
+	toColumn: DimLine.line_id
+
+relationship 3f2a9d10-4000-0001-0000-000000000003
+	fromColumn: MachineEvents.machine_type
+	toColumn: DimMachineType.machine_type
+
+relationship 3f2a9d10-4000-0001-0000-000000000004
+	fromColumn: MachineEvents.shift_id
+	toColumn: DimShift.shift
+
+relationship 3f2a9d10-4000-0002-0000-000000000001
+	fromColumn: PartEvents.line_id
+	toColumn: DimLine.line_id
+
+relationship 3f2a9d10-4000-0002-0000-000000000002
+	fromColumn: PartEvents.machine_type
+	toColumn: DimMachineType.machine_type
+
+relationship 3f2a9d10-4000-0002-0000-000000000003
+	fromColumn: PartEvents.shift_id
+	toColumn: DimShift.shift
+
+relationship 3f2a9d10-4000-0003-0000-000000000001
+	fromColumn: MaintenanceEvents.device_id
+	toColumn: StationDim.device_id
+
+relationship 3f2a9d10-4000-0003-0000-000000000002
+	fromColumn: MaintenanceEvents.line_id
+	toColumn: DimLine.line_id
+
+relationship 3f2a9d10-4000-0003-0000-000000000003
+	fromColumn: MaintenanceEvents.machine_type
+	toColumn: DimMachineType.machine_type
+
+relationship 3f2a9d10-4000-0003-0000-000000000004
+	fromColumn: MaintenanceEvents.shift_id
+	toColumn: DimShift.shift
+
+relationship 3f2a9d10-4000-0003-0000-000000000005
+	fromColumn: MaintenanceEvents.issue_type
+	toColumn: DimIssueType.issue_type
+
+relationship 3f2a9d10-4000-0003-0000-000000000006
+	fromColumn: MaintenanceEvents.technician_id
+	toColumn: DimTechnician.technician_id
+
+relationship 3f2a9d10-4000-0004-0000-000000000001
+	fromColumn: OeeTarget.line_id
+	toColumn: DimLine.line_id
+
+relationship 3f2a9d10-4000-0005-0000-000000000001
+	fromColumn: DowntimeReason.device_id
+	toColumn: StationDim.device_id

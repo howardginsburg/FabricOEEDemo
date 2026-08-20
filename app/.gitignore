@@ -1,0 +1,8 @@
+node_modules/
+dist/
+rayfin/.temp/
+rayfin/.env
+rayfin/.deployments.json
+.env
+.env.local
+*.local

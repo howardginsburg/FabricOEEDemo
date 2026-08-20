@@ -1,0 +1,77 @@
+/// Silver part-level events (one row per part action). Quality & throughput signals.
+/// Direct Lake over ManufacturingLH/dbo.PartEvents.
+table PartEvents
+
+	column part_id
+		dataType: string
+		sourceColumn: part_id
+		summarizeBy: none
+		lineageTag: 3f2a9d10-1002-4b7c-9e11-aa0000002001
+
+	column line_id
+		dataType: string
+		sourceColumn: line_id
+		summarizeBy: none
+		lineageTag: 3f2a9d10-1002-4b7c-9e11-aa0000002002
+
+	column station_position
+		dataType: int64
+		sourceColumn: station_position
+		summarizeBy: none
+		lineageTag: 3f2a9d10-1002-4b7c-9e11-aa0000002003
+
+	column machine_type
+		dataType: string
+		sourceColumn: machine_type
+		summarizeBy: none
+		lineageTag: 3f2a9d10-1002-4b7c-9e11-aa0000002004
+
+	column action
+		dataType: string
+		sourceColumn: action
+		summarizeBy: none
+		lineageTag: 3f2a9d10-1002-4b7c-9e11-aa0000002005
+
+	column cycle_time
+		dataType: double
+		sourceColumn: cycle_time
+		summarizeBy: none
+		lineageTag: 3f2a9d10-1002-4b7c-9e11-aa0000002006
+
+	column is_pass
+		dataType: int64
+		sourceColumn: is_pass
+		summarizeBy: sum
+		lineageTag: 3f2a9d10-1002-4b7c-9e11-aa0000002007
+
+	column is_completed
+		dataType: int64
+		sourceColumn: is_completed
+		summarizeBy: sum
+		lineageTag: 3f2a9d10-1002-4b7c-9e11-aa0000002008
+
+	column is_rejected
+		dataType: int64
+		sourceColumn: is_rejected
+		summarizeBy: sum
+		lineageTag: 3f2a9d10-1002-4b7c-9e11-aa0000002009
+
+	column shift_id
+		dataType: string
+		sourceColumn: shift_id
+		summarizeBy: none
+		lineageTag: 3f2a9d10-1002-4b7c-9e11-aa0000002010
+
+	column timestamp
+		dataType: dateTime
+		formatString: General Date
+		sourceColumn: timestamp
+		summarizeBy: none
+		lineageTag: 3f2a9d10-1002-4b7c-9e11-aa0000002011
+
+	partition PartEvents = entity
+		mode: directLake
+		source
+			entityName: PartEvents
+			schemaName: dbo
+			expressionSource: 'DirectLake - ManufacturingLH'

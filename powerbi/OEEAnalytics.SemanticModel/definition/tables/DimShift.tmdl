@@ -1,0 +1,29 @@
+/// Shift dimension (Day / Night). Direct Lake over ManufacturingLH/dbo.ShiftMaster.
+/// Key `shift` matches the fact shift_id column.
+table DimShift
+
+	column shift
+		dataType: string
+		isKey
+		sourceColumn: shift
+		summarizeBy: none
+		lineageTag: 3f2a9d10-2004-4b7c-9e11-aa0000013001
+
+	column start_hour
+		dataType: int64
+		sourceColumn: start_hour
+		summarizeBy: none
+		lineageTag: 3f2a9d10-2004-4b7c-9e11-aa0000013002
+
+	column end_hour
+		dataType: int64
+		sourceColumn: end_hour
+		summarizeBy: none
+		lineageTag: 3f2a9d10-2004-4b7c-9e11-aa0000013003
+
+	partition DimShift = entity
+		mode: directLake
+		source
+			entityName: ShiftMaster
+			schemaName: dbo
+			expressionSource: 'DirectLake - ManufacturingLH'

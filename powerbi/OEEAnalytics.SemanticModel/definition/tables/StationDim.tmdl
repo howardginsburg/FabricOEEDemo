@@ -1,0 +1,61 @@
+/// Station dimension. Keyed by device_id (single-column key for Direct Lake).
+/// Binds to ManufacturingLH/dbo.StationMaster, which scripts/1 and scripts/2 extend
+/// in place with device_id = strcat(tolower(line_id),'-station-',station_position) —
+/// no duplicate table. device_id matches MachineEvents.device_id / MaintenanceEvents.device_id.
+table StationDim
+
+	column device_id
+		dataType: string
+		isKey
+		sourceColumn: device_id
+		summarizeBy: none
+		lineageTag: 3f2a9d10-2002-4b7c-9e11-aa0000011001
+
+	column line_id
+		dataType: string
+		sourceColumn: line_id
+		summarizeBy: none
+		lineageTag: 3f2a9d10-2002-4b7c-9e11-aa0000011002
+
+	column station_position
+		dataType: int64
+		sourceColumn: station_position
+		summarizeBy: none
+		lineageTag: 3f2a9d10-2002-4b7c-9e11-aa0000011003
+
+	column machine_type
+		dataType: string
+		sourceColumn: machine_type
+		summarizeBy: none
+		lineageTag: 3f2a9d10-2002-4b7c-9e11-aa0000011004
+
+	column ideal_cycle_time
+		dataType: double
+		sourceColumn: ideal_cycle_time
+		summarizeBy: none
+		lineageTag: 3f2a9d10-2002-4b7c-9e11-aa0000011005
+
+	column manufacturer
+		dataType: string
+		sourceColumn: manufacturer
+		summarizeBy: none
+		lineageTag: 3f2a9d10-2002-4b7c-9e11-aa0000011006
+
+	column install_year
+		dataType: int64
+		sourceColumn: install_year
+		summarizeBy: none
+		lineageTag: 3f2a9d10-2002-4b7c-9e11-aa0000011007
+
+	column buffer_capacity
+		dataType: int64
+		sourceColumn: buffer_capacity
+		summarizeBy: none
+		lineageTag: 3f2a9d10-2002-4b7c-9e11-aa0000011008
+
+	partition StationDim = entity
+		mode: directLake
+		source
+			entityName: StationMaster
+			schemaName: dbo
+			expressionSource: 'DirectLake - ManufacturingLH'

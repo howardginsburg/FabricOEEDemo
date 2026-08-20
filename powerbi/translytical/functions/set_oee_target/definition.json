@@ -1,0 +1,29 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/userDataFunction/definition/1.1.0/schema.json",
+  "runtime": "PYTHON",
+  "connectedDataSources": [
+    {
+      "alias": "OeeGovernance",
+      "artifactId": "__OEE_GOVERNANCE_ITEM_ID__",
+      "artifactType": "SqlDbNative",
+      "workspaceId": "__WORKSPACE_ID__"
+    }
+  ],
+  "functions": [
+    {
+      "name": "set_oee_target",
+      "description": "Upserts a per-line OEE target into OeeGovernance.dbo.OeeTarget for Power BI translytical write-back.",
+      "isPublicEndpointEnabled": true
+    }
+  ],
+  "libraries": {
+    "public": [
+      {
+        "name": "fabric-user-data-functions",
+        "type": "PYPI",
+        "version": "1.0"
+      }
+    ],
+    "private": []
+  }
+}

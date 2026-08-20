@@ -1,0 +1,18 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.12.0/schema.json",
+  "name": "vis-exec-slicer-shift",
+  "position": { "x": 1076, "y": 88, "z": 0, "width": 180, "height": 120, "tabOrder": 5 },
+  "visual": {
+    "visualType": "slicer",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            { "field": { "Column": { "Expression": { "SourceRef": { "Entity": "DimShift" } }, "Property": "shift" } }, "queryRef": "DimShift.shift", "nativeQueryRef": "shift" }
+          ]
+        }
+      }
+    },
+    "drillFilterOtherVisuals": true
+  }
+}

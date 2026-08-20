@@ -1,0 +1,47 @@
+{
+  "runtime": "PYTHON",
+  "functionsMetadata": [
+    {
+      "name": "set_oee_target",
+      "scriptFile": "function_app.py",
+      "bindings": [
+        {
+          "methods": [
+            "POST"
+          ],
+          "route": "",
+          "authLevel": "Anonymous",
+          "name": "req",
+          "direction": "In",
+          "type": "HttpTrigger"
+        },
+        {
+          "itemType": null,
+          "subType": "FabricSqlConnection",
+          "alias": "OeeGovernance",
+          "name": "sqlDB",
+          "direction": "In",
+          "type": "FabricItem"
+        }
+      ],
+      "fabricProperties": {
+        "fabricMetadataSchemaVersion": "1.1.0",
+        "fabricFunctionParameters": [
+          {
+            "dataType": "str",
+            "name": "lineId"
+          },
+          {
+            "dataType": "float",
+            "name": "targetOee"
+          },
+          {
+            "dataType": "str",
+            "name": "setBy"
+          }
+        ],
+        "fabricFunctionReturnType": "str"
+      }
+    }
+  ]
+}

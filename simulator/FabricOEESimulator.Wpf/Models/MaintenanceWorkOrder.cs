@@ -11,7 +11,6 @@ public enum WorkOrderStatus
 public sealed class MaintenanceWorkOrder
 {
     private readonly TaskCompletionSource _resolved = new(TaskCreationOptions.RunContinuationsAsynchronously);
-    private static int _counter;
 
     public string Id { get; }
     public string DeviceId { get; }
@@ -29,7 +28,7 @@ public sealed class MaintenanceWorkOrder
 
     public MaintenanceWorkOrder(string deviceId, string machineType, string lineId, int stationPosition, string issueType)
     {
-        Id = $"WO-{Interlocked.Increment(ref _counter):D5}";
+        Id = $"WO-{Guid.NewGuid():N}";
         DeviceId = deviceId;
         MachineType = machineType;
         LineId = lineId;

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.12.0/schema.json",
+  "name": "vis-exec-card-oee",
+  "position": { "x": 16, "y": 88, "z": 0, "width": 200, "height": 120, "tabOrder": 0 },
+  "visual": {
+    "visualType": "card",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            { "field": { "Measure": { "Expression": { "SourceRef": { "Entity": "_Measures" } }, "Property": "OEE" } }, "queryRef": "_Measures.OEE", "nativeQueryRef": "OEE" }
+          ]
+        }
+      }
+    },
+    "visualContainerObjects": {
+      "title": [ { "properties": { "text": { "expr": { "Literal": { "Value": "'OEE'" } } } } } ]
+    },
+    "drillFilterOtherVisuals": true
+  }
+}

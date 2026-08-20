@@ -1,0 +1,157 @@
+/// Measures-only table. DAX is the analytical source of truth for OEE — these
+/// definitions mirror the query-time KQL used by the Real-Time Dashboard
+/// (Availability × Performance × Quality) so the two layers agree.
+table _Measures
+
+	measure 'Total Machine Samples' = COUNTROWS(MachineEvents)
+		formatString: #,0
+		lineageTag: 3f2a9d10-3001-4b7c-9e11-aa0000020001
+
+	measure 'Running Samples' = SUM(MachineEvents[is_running])
+		formatString: #,0
+		lineageTag: 3f2a9d10-3001-4b7c-9e11-aa0000020002
+
+	/// Availability = running time ÷ scheduled time (proxy: running samples ÷ all samples).
+	measure Availability = DIVIDE([Running Samples], [Total Machine Samples])
+		formatString: 0.0%;-0.0%;0.0%
+		lineageTag: 3f2a9d10-3001-4b7c-9e11-aa0000020003
+
+	/// Performance = ideal ÷ actual cycle time over running events, capped at 100%.
+	/// ideal_cycle_time comes from StationDim (related on device_id).
+	measure Performance = ```
+			VAR RunningRows =
+			    FILTER (
+			        MachineEvents,
+			        MachineEvents[is_running] = 1
+			            && MachineEvents[actual_cycle_time] > 0
+			    )
+			VAR IdealTotal = SUMX ( RunningRows, RELATED ( StationDim[ideal_cycle_time] ) )
+			VAR ActualTotal = SUMX ( RunningRows, MachineEvents[actual_cycle_time] )
+			RETURN
+			    MIN ( 1, DIVIDE ( IdealTotal, ActualTotal ) )
+			```
+		formatString: 0.0%;-0.0%;0.0%
+		lineageTag: 3f2a9d10-3001-4b7c-9e11-aa0000020004
+
+	measure 'Parts Passed' = SUM(PartEvents[is_pass])
+		formatString: #,0
+		lineageTag: 3f2a9d10-3001-4b7c-9e11-aa0000020005
+
+	measure 'Parts Completed' = SUM(PartEvents[is_completed])
+		formatString: #,0
+		lineageTag: 3f2a9d10-3001-4b7c-9e11-aa0000020006
+
+	measure 'Parts Rejected' = SUM(PartEvents[is_rejected])
+		formatString: #,0
+		lineageTag: 3f2a9d10-3001-4b7c-9e11-aa0000020007
+
+	measure 'Parts Produced' = [Parts Completed] + [Parts Rejected]
+		formatString: #,0
+		lineageTag: 3f2a9d10-3001-4b7c-9e11-aa0000020008
+
+	/// Quality = good parts ÷ total parts produced (First-Pass Yield).
+	/// good = completed; total = completed + rejected. (is_pass fires on multiple
+	/// part events per part, so it is NOT used here — see docs/POWERBI_NOTES.md.)
+	measure Quality = DIVIDE([Parts Completed], [Parts Produced])
+		formatString: 0.0%;-0.0%;0.0%
+		lineageTag: 3f2a9d10-3001-4b7c-9e11-aa0000020009
+
+	/// OEE = Availability × Performance × Quality.
+	measure OEE = [Availability] * [Performance] * [Quality]
+		formatString: 0.0%;-0.0%;0.0%
+		lineageTag: 3f2a9d10-3001-4b7c-9e11-aa0000020010
+
+	measure 'Rejection Rate' = DIVIDE([Parts Rejected], [Parts Produced])
+		formatString: 0.0%;-0.0%;0.0%
+		lineageTag: 3f2a9d10-3001-4b7c-9e11-aa0000020011
+
+	measure Throughput = [Parts Completed]
+		formatString: #,0
+		lineageTag: 3f2a9d10-3001-4b7c-9e11-aa0000020012
+
+	/// Planned parts for the current line + shift selection (ProductionSchedule is
+	/// unrelated; map filter context onto it with TREATAS).
+	measure 'Planned Parts' = ```
+			CALCULATE (
+			    SUM ( ProductionSchedule[planned_parts] ),
+			    TREATAS ( VALUES ( DimLine[line_id] ), ProductionSchedule[line_id] ),
+			    TREATAS ( VALUES ( DimShift[shift] ), ProductionSchedule[shift] )
+			)
+			```
+		formatString: #,0
+		lineageTag: 3f2a9d10-3001-4b7c-9e11-aa0000020013
+
+	measure 'Schedule Adherence' = DIVIDE([Parts Completed], [Planned Parts])
+		formatString: 0.0%;-0.0%;0.0%
+		lineageTag: 3f2a9d10-3001-4b7c-9e11-aa0000020014
+
+	measure 'Work Orders' = DISTINCTCOUNT(MaintenanceEvents[work_order_id])
+		formatString: #,0
+		lineageTag: 3f2a9d10-3001-4b7c-9e11-aa0000020015
+
+	/// Mean Time To Repair (minutes): avg(Resolved − Created) across work orders.
+	/// Uses MIN(Resolved) paired with MIN(Created) on each work order's lifecycle.
+	/// work_order_id is a per-run GUID, so IDs never collide across simulator sessions.
+	measure 'MTTR (min)' = ```
+			AVERAGEX (
+			    VALUES ( MaintenanceEvents[work_order_id] ),
+			    VAR Created =
+			        CALCULATE ( MIN ( MaintenanceEvents[timestamp] ), MaintenanceEvents[action] = "Created" )
+			    VAR Resolved =
+			        CALCULATE ( MIN ( MaintenanceEvents[timestamp] ), MaintenanceEvents[action] = "Resolved" )
+			    RETURN
+			        IF ( Resolved >= Created, DIVIDE ( DATEDIFF ( Created, Resolved, SECOND ), 60 ) )
+			)
+			```
+		formatString: #,0.0
+		lineageTag: 3f2a9d10-3001-4b7c-9e11-aa0000020016
+
+	/// Mean Time Between Failures (minutes, approx): running minutes ÷ failures.
+	/// Sample interval assumed via Running Samples; see docs/POWERBI_NOTES.md.
+	measure 'MTBF (min)' = ```
+			VAR Failures = [Work Orders]
+			VAR RunningMinutes = [Running Samples] * DIVIDE ( 1, 6 )
+			RETURN
+			    DIVIDE ( RunningMinutes, Failures )
+			```
+		formatString: #,0.0
+		lineageTag: 3f2a9d10-3001-4b7c-9e11-aa0000020017
+
+	/// Day-vs-Night OEE splits (shift_id is the fact key into DimShift).
+	measure 'OEE — Day' = CALCULATE([OEE], DimShift[shift] = "Day")
+		formatString: 0.0%;-0.0%;0.0%
+		lineageTag: 3f2a9d10-3001-4b7c-9e11-aa0000020018
+
+	measure 'OEE — Night' = CALCULATE([OEE], DimShift[shift] = "Night")
+		formatString: 0.0%;-0.0%;0.0%
+		lineageTag: 3f2a9d10-3001-4b7c-9e11-aa0000020019
+
+	/// ── Component C (translytical) blend ───────────────────────────────────────
+	/// Target OEE for the current line selection (OeeTarget related to DimLine).
+	measure 'Target OEE' = AVERAGE(OeeTarget[target_oee])
+		formatString: 0.0%;-0.0%;0.0%
+		lineageTag: 3f2a9d10-3001-4b7c-9e11-aa0000020020
+
+	measure 'OEE vs Target' = [OEE] - [Target OEE]
+		formatString: 0.0%;-0.0%;0.0%
+		lineageTag: 3f2a9d10-3001-4b7c-9e11-aa0000020021
+
+	/// ── Component B (Rayfin downtime logbook) blend ────────────────────────────
+	measure 'Downtime Reasons Logged' = COUNTROWS(DowntimeReason)
+		formatString: #,0
+		lineageTag: 3f2a9d10-3001-4b7c-9e11-aa0000020022
+
+	column Value
+		isHidden
+		formatString: 0
+		lineageTag: 3f2a9d10-3001-4b7c-9e11-aa00000200ff
+		summarizeBy: none
+		sourceColumn: [Value]
+
+		annotation SummarizationSetBy = Automatic
+
+	partition _Measures = calculated
+		mode: import
+		source = ```
+				{ BLANK() }
+				```

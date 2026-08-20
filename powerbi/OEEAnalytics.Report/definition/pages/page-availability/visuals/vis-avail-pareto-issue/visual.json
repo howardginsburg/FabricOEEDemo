@@ -1,0 +1,24 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.12.0/schema.json",
+  "name": "vis-avail-pareto-issue",
+  "position": { "x": 16, "y": 88, "z": 0, "width": 620, "height": 300, "tabOrder": 0 },
+  "visual": {
+    "visualType": "clusteredColumnChart",
+    "query": {
+      "queryState": {
+        "Category": {
+          "projections": [
+            { "field": { "Column": { "Expression": { "SourceRef": { "Entity": "DimIssueType" } }, "Property": "category" } }, "queryRef": "DimIssueType.category", "nativeQueryRef": "category" } ]
+        },
+        "Y": {
+          "projections": [
+            { "field": { "Measure": { "Expression": { "SourceRef": { "Entity": "_Measures" } }, "Property": "Work Orders" } }, "queryRef": "_Measures.Work Orders", "nativeQueryRef": "Work Orders" } ]
+        }
+      }
+    },
+    "visualContainerObjects": {
+      "title": [ { "properties": { "text": { "expr": { "Literal": { "Value": "'Downtime Pareto by Fault Category'" } } } } } ]
+    },
+    "drillFilterOtherVisuals": true
+  }
+}

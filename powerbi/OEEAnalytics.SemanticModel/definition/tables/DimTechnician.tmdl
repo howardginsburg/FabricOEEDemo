@@ -1,0 +1,22 @@
+/// Technician dimension. Direct Lake over ManufacturingLH/dbo.TechnicianMaster.
+table DimTechnician
+
+	column technician_id
+		dataType: string
+		isKey
+		sourceColumn: technician_id
+		summarizeBy: none
+		lineageTag: 3f2a9d10-2006-4b7c-9e11-aa0000015001
+
+	column name
+		dataType: string
+		sourceColumn: name
+		summarizeBy: none
+		lineageTag: 3f2a9d10-2006-4b7c-9e11-aa0000015002
+
+	partition DimTechnician = entity
+		mode: directLake
+		source
+			entityName: TechnicianMaster
+			schemaName: dbo
+			expressionSource: 'DirectLake - ManufacturingLH'

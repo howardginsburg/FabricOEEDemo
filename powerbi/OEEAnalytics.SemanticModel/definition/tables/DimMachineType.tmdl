@@ -1,0 +1,23 @@
+/// Machine type dimension with process-family rollup. Direct Lake over
+/// ManufacturingLH/dbo.MachineTypeMaster.
+table DimMachineType
+
+	column machine_type
+		dataType: string
+		isKey
+		sourceColumn: machine_type
+		summarizeBy: none
+		lineageTag: 3f2a9d10-2003-4b7c-9e11-aa0000012001
+
+	column category
+		dataType: string
+		sourceColumn: category
+		summarizeBy: none
+		lineageTag: 3f2a9d10-2003-4b7c-9e11-aa0000012002
+
+	partition DimMachineType = entity
+		mode: directLake
+		source
+			entityName: MachineTypeMaster
+			schemaName: dbo
+			expressionSource: 'DirectLake - ManufacturingLH'

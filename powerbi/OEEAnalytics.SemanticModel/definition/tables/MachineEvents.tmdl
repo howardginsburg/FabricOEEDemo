@@ -1,0 +1,95 @@
+/// Silver machine telemetry (one row per machine status sample). Availability &
+/// Performance signals. Direct Lake over ManufacturingLH/dbo.MachineEvents.
+table MachineEvents
+
+	column device_id
+		dataType: string
+		sourceColumn: device_id
+		summarizeBy: none
+		lineageTag: 3f2a9d10-1001-4b7c-9e11-aa0000001001
+
+	column line_id
+		dataType: string
+		sourceColumn: line_id
+		summarizeBy: none
+		lineageTag: 3f2a9d10-1001-4b7c-9e11-aa0000001002
+
+	column station_position
+		dataType: int64
+		sourceColumn: station_position
+		summarizeBy: none
+		lineageTag: 3f2a9d10-1001-4b7c-9e11-aa0000001003
+
+	column machine_type
+		dataType: string
+		sourceColumn: machine_type
+		summarizeBy: none
+		lineageTag: 3f2a9d10-1001-4b7c-9e11-aa0000001004
+
+	column machine_status
+		dataType: string
+		sourceColumn: machine_status
+		summarizeBy: none
+		lineageTag: 3f2a9d10-1001-4b7c-9e11-aa0000001005
+
+	column idle_reason
+		dataType: string
+		sourceColumn: idle_reason
+		summarizeBy: none
+		lineageTag: 3f2a9d10-1001-4b7c-9e11-aa0000001006
+
+	column actual_cycle_time
+		dataType: double
+		sourceColumn: actual_cycle_time
+		summarizeBy: none
+		lineageTag: 3f2a9d10-1001-4b7c-9e11-aa0000001007
+
+	column is_running
+		dataType: int64
+		sourceColumn: is_running
+		summarizeBy: sum
+		lineageTag: 3f2a9d10-1001-4b7c-9e11-aa0000001008
+
+	column is_fault
+		dataType: int64
+		sourceColumn: is_fault
+		summarizeBy: sum
+		lineageTag: 3f2a9d10-1001-4b7c-9e11-aa0000001009
+
+	column is_idle
+		dataType: int64
+		sourceColumn: is_idle
+		summarizeBy: sum
+		lineageTag: 3f2a9d10-1001-4b7c-9e11-aa0000001010
+
+	column is_maintenance
+		dataType: int64
+		sourceColumn: is_maintenance
+		summarizeBy: sum
+		lineageTag: 3f2a9d10-1001-4b7c-9e11-aa0000001011
+
+	column shift_id
+		dataType: string
+		sourceColumn: shift_id
+		summarizeBy: none
+		lineageTag: 3f2a9d10-1001-4b7c-9e11-aa0000001012
+
+	column root_cause_device_id
+		dataType: string
+		sourceColumn: root_cause_device_id
+		summarizeBy: none
+		lineageTag: 3f2a9d10-1001-4b7c-9e11-aa0000001013
+
+	column timestamp
+		dataType: dateTime
+		formatString: General Date
+		sourceColumn: timestamp
+		summarizeBy: none
+		lineageTag: 3f2a9d10-1001-4b7c-9e11-aa0000001014
+
+	partition MachineEvents = entity
+		mode: directLake
+		source
+			entityName: MachineEvents
+			schemaName: dbo
+			expressionSource: 'DirectLake - ManufacturingLH'

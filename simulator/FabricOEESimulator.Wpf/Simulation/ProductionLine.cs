@@ -18,7 +18,6 @@ public sealed class ProductionLine
     private readonly List<PartBuffer> _buffers = [];
 
     private PartBuffer? _rawMaterialBuffer;
-    private long _partCounter;
 
     public string LineId => _config.Id;
     public string LineName => _config.Name;
@@ -101,8 +100,7 @@ public sealed class ProductionLine
         {
             while (!ct.IsCancellationRequested)
             {
-                var partNum = Interlocked.Increment(ref _partCounter);
-                var part = new Part($"{prefix}-P{partNum:D5}", _config.Id);
+                var part = new Part($"{prefix}-P-{Guid.NewGuid():N}", _config.Id);
                 await _rawMaterialBuffer!.WriteAsync(part, ct);
             }
         }

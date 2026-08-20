@@ -1,0 +1,30 @@
+/// Planned production per line + shift. Direct Lake over
+/// ManufacturingLH/dbo.ProductionSchedule. Not related on a single column
+/// (grain is line_id + shift); the Schedule Adherence measure resolves planned
+/// parts via TREATAS over line_id + shift filter context.
+table ProductionSchedule
+
+	column line_id
+		dataType: string
+		sourceColumn: line_id
+		summarizeBy: none
+		lineageTag: 3f2a9d10-2007-4b7c-9e11-aa0000016001
+
+	column shift
+		dataType: string
+		sourceColumn: shift
+		summarizeBy: none
+		lineageTag: 3f2a9d10-2007-4b7c-9e11-aa0000016002
+
+	column planned_parts
+		dataType: int64
+		sourceColumn: planned_parts
+		summarizeBy: sum
+		lineageTag: 3f2a9d10-2007-4b7c-9e11-aa0000016003
+
+	partition ProductionSchedule = entity
+		mode: directLake
+		source
+			entityName: ProductionSchedule
+			schemaName: dbo
+			expressionSource: 'DirectLake - ManufacturingLH'

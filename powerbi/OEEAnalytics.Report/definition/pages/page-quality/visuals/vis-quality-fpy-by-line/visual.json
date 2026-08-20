@@ -1,0 +1,25 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.12.0/schema.json",
+  "name": "vis-quality-fpy-by-line",
+  "position": { "x": 16, "y": 88, "z": 0, "width": 1248, "height": 320, "tabOrder": 0 },
+  "visual": {
+    "visualType": "clusteredColumnChart",
+    "query": {
+      "queryState": {
+        "Category": {
+          "projections": [
+            { "field": { "Column": { "Expression": { "SourceRef": { "Entity": "DimLine" } }, "Property": "line_name" } }, "queryRef": "DimLine.line_name", "nativeQueryRef": "line_name" } ]
+        },
+        "Y": {
+          "projections": [
+            { "field": { "Measure": { "Expression": { "SourceRef": { "Entity": "_Measures" } }, "Property": "Quality" } }, "queryRef": "_Measures.Quality", "nativeQueryRef": "Quality" },
+            { "field": { "Measure": { "Expression": { "SourceRef": { "Entity": "_Measures" } }, "Property": "Rejection Rate" } }, "queryRef": "_Measures.Rejection Rate", "nativeQueryRef": "Rejection Rate" } ]
+        }
+      }
+    },
+    "visualContainerObjects": {
+      "title": [ { "properties": { "text": { "expr": { "Literal": { "Value": "'First-Pass Yield & Rejection Rate by Line'" } } } } } ]
+    },
+    "drillFilterOtherVisuals": true
+  }
+}

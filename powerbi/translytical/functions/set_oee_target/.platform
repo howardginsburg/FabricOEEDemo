@@ -1,0 +1,11 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "UserDataFunction",
+    "displayName": "OeeTargetFunctions"
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "3f2a9d10-7000-0000-0000-000000000001"
+  }
+}

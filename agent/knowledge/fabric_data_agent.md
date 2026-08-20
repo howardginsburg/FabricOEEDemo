@@ -219,7 +219,7 @@ PartEvents
 
 ```kql
 PartEvents
-| where part_id == "P-12345"
+| where part_id == "LA-P-0f8c3a1e9b2c4d5e6f7a8b9c0d1e2f30"
 | summarize arg_max(timestamp, *) by part_id
 | project part_id, line_id, station_position, action, quality_pass, timestamp
 ```

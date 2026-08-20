@@ -1,0 +1,18 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.12.0/schema.json",
+  "name": "vis-exec-slicer-line",
+  "position": { "x": 880, "y": 88, "z": 0, "width": 180, "height": 120, "tabOrder": 4 },
+  "visual": {
+    "visualType": "slicer",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            { "field": { "Column": { "Expression": { "SourceRef": { "Entity": "DimLine" } }, "Property": "line_name" } }, "queryRef": "DimLine.line_name", "nativeQueryRef": "line_name" }
+          ]
+        }
+      }
+    },
+    "drillFilterOtherVisuals": true
+  }
+}

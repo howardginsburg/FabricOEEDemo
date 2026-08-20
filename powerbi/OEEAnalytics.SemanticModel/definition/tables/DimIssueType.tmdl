@@ -1,0 +1,23 @@
+/// Issue-type dimension with fault-category rollup. Direct Lake over
+/// ManufacturingLH/dbo.IssueTypeMaster.
+table DimIssueType
+
+	column issue_type
+		dataType: string
+		isKey
+		sourceColumn: issue_type
+		summarizeBy: none
+		lineageTag: 3f2a9d10-2005-4b7c-9e11-aa0000014001
+
+	column category
+		dataType: string
+		sourceColumn: category
+		summarizeBy: none
+		lineageTag: 3f2a9d10-2005-4b7c-9e11-aa0000014002
+
+	partition DimIssueType = entity
+		mode: directLake
+		source
+			entityName: IssueTypeMaster
+			schemaName: dbo
+			expressionSource: 'DirectLake - ManufacturingLH'

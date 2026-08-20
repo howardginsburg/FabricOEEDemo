@@ -1,0 +1,32 @@
+id: oee-downtime-logbook
+name: OEE Downtime Logbook
+version: 1.0.0
+services:
+  auth:
+    enabled: true
+    expiryInMinutes: 60
+    refreshToken:
+      lifetimeInDays: 30
+    allowedRedirectUris:
+      - http://localhost:5173
+      - http://localhost:5173/auth/callback
+      - http://localhost:5174
+      - http://127.0.0.1:5174
+      - https://key-brook-d9bdf3d522-centralus.webapp.fabricapps.net
+    password:
+      enabled: true
+    fabric:
+      enabled: true
+  data:
+    enabled: true
+    dialect: mssql
+  storage:
+    enabled: false
+  staticHosting:
+    enabled: true
+    root: .
+    folder: dist
+    buildCommand: npm run build
+    indexDocument: index.html
+  functions:
+    enabled: false

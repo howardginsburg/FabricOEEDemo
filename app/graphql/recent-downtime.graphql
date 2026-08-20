@@ -1,0 +1,19 @@
+# GraphQL query the Downtime Logbook frontend runs against the STANDALONE
+# "Fabric API for GraphQL" that is built over dbo.RecentDowntime (see
+# docs/DOWNTIME_LOGBOOK.md). This is a READ over telemetry — it is a separate
+# endpoint from the Rayfin app's own GraphQL. Fabric auto-generates the
+# `recentDowntimes` query from the RecentDowntime view; field/arg names may vary
+# slightly with the generated schema — adjust to match your generated API.
+query RecentDowntime {
+  recentDowntimes(first: 200, orderBy: { downtime_start: DESC }) {
+    items {
+      work_order_id
+      device_id
+      line_id
+      station_position
+      machine_type
+      issue_type
+      downtime_start
+    }
+  }
+}

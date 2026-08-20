@@ -1,0 +1,24 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.12.0/schema.json",
+  "name": "vis-perf-cycle-actual-vs-ideal",
+  "position": { "x": 16, "y": 88, "z": 0, "width": 1248, "height": 320, "tabOrder": 0 },
+  "visual": {
+    "visualType": "clusteredColumnChart",
+    "query": {
+      "queryState": {
+        "Category": {
+          "projections": [
+            { "field": { "Column": { "Expression": { "SourceRef": { "Entity": "StationDim" } }, "Property": "machine_type" } }, "queryRef": "StationDim.machine_type", "nativeQueryRef": "machine_type" } ]
+        },
+        "Y": {
+          "projections": [
+            { "field": { "Measure": { "Expression": { "SourceRef": { "Entity": "_Measures" } }, "Property": "Performance" } }, "queryRef": "_Measures.Performance", "nativeQueryRef": "Performance" } ]
+        }
+      }
+    },
+    "visualContainerObjects": {
+      "title": [ { "properties": { "text": { "expr": { "Literal": { "Value": "'Performance by Machine Type'" } } } } } ]
+    },
+    "drillFilterOtherVisuals": true
+  }
+}

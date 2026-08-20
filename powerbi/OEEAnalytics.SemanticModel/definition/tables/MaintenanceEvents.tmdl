@@ -1,0 +1,71 @@
+/// Silver maintenance work-order lifecycle events (Created/Acknowledged/InProgress/
+/// Resolved). Downtime & MTTR signals. Direct Lake over ManufacturingLH/dbo.MaintenanceEvents.
+table MaintenanceEvents
+
+	column work_order_id
+		dataType: string
+		sourceColumn: work_order_id
+		summarizeBy: none
+		lineageTag: 3f2a9d10-1003-4b7c-9e11-aa0000003001
+
+	column device_id
+		dataType: string
+		sourceColumn: device_id
+		summarizeBy: none
+		lineageTag: 3f2a9d10-1003-4b7c-9e11-aa0000003002
+
+	column line_id
+		dataType: string
+		sourceColumn: line_id
+		summarizeBy: none
+		lineageTag: 3f2a9d10-1003-4b7c-9e11-aa0000003003
+
+	column station_position
+		dataType: int64
+		sourceColumn: station_position
+		summarizeBy: none
+		lineageTag: 3f2a9d10-1003-4b7c-9e11-aa0000003004
+
+	column machine_type
+		dataType: string
+		sourceColumn: machine_type
+		summarizeBy: none
+		lineageTag: 3f2a9d10-1003-4b7c-9e11-aa0000003005
+
+	column issue_type
+		dataType: string
+		sourceColumn: issue_type
+		summarizeBy: none
+		lineageTag: 3f2a9d10-1003-4b7c-9e11-aa0000003006
+
+	column action
+		dataType: string
+		sourceColumn: action
+		summarizeBy: none
+		lineageTag: 3f2a9d10-1003-4b7c-9e11-aa0000003007
+
+	column technician_id
+		dataType: string
+		sourceColumn: technician_id
+		summarizeBy: none
+		lineageTag: 3f2a9d10-1003-4b7c-9e11-aa0000003008
+
+	column shift_id
+		dataType: string
+		sourceColumn: shift_id
+		summarizeBy: none
+		lineageTag: 3f2a9d10-1003-4b7c-9e11-aa0000003009
+
+	column timestamp
+		dataType: dateTime
+		formatString: General Date
+		sourceColumn: timestamp
+		summarizeBy: none
+		lineageTag: 3f2a9d10-1003-4b7c-9e11-aa0000003010
+
+	partition MaintenanceEvents = entity
+		mode: directLake
+		source
+			entityName: MaintenanceEvents
+			schemaName: dbo
+			expressionSource: 'DirectLake - ManufacturingLH'

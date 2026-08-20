@@ -46,6 +46,22 @@ The simulator streams telemetry into Fabric through a Fabric Eventstream custom 
                                    +-------------------------------+
 ```
 
+**Analytics & Act extensions (optional).** On top of the real-time path, an *analyze* layer
+and a human *act / write-back* layer converge in one Power BI OEE model via OneLake — the
+simulator is untouched and nothing gates it. See [docs/CLOSED_LOOP_NOTES.md](docs/CLOSED_LOOP_NOTES.md).
+
+```text
+   Silver tables + master dims  ──►  OneLake (ManufacturingLH/dbo)
+                                          │        ▲            ▲
+        Direct Lake ────────────────────► Power BI OEE model (0) ◄── blends
+                                          │
+                       +------------------+------------------+
+                       |                  |                  |
+              Data Activator (A)   Rayfin Downtime (B)  Translytical (C)
+              Teams/email alerts   reason codes → own    OEE targets → OeeGovernance
+                                   managed SQL DB        Fabric SQL (User Data Function)
+```
+
 ## Prerequisites
 
 Required for the core Fabric path:
@@ -182,6 +198,10 @@ dotnet run
 | Script | Purpose | Run When |
 |---|---|---|
 | `scripts/1-setup-fabric.sh` | Creates the Fabric RTI foundation: Eventhouse, KQL DB, tables, update policies, Eventstream, dashboard, lakehouse, and ontology shortcuts. | Always first. Re-run after enabling OneLake availability. |
+| `scripts/2-setup-powerbi.sh` | Deploys the OEE Analytics **Direct Lake semantic model + report** (PBIP under `powerbi/`); adds `device_id` to `StationMaster`, refreshes the SQL endpoint, and reframes the model. | Optional analytics layer, after script 1. |
+| `scripts/3-setup-translytical.sh` | Provisions the `OeeGovernance` Fabric SQL database + `set_oee_target` User Data Function and shortcuts `OeeTarget` into the lakehouse (translytical write-back). | Optional; after script 2. Preview features. |
+| `scripts/setup-activator-alerts.sh` | Resolves workspace/Eventstream/KQL ids and prints the portal steps to create Data Activator OEE alerts. | Optional; portal-driven. |
+| `scripts/setup-downtime-graphql.sh` | Prints the RecentDowntime read-surface + GraphQL steps and shortcuts the Rayfin app's `DowntimeReason` table into the lakehouse. | Optional; with the Rayfin app in `app/`. |
 | `scripts/4-setup-foundry.sh` | Creates Foundry resource/project and deploys chat + embedding models (GlobalStandard/consumption, no PTU) with a quota preflight. Needs Azure CLI 2.67+. | Optional AI stack, before AI Search. |
 | `scripts/5-setup-aisearch.sh` | Creates storage, uploads SOP PDFs, creates AI Search index/skillset/indexer. Handles storage public-network-access, `--search-location` region fallback, and RBAC-propagation retries. | Optional AI stack, after Foundry. |
 | `scripts/6-publish-ontology.py` | Validates and publishes `ontology/ontology.yaml`. | Optional Fabric IQ stack. |
@@ -196,12 +216,17 @@ All setup scripts are intended to be idempotent. Re-running the relevant script 
 | Path | Description |
 |---|---|
 | `simulator/FabricOEESimulator.Wpf/` | Self-contained Windows WPF desktop simulator (simulation engine, telemetry sinks, and UI). |
+| `powerbi/` | Checked-in **PBIP** project: `OEEAnalytics` Direct Lake semantic model (TMDL) + 4-page report (PBIR), plus `translytical/` (OeeGovernance SQL schema + `set_oee_target` UDF). |
+| `app/` | **Rayfin** Fabric App "OEE Downtime Logbook" (TypeScript data model, operator UI) + the RecentDowntime read-surface SQL/GraphQL. |
 | `dashboard/oee-dashboard.template.json` | Real-Time Dashboard template imported by script 1. |
 | `eventstream_topology.json` | Eventstream topology reference. |
 | `ontology/` | Fabric Ontology manifest and notes; current graph shape is 6 entities and 5 relationships. |
 | `knowledge/` | SOP PDFs plus Markdown sources under `knowledge/source/`. |
 | `agent/` | Foundry prompt-agent source files, knowledge descriptions, and sample queries. |
 | `docs/ONTOLOGY_LESSONS.md` | Rationale for the slim ontology and OEE composition design. |
+| `docs/POWERBI_NOTES.md` | Direct Lake model decisions + the DAX OEE measure definitions. |
+| `docs/CLOSED_LOOP_NOTES.md` | Map of the analytics + act extensions (Power BI, Activator, Rayfin, translytical). |
+| `docs/ACTIVATOR_ALERTS.md` · `docs/DOWNTIME_LOGBOOK.md` · `docs/TRANSLYTICAL_NOTES.md` | Per-component setup guides for the act layer. |
 | `scripts/` | Provisioning and deployment scripts. |
 
 ## Operations Notes
