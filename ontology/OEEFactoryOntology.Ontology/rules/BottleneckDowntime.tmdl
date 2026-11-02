@@ -1,0 +1,13 @@
+rule BottleneckDowntime
+	lineageTag: 8a34ce8e-e73f-57b1-bd5c-3309df168afe
+	statement: Downtime longer than 5 minutes on a bottleneck station (Line-A CMM-Inspection, Line-D Curing-Oven, Line-E Wave-Solder) requires notifying the Line Manager, who notifies the Plant Manager, and checking the station's SOP.
+
+	ruleReferencedEntity equipment#Station
+		propertyScope: specific
+		ruleReferencedProperty machine_type
+
+	ruleReferencedEntity equipment#Machine
+		propertyScope: specific
+		ruleReferencedProperty machine_status
+
+	ruleReferencedRelationship equipment#MachineAtStation

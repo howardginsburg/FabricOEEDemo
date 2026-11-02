@@ -1,0 +1,27 @@
+/// A fault code, rolled up into one of six fault families.
+entity maintenance#IssueType
+	lineageTag: 8052a47d-72ec-560b-95f5-ed37f6978855
+	backingTable: IssueTypeMaster
+	keyProperty: issue_type
+
+	/// Fault code, for example Hydraulic-Leak.
+	property issue_type
+		dataType: string
+		lineageTag: d032d580-4b6c-5786-a039-0cda6f2f1e16
+
+		backingConfiguration
+			valueColumn: IssueTypeMaster.issue_type
+
+	/// Fault family: Mechanical-Wear, Jam-Feed, Fluid-Pressure, Thermal, Sensor-Vision-Calibration, or Electrical-Other.
+	property category
+		dataType: string
+		lineageTag: a2833af7-4778-5f4e-949e-cf975e90b0e7
+
+		backingConfiguration
+			valueColumn: IssueTypeMaster.category
+
+		synonym 'fault family'
+
+	synonym 'fault type'
+	synonym 'failure mode'
+	synonym 'fault code'

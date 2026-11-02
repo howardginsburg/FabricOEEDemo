@@ -1,0 +1,70 @@
+table MachineTelemetry
+	lineageTag: 8a880ddf-beac-59bc-be51-84365c9c801f
+
+	column device_id
+		dataType: string
+		lineageTag: f13b4e26-5c39-588e-b814-1e7bad62a247
+		sourceColumn: device_id
+
+	column machine_status
+		dataType: string
+		lineageTag: 5b75b85f-5b28-5d5d-884f-920b69ece890
+		sourceColumn: machine_status
+
+	column idle_reason
+		dataType: string
+		lineageTag: 11e4d134-c08d-5e1d-b2f5-ff20e0a0c3dd
+		sourceColumn: idle_reason
+
+	column root_cause_device_id
+		dataType: string
+		lineageTag: 8d1d8fa0-3972-5bb9-83ad-3d26e988a9f2
+		sourceColumn: root_cause_device_id
+
+	column is_running
+		dataType: int64
+		lineageTag: d41ba6e7-2709-54aa-9589-04ced14c2c50
+		sourceColumn: is_running
+
+	column is_fault
+		dataType: int64
+		lineageTag: 0bcd1394-93c8-5e4e-b45d-46f89725c0c1
+		sourceColumn: is_fault
+
+	column is_idle
+		dataType: int64
+		lineageTag: 669a7ca7-630a-56c6-a28b-ab85f5fcd710
+		sourceColumn: is_idle
+
+	column is_maintenance
+		dataType: int64
+		lineageTag: b2afd450-5242-57b9-a71f-ffaed34cf287
+		sourceColumn: is_maintenance
+
+	column actual_cycle_time
+		dataType: double
+		lineageTag: a65a534d-b22a-5ccc-b9cd-37ee286742cb
+		sourceColumn: actual_cycle_time
+
+	column input_buffer_count
+		dataType: int64
+		lineageTag: 82d10cd1-4e13-5738-a947-2711e658d346
+		sourceColumn: input_buffer_count
+
+	column output_buffer_count
+		dataType: int64
+		lineageTag: 38c6355a-90c7-52af-9e50-16063a98dbde
+		sourceColumn: output_buffer_count
+
+	column timestamp
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: ff92d539-fa39-5ba4-83d9-60fe103ab8cc
+		sourceColumn: timestamp
+
+	partition MachineTelemetry = entity
+		mode: directLake
+		source
+			entityName: MachineEvents
+			schemaName: dbo
+			expressionSource: 'DirectLake - ManufacturingLH'

@@ -1,0 +1,34 @@
+table MachineAsset
+	lineageTag: 1371e895-4730-55c6-839a-affd64e34635
+
+	column device_id
+		dataType: string
+		lineageTag: ecf539aa-eccf-5ff6-b9a0-db43863016b2
+		sourceColumn: device_id
+
+	column machine_type
+		dataType: string
+		lineageTag: 25269603-3c00-5c0a-80a9-1728fc31d0d6
+		sourceColumn: machine_type
+
+	column manufacturer
+		dataType: string
+		lineageTag: d9c31f4e-8fe6-5e9d-a088-bb19e1b82b4b
+		sourceColumn: manufacturer
+
+	column install_year
+		dataType: int64
+		lineageTag: 0676fa0c-e431-5102-ba73-9b7b7e86d21e
+		sourceColumn: install_year
+
+	column ideal_cycle_time
+		dataType: double
+		lineageTag: 566eeda7-670c-50b6-a146-55813cd437f7
+		sourceColumn: ideal_cycle_time
+
+	partition MachineAsset = entity
+		mode: directLake
+		source
+			entityName: StationMaster
+			schemaName: dbo
+			expressionSource: 'DirectLake - ManufacturingLH'

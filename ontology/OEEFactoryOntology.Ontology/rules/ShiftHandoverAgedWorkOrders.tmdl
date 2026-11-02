@@ -1,0 +1,9 @@
+rule ShiftHandoverAgedWorkOrders
+	lineageTag: 4c5b0e9f-76d5-53c1-b851-20257feec030
+	statement: At shift handover, flag every work order still open after 30 minutes for the incoming shift, and note any line that triggered the below-60% OEE escalation.
+
+	ruleReferencedEntity maintenance#WorkOrder
+		propertyScope: specific
+		ruleReferencedProperty created_at
+
+	ruleReferencedEntity production#Shift

@@ -1,0 +1,52 @@
+/// The OEE target a line is held to. Set from the Power BI report's write-back button (translytical task flow) into the OeeGovernance SQL database.
+entity production#OeeTarget
+	lineageTag: 881a5e80-fa57-51ca-a5c9-156798232d73
+	backingTable: OeeTarget
+	keyProperty: line_id
+
+	/// Line the target applies to.
+	property line_id
+		dataType: string
+		lineageTag: 3396f52a-70a0-5e87-ad0f-7f27cc941e1c
+
+		backingConfiguration
+			valueColumn: OeeTarget.line_id
+
+	/// Target OEE as a fraction (0.75 = 75%).
+	property target_oee
+		dataType: double
+		lineageTag: 4aa982c8-91ed-512b-9f7d-62e8d2b98806
+
+		backingConfiguration
+			valueColumn: OeeTarget.target_oee
+
+		synonym target
+		synonym goal
+
+	/// When the current target took effect.
+	property effective_date
+		dataType: dateTime
+		lineageTag: 75e80467-8a84-5b55-8d06-ac2e4b9d8286
+
+		backingConfiguration
+			valueColumn: OeeTarget.effective_date
+
+	/// Who set the target.
+	property set_by
+		dataType: string
+		lineageTag: d30a9fdd-1274-538b-8946-3e1f2ec29bf7
+
+		backingConfiguration
+			valueColumn: OeeTarget.set_by
+
+	/// Last time the target changed.
+	property updated_at
+		dataType: dateTime
+		lineageTag: 035693d1-eb23-5173-9886-1be4ef9fdbe7
+
+		backingConfiguration
+			valueColumn: OeeTarget.updated_at
+
+	synonym 'OEE target'
+	synonym 'target OEE'
+	synonym 'line target'

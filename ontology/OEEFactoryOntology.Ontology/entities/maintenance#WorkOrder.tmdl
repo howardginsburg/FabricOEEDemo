@@ -1,0 +1,91 @@
+/// A maintenance work order raised when a machine faults. Its lifecycle steps are MaintenanceEvent records; it is open until the latest step is Resolved.
+entity maintenance#WorkOrder
+	lineageTag: 6a77ef51-2b5e-5f41-b319-068f8aca9ae6
+	backingTable: WorkOrders
+	keyProperty: work_order_id
+
+	/// Work order identifier, for example WO-<guid>.
+	property work_order_id
+		dataType: string
+		lineageTag: 023f270b-15e9-5f78-91ea-b82485de615b
+
+		backingConfiguration
+			valueColumn: WorkOrders.work_order_id
+
+		synonym 'work order id'
+		synonym 'ticket id'
+
+	/// Station and machine the work order is for.
+	property device_id
+		dataType: string
+		lineageTag: 3784d3f6-3c28-5019-a40e-f77a5b70b237
+
+		backingConfiguration
+			valueColumn: WorkOrders.device_id
+
+	/// Line of the faulted station.
+	property line_id
+		dataType: string
+		lineageTag: 864c6d56-99f7-55b5-805e-13dfef6b21fc
+
+		backingConfiguration
+			valueColumn: WorkOrders.line_id
+
+	/// Position of the faulted station.
+	property station_position
+		dataType: int64
+		lineageTag: 2e1cc055-4336-5eab-b62f-17968ff2280d
+
+		backingConfiguration
+			valueColumn: WorkOrders.station_position
+
+	/// Type of the faulted machine.
+	property machine_type
+		dataType: string
+		lineageTag: ec6e9d7a-420f-5049-8bb9-fc7560e148ee
+
+		backingConfiguration
+			valueColumn: WorkOrders.machine_type
+
+	/// Fault code, for example Bearing-Wear or Coolant-Leak.
+	property issue_type
+		dataType: string
+		lineageTag: 2f5f459d-6fa4-5f50-9faf-72a96fd9267c
+
+		backingConfiguration
+			valueColumn: WorkOrders.issue_type
+
+		synonym fault
+		synonym 'fault code'
+
+	/// Assigned technician (T001..T008).
+	property technician_id
+		dataType: string
+		lineageTag: 39710637-0256-54bc-aa6d-41f980e48a36
+
+		backingConfiguration
+			valueColumn: WorkOrders.technician_id
+
+	/// Shift in which the work order was created.
+	property shift_id
+		dataType: string
+		lineageTag: 7e4b4e46-d775-595f-970b-54a3ec0e07f8
+
+		backingConfiguration
+			valueColumn: WorkOrders.shift_id
+
+	/// When the work order was created.
+	property created_at
+		dataType: dateTime
+		lineageTag: 8ab0a1c1-c0df-52d5-b68b-b49b32ac8cf1
+
+		backingConfiguration
+			valueColumn: WorkOrders.created_at
+
+		synonym 'opened at'
+		synonym 'raised at'
+
+	synonym 'work order'
+	synonym WO
+	synonym 'maintenance ticket'
+	synonym ticket

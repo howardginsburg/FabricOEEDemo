@@ -21,6 +21,21 @@ public sealed class StationViewModel : ViewModelBase
     public int Position => _station.Position;
     public int BufferCapacity => _station.BufferCapacity;
 
+    internal Station Model => _station;
+
+    private string _scenarioStatus = string.Empty;
+    public string ScenarioStatus
+    {
+        get => _scenarioStatus;
+        private set
+        {
+            if (SetProperty(ref _scenarioStatus, value))
+                OnPropertyChanged(nameof(HasScenario));
+        }
+    }
+
+    public bool HasScenario => ScenarioStatus.Length > 0;
+
     private MachineStatus _status;
     public MachineStatus Status
     {
@@ -123,6 +138,7 @@ public sealed class StationViewModel : ViewModelBase
         RejectedParts = _station.RejectedParts;
         InputBufferCount = _station.InputBuffer?.Count ?? 0;
         OutputBufferCount = _station.OutputBuffer?.Count ?? 0;
+        ScenarioStatus = _station.ScenarioStatus;
         OnPropertyChanged(nameof(RejectRate));
 
         HasPartInProcess = CurrentPartId is not null && Status == MachineStatus.Running;

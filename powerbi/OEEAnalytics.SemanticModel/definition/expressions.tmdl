@@ -1,11 +1,10 @@
-/// Direct Lake connection to the ManufacturingLH lakehouse SQL analytics endpoint.
-/// The two placeholders are injected at deploy time by scripts/2-setup-powerbi.sh:
-///   __SQL_ENDPOINT__      → the lakehouse SQL analytics endpoint connection string (server)
-///   __LAKEHOUSE_SQL_DB__  → the SQL database name (the lakehouse / its SQL endpoint database)
-/// Direct Lake tables bind to Delta tables in schema [dbo] exposed through this endpoint.
+/// Direct Lake on OneLake: every table binds straight to its Delta table under
+/// ManufacturingLH/Tables/dbo, with no SQL analytics endpoint in the query path.
+/// scripts/4-setup-powerbi.sh injects the workspace and lakehouse ids into the
+/// OneLake URL at deploy time.
 expression 'DirectLake - ManufacturingLH' =
 		let
-			Source = Sql.Database("__SQL_ENDPOINT__", "__LAKEHOUSE_SQL_DB__")
+			Source = AzureStorage.DataLake("https://onelake.dfs.fabric.microsoft.com/__WORKSPACE_ID__/__LAKEHOUSE_ID__", [HierarchicalNavigation=true])
 		in
 			Source
 	lineageTag: 3f2a9d10-0001-4b7c-9e11-aa0000000001

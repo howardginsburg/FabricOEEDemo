@@ -1,0 +1,39 @@
+table StationMaster
+	lineageTag: b662b2dc-381f-5c66-9dc0-907cdc7bc909
+
+	column device_id
+		dataType: string
+		lineageTag: 194c269f-dfe1-5c37-bfc0-2a7465d4ae0b
+		sourceColumn: device_id
+
+	column line_id
+		dataType: string
+		lineageTag: 4b50632d-78bc-5f7d-bb56-0b57f0d3f61f
+		sourceColumn: line_id
+
+	column station_position
+		dataType: int64
+		lineageTag: 1f7e504c-d7a2-5c16-a77b-f28766a0fd91
+		sourceColumn: station_position
+
+	column machine_type
+		dataType: string
+		lineageTag: 5b61471c-ff7c-5b85-8ac7-e57cdc01cfc0
+		sourceColumn: machine_type
+
+	column buffer_capacity
+		dataType: int64
+		lineageTag: 45ab3ec4-fa35-5083-ae8f-e9484ed42fdb
+		sourceColumn: buffer_capacity
+
+	column target_reject_rate
+		dataType: double
+		lineageTag: 1b2ccce6-4408-554e-b919-5825b286cce8
+		sourceColumn: target_reject_rate
+
+	partition StationMaster = entity
+		mode: directLake
+		source
+			entityName: StationMaster
+			schemaName: dbo
+			expressionSource: 'DirectLake - ManufacturingLH'

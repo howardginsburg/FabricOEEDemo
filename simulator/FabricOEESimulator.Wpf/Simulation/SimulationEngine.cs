@@ -28,6 +28,9 @@ public sealed class SimulationEngine : IHostedService
     /// <summary>Exposes telemetry log for UI binding.</summary>
     public TelemetryLog TelemetryLog => _telemetryLog;
 
+    /// <summary>Durations and intensities for the on-demand demo scenarios.</summary>
+    public ScenarioConfig Scenarios => _config.Scenarios;
+
     public SimulationEngine(
         IOptions<SimulatorConfig> config,
         ITelemetrySink sink,

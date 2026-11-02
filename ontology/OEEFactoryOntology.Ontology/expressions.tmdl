@@ -1,0 +1,8 @@
+/// Direct Lake source for every backing table: the ManufacturingLH lakehouse SQL analytics endpoint.
+/// scripts/6-publish-ontology.py injects the endpoint and adds the ONT_* partition annotations.
+expression 'DirectLake - ManufacturingLH' =
+		let
+		    Source = Sql.Database("__SQL_ENDPOINT__", "ManufacturingLH")
+		in
+		    Source
+	lineageTag: 5cbe18d5-2a7e-53a6-8066-3e7f3fb3f5f3

@@ -1,0 +1,36 @@
+table OeeTarget
+	lineageTag: d85d76d8-4143-5aba-bcdc-d73a522bd0c0
+
+	column line_id
+		dataType: string
+		lineageTag: 73c7a290-4a32-50a0-91c8-945b76d163ff
+		sourceColumn: line_id
+
+	column target_oee
+		dataType: double
+		lineageTag: 15711bbc-c5bf-52bb-bdb1-0fdd909f480a
+		sourceColumn: target_oee
+
+	column effective_date
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: 445eca1a-72ef-5d23-9273-3ae80393f37a
+		sourceColumn: effective_date
+
+	column set_by
+		dataType: string
+		lineageTag: 3c129463-87e2-5d68-902b-529380013a71
+		sourceColumn: set_by
+
+	column updated_at
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: c76fd399-a37b-5ce5-91fa-75756bf26147
+		sourceColumn: updated_at
+
+	partition OeeTarget = entity
+		mode: directLake
+		source
+			entityName: OeeTarget
+			schemaName: dbo
+			expressionSource: 'DirectLake - ManufacturingLH'

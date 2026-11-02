@@ -1,0 +1,179 @@
+/// The machine asset installed at a station, with its live telemetry: status, buffers, and cycle time every ~10 seconds.
+entity equipment#Machine
+	lineageTag: 50d78e42-fd32-5125-bcde-38c37f32ad06
+	backingTable: MachineAsset
+	keyProperty: device_id
+
+	/// Machine identifier, for example line-a-station-1 (same as its station).
+	property device_id
+		dataType: string
+		lineageTag: dd8ba48c-ffcb-58dd-bc27-bd64ece0efa5
+
+		backingConfiguration
+			valueColumn: MachineAsset.device_id
+
+		synonym 'machine id'
+		synonym 'asset id'
+
+	/// Machine model or type, for example CNC-Lathe or Wave-Solder.
+	property machine_type
+		dataType: string
+		lineageTag: c57bcac5-2db1-5bd7-9416-627d9ae7c803
+
+		backingConfiguration
+			valueColumn: MachineAsset.machine_type
+
+		synonym model
+
+	/// Machine manufacturer.
+	property manufacturer
+		dataType: string
+		lineageTag: be77b0c2-91d8-521a-b7fa-c660056b2c52
+
+		backingConfiguration
+			valueColumn: MachineAsset.manufacturer
+
+		synonym vendor
+		synonym OEM
+
+	/// Year the machine was installed.
+	property install_year
+		dataType: int64
+		lineageTag: 0a8d02cd-8e3d-5aed-81ca-45d8631fe6df
+
+		backingConfiguration
+			valueColumn: MachineAsset.install_year
+
+	/// Ideal (best-case) cycle time in seconds; the Performance baseline.
+	property ideal_cycle_time
+		dataType: double
+		lineageTag: 5144d829-8806-534d-b931-2a4d1b03405c
+
+		backingConfiguration
+			valueColumn: MachineAsset.ideal_cycle_time
+
+		synonym 'standard cycle time'
+		synonym 'ideal cycle'
+
+	/// Reported status: Running, Idle, Fault, or Maintenance.
+	property machine_status
+		dataType: TimeSeries<string>
+		lineageTag: f73d2d05-0b79-5853-8362-5ae9a79ef650
+
+		backingConfiguration
+			type: timeSeries
+			valueColumn: MachineTelemetry.machine_status
+			orderingColumn: MachineTelemetry.timestamp
+
+		synonym status
+		synonym state
+
+	/// Why the machine is idle: Starved (waiting on upstream) or Blocked (downstream full).
+	property idle_reason
+		dataType: TimeSeries<string>
+		lineageTag: bc677d00-b046-535d-95ad-1445082ec4a2
+
+		backingConfiguration
+			type: timeSeries
+			valueColumn: MachineTelemetry.idle_reason
+			orderingColumn: MachineTelemetry.timestamp
+
+	/// Station that caused the idle time: the upstream neighbor when Starved, the downstream neighbor when Blocked; empty otherwise. Starved or blocked time counts against this station, not the idle one (rule StarvedBlockedRootCause).
+	property root_cause_device_id
+		dataType: TimeSeries<string>
+		lineageTag: 2aa477ac-1e09-5b0d-a1ab-94c4832d4fa9
+
+		backingConfiguration
+			type: timeSeries
+			valueColumn: MachineTelemetry.root_cause_device_id
+			orderingColumn: MachineTelemetry.timestamp
+
+		synonym 'root cause station'
+		synonym 'causing station'
+
+	/// 1 while the machine reports Running, else 0. Average = Availability.
+	property is_running
+		dataType: TimeSeries<int64>
+		lineageTag: 68d34023-29cb-5a38-9a88-16e62b30929c
+
+		backingConfiguration
+			type: timeSeries
+			valueColumn: MachineTelemetry.is_running
+			orderingColumn: MachineTelemetry.timestamp
+
+	/// 1 while the machine reports Fault, else 0.
+	property is_fault
+		dataType: TimeSeries<int64>
+		lineageTag: e124d3f5-277b-5020-873d-04b5cb5a2c54
+
+		backingConfiguration
+			type: timeSeries
+			valueColumn: MachineTelemetry.is_fault
+			orderingColumn: MachineTelemetry.timestamp
+
+	/// 1 while the machine reports Idle (Starved or Blocked), else 0.
+	property is_idle
+		dataType: TimeSeries<int64>
+		lineageTag: e1552fa2-fdc6-5ea5-88f6-3ab5ee2b912a
+
+		backingConfiguration
+			type: timeSeries
+			valueColumn: MachineTelemetry.is_idle
+			orderingColumn: MachineTelemetry.timestamp
+
+	/// 1 while the machine is under Maintenance, else 0.
+	property is_maintenance
+		dataType: TimeSeries<int64>
+		lineageTag: de46f6a0-2a9a-517b-86f6-f538777fc8e2
+
+		backingConfiguration
+			type: timeSeries
+			valueColumn: MachineTelemetry.is_maintenance
+			orderingColumn: MachineTelemetry.timestamp
+
+	/// Last actual cycle time in seconds.
+	property actual_cycle_time
+		dataType: TimeSeries<double>
+		lineageTag: ed592e7f-0e4e-5b18-88c6-25e2561034f5
+
+		backingConfiguration
+			type: timeSeries
+			valueColumn: MachineTelemetry.actual_cycle_time
+			orderingColumn: MachineTelemetry.timestamp
+
+	/// Parts waiting in the input buffer.
+	property input_buffer_count
+		dataType: TimeSeries<int64>
+		lineageTag: 175c8a2c-9a46-5a2f-b767-3683a6763adf
+
+		backingConfiguration
+			type: timeSeries
+			valueColumn: MachineTelemetry.input_buffer_count
+			orderingColumn: MachineTelemetry.timestamp
+
+	/// Parts waiting in the output buffer.
+	property output_buffer_count
+		dataType: TimeSeries<int64>
+		lineageTag: 1d7d2e72-ab03-5f9a-80d8-e036de4431a0
+
+		backingConfiguration
+			type: timeSeries
+			valueColumn: MachineTelemetry.output_buffer_count
+			orderingColumn: MachineTelemetry.timestamp
+
+	additionalBackingTable
+		table: MachineTelemetry
+		relationship: rel_telemetry_machine
+
+	synonym asset
+	synonym equipment
+	synonym device
+
+	/// Real-Time Dashboard with live machine status, buffers, and cycle times.
+	resourceLink
+
+		item
+			workspaceId: __WORKSPACE_ID__
+			itemId: __DASHBOARD_ID__
+
+		synonym 'live dashboard'

@@ -1,130 +1,101 @@
 # OEE Factory IQ — Sample Queries
 
-Persona-tagged prompts for exercising the agent. Each prompt is annotated
-with the knowledge source(s) it should hit:
+<!-- Generated from agent/evals/cases.json by `python scripts/12-evaluate-agent.py --write-samples`.
+     Edit the cases file, then regenerate this one. -->
 
-- `[Fabric DA – ontology]` — answered by the Fabric Data Agent's **ontology**
-  source (simple `Avg`/`Sum`/`Count` of a TS proxy column, grouped by
-  `ProductionLine` / `Station` / `ProductionSchedule`, or a static lookup /
-  category rollup via `Shift` / `MachineType` / `IssueType` / `Technician` /
-  `SOP` / `Policy`).
-- `[Fabric DA – KQL DB]` — answered by the Fabric Data Agent's **KQL Database**
-  source (NL2KQL against `ManufacturingEH`; needed for single-record lookups,
-  joins, `countif`, windowing, Performance/OEE composition, trend over time).
-- `[AI Search]` — answered from the SOP PDF corpus.
-- `[both]` — answer combines live state with procedure.
+Persona questions for demos. They're also the question set `scripts/12-evaluate-agent.py`
+evaluates the agent on. Each question names the knowledge its answer needs:
 
-The set covers all 5 lines and at least one of every cross-cutting doc.
-
----
+- **SOPs**: the SOP and policy documents, through the Foundry IQ knowledge base (or the AI Search
+  tool in tools mode).
+- **Ontology**: the Fabric IQ ontology's entities, relationships, current machine state, and
+  business rules.
+- **Data agent**: the OEE data agent's governed KPIs from the Direct Lake semantic model and its
+  event detail from the Eventhouse.
 
 ## Corp Exec
 
-1. `[Fabric DA – KQL DB]` "What's the site-wide OEE right now and how does it
-   compare to our 75 % commitment?"
-   *(Needs Performance composition → KQL DB via `MachineEventsEnriched()`.)*
+1. "What's the site-wide OEE, and how does it compare to our 75% commitment?"
+   *Data agent*: Governed OEE measure from the Direct Lake semantic model, through the data agent.
 
-2. `[AI Search]` "What's the escalation policy when a line drops below
-   60 % OEE?" *(expect `OEE_Targets_and_Escalation.pdf`)*
+2. "What's our escalation policy when a line's OEE drops below 60%?"
+   *SOPs or Ontology*: Escalation matrix from the OEE targets policy and the ontology rule LineOeeEscalation.
 
-3. `[both]` "Which lines are currently below their target OEE, and what
-   actions does our policy require?"
-   *(OEE per line via KQL DB; policy via AI Search.)*
-
----
+3. "Which lines are below their OEE target, and what does our escalation policy require for them?"
+   *Data agent + (SOPs or Ontology)*: OEE against each line's write-back target (OeeTarget) from the data agent, plus the escalation rule.
 
 ## Plant Manager
 
-4. `[Fabric DA – KQL DB]` "Show me OEE for all 5 lines over the past hour and
-   flag any line under 60 %."
-   *(Trend + composition → KQL DB.)*
+4. "Show me OEE for all five lines over the latest hour of data, and flag any line under 60%."
+   *Data agent*: KPIs for a time window from the Eventhouse (the OeeFacts and OeeKpis definitions), through the data agent.
 
-5. `[AI Search]` "What are the bottleneck stations on each line and why
-   are they the bottleneck?" *(expect `Production_Lines_Reference.pdf`)*
+5. "What are the bottleneck stations on each line, and why are they the bottleneck?"
+   *SOPs*: Line topology and bottlenecks from the production lines reference.
 
-6. `[both]` "Line-D OEE just dropped — what's the most likely bottleneck
-   today and what's the current state of the Curing-Oven?"
-   *(Station state via ontology TS slice; OEE drop + Curing-Oven detail
-   via KQL DB; bottleneck reference via AI Search.)*
+6. "Line-D's OEE dropped. What's its bottleneck, and what's the current state of the Curing-Oven?"
+   *Ontology or Data agent*: Current machine state from the ontology (Machine time series) with the line topology.
 
----
+7. "How is each line tracking against its production plan, by Day and Night shift?"
+   *Data agent*: Governed Schedule Adherence measure from the Direct Lake semantic model, by line and shift.
+
+8. "List the planned parts for each line on the Night shift."
+   *Ontology or Data agent*: The ProductionSchedule entity and its Shift relationship in the ontology.
 
 ## Line Manager
 
-7. `[Fabric DA – ontology]` "On Line-B, list any stations currently in Fault
-   or Maintenance state."
-   *(`Avg(is_fault)` and `Avg(is_maintenance)` on `Station` TS, filtered to
-   `line_id == "Line-B"`, last 30 s. For the technician name on each open
-   WO, follow up with KQL DB.)*
+9. "On Line-B, list any stations currently in Fault or Maintenance."
+   *Ontology or Data agent*: Current machine state from the ontology's Machine time series.
 
-8. `[AI Search]` "What's the pause threshold for the Welding-Robot on
-   Line-C and what should I do when I cross it?" *(expect
-   `Line-C_02_Welding-Robot_SOP.pdf` and
-   `Quality_Reject_Disposition_Policy.pdf`)*
+10. "What's the pause threshold for the Welding-Robot on Line-C, and what should I do when it's crossed?"
+   *SOPs*: Reject thresholds from the quality policy, with the station SOP.
 
-9. `[both]` "The Line-E AOI-Inspection reject rate has been creeping up
-   — show me the trend and tell me what to do next."
-   *(Trend → KQL DB binned `summarize`; procedure → AI Search.)*
+11. "The Line-E AOI-Inspection reject rate has been creeping up. Show me the trend and tell me what to do next."
+   *Data agent + SOPs*: A reject-rate trend from the Eventhouse, plus the station SOP and the quality policy.
 
----
+12. "Which station caused the most starved or blocked time on Line-D, and why?"
+   *Data agent*: Starved and blocked root-cause attribution (rule StarvedBlockedRootCause) from the Eventhouse.
 
 ## Maintenance Tech
 
-10. `[both]` "Line-D Curing-Oven just raised a `Thermocouple-Drift`
-    fault — what's the corrective procedure and is there an open work
-    order?" *(WO lookup → KQL DB `arg_max` on `MaintenanceEvents`;
-    procedure → AI Search → `Line-D_05_Curing-Oven_SOP.pdf`.)*
+13. "The Line-D Curing-Oven just raised a Thermocouple-Drift fault. What's the corrective procedure, and is there an open work order?"
+   *SOPs + Data agent*: SOP corrective action, plus open work orders from the data agent.
 
-11. `[AI Search]` "Walk me through the LOTO procedure for the Line-B
-    Hydraulic-Press." *(expect `Safety_Lockout_Tagout_Procedure.pdf` +
-    `Line-B_02_Hydraulic-Press_Maintenance_SOP.pdf`)*
+14. "Walk me through the LOTO procedure for the Line-B Hydraulic-Press."
+   *SOPs*: The safety procedure plus the station's notes, from two documents.
 
-12. `[Fabric DA – KQL DB]` "What faults has Line-A CNC-Lathe had in the last
-    24 h, and who acknowledged each work order?"
-    *(`MachineEvents | where machine_status == "Fault"` + join to
-    `MaintenanceEvents` for technician_id — both KQL DB.)*
-
----
+15. "What were the five most recent faults on the Line-A CNC-Lathe, and who acknowledged each work order?"
+   *Data agent*: Work-order timelines (the MaintenanceEvent lifecycle) through the data agent.
 
 ## Quality Worker
 
-13. `[AI Search]` "If Line-A CMM-Inspection rejects exceed 8 % in an
-    hour, what do I do?" *(expect
-    `Quality_Reject_Disposition_Policy.pdf` + CMM SOP)*
+16. "If Line-A CMM-Inspection rejects exceed 8% in an hour, what do I do?"
+   *SOPs*: Quality policy thresholds and dispositions, with the CMM calibration procedure.
 
-14. `[both]` "I have a part that failed Line-C Leak-Test — what's the
-    disposition decision tree, and how many parts are sitting in the
-    Leak-Test buffer right now?"
-    *(Buffer count via ontology `Station` TS — `Max(input_buffer_count)`
-    on the Leak-Test station; disposition tree → AI Search.)*
+17. "I have a part that failed the Line-C Leak-Test. What's the disposition decision tree, and how many parts are in the Leak-Test input buffer right now?"
+   *SOPs + (Ontology or Data agent)*: The quality policy's decision tree, plus current buffer state from the ontology.
 
-15. `[AI Search]` "What does the shift-handover checklist say about
-    open quality holds?" *(expect `Shift_Handover_Checklist.pdf`)*
+18. "What does the shift-handover checklist say about open quality holds?"
+   *SOPs*: Checklist retrieval from a cross-cutting document.
 
----
+19. "What does our business rule say when a station's reject rate climbs above twice its target, and what's the target reject rate for the Line-D Curing-Oven?"
+   *Ontology*: The ontology rule RejectRateQuarantine with the Station target_reject_rate property.
 
-## Reliability / Continuous-Improvement (reference dimensions)
+20. "Take the most recently rejected part on Line-C and trace every station it passed through, with the outcome at each."
+   *Ontology or Data agent*: Part genealogy across the ontology's Part, PartPass, and Station.
 
-16. `[Fabric DA – ontology]` "Group the 30 machine types by category and
-    tell me how many stations are in each."
-    *(`MachineType.category` rollup via `Station_Is_Of_MachineType`.)*
+## Reliability Engineer
 
-17. `[Fabric DA – KQL DB]` "Which fault category has caused the most
-    maintenance events in the last 7 days?"
-    *(`MaintenanceEvents` ⋈ `IssueTypeMaster` on `issue_type`, group by
-    `category` — KQL DB join.)*
+21. "Group the machine types by process family and tell me how many stations are in each."
+   *Ontology or Data agent*: Ontology relationships (Station to MachineType) and a category rollup.
 
-18. `[Fabric DA – KQL DB]` "How many work orders did each technician close
-    this week, by name?"
-    *(`MaintenanceEvents` ⋈ `TechnicianMaster` on `technician_id` — KQL DB.)*
+22. "Which fault category has caused the most work orders overall?"
+   *Data agent*: Work orders rolled up by the IssueType category.
 
-19. `[both]` "Which process family (machining, forming, joining, surface,
-    electronics, inspection) has the lowest availability right now, and what's
-    the SOP for its worst station?"
-    *(Availability by `MachineType.category` via KQL DB join to
-    `MachineTypeMaster`; SOP via `SOP_AppliesTo_Station` → `file_name` → AI Search.)*
+23. "How many work orders has each technician resolved, by name?"
+   *Data agent*: Work orders joined to the Technician entity.
 
-20. `[Fabric DA – ontology]` "List the planned parts for each line on the
-    Night shift."
-    *(`ProductionSchedule` ⋈ `Shift` via `ProductionSchedule_For_Shift`,
-    filter `shift == "Night"`.)*
+24. "Which process family has the lowest availability, and what's the SOP for its worst station?"
+   *Data agent + (SOPs or Ontology)*: Governed Availability by machine-type category, then the SOP linked to the station.
+
+25. "What are MTTR and MTBF by line over the full history?"
+   *Data agent*: Governed MTTR (min) and MTBF (min) measures from the Direct Lake semantic model.

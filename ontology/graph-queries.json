@@ -1,0 +1,32 @@
+[
+  {
+    "name": "Line topology",
+    "description": "Each line's stations and the machine type at each, as a graph.",
+    "gql": "MATCH (l:equipment_ProductionLine)<-[e1:equipment_equipment_StationOnLine]-(s:equipment_Station)-[e2:equipment_equipment_StationRunsMachineType]->(m:equipment_MachineType)\nRETURN l, e1, s, e2, m\nLIMIT 100"
+  },
+  {
+    "name": "Part genealogy (latest Line-C parts)",
+    "description": "The stations the most recent Line-C parts passed through, in flow order.",
+    "gql": "MATCH (p:production_Part)-[:production_production_PartProcessedAtStation]->(s:equipment_Station)\nWHERE p.line_id = 'Line-C'\nRETURN p.part_id AS part, p.started_at AS started_at, s.station_position AS position, s.machine_type AS station\nORDER BY started_at DESC, position ASC\nLIMIT 30"
+  },
+  {
+    "name": "Fault blast radius (mechanical wear)",
+    "description": "Stations with mechanical-wear work orders and how many parts passed through them.",
+    "gql": "MATCH (i:maintenance_IssueType)<-[:maintenance_maintenance_WorkOrderClassifiedAs]-(w:maintenance_WorkOrder)-[:maintenance_maintenance_WorkOrderOnStation]->(s:equipment_Station)<-[:production_production_PartProcessedAtStation]-(p:production_Part)\nWHERE i.category = 'Mechanical-Wear'\nRETURN s.device_id AS station, s.machine_type AS machine, count(DISTINCT w) AS work_orders, count(DISTINCT p) AS parts_processed\nGROUP BY station, machine\nORDER BY work_orders DESC\nLIMIT 10"
+  },
+  {
+    "name": "Repeat-fault stations and their SOPs",
+    "description": "Stations ranked by work orders, with the SOPs a technician should open.",
+    "gql": "MATCH (w:maintenance_WorkOrder)-[:maintenance_maintenance_WorkOrderOnStation]->(s:equipment_Station)<-[:knowledge_knowledge_SopForStation]-(d:knowledge_SOP)\nRETURN s.device_id AS station, s.machine_type AS machine, d.title AS sop, d.file_name AS document, count(w) AS work_orders\nGROUP BY station, machine, sop, document\nORDER BY work_orders DESC\nLIMIT 10"
+  },
+  {
+    "name": "Technician coverage by line",
+    "description": "Work orders per technician and line.",
+    "gql": "MATCH (t:maintenance_Technician)<-[:maintenance_maintenance_WorkOrderAssignedTo]-(w:maintenance_WorkOrder)-[:maintenance_maintenance_WorkOrderOnStation]->(s:equipment_Station)-[:equipment_equipment_StationOnLine]->(l:equipment_ProductionLine)\nRETURN t.name AS technician, l.line_id AS line, count(w) AS work_orders\nGROUP BY technician, line\nORDER BY work_orders DESC\nLIMIT 25"
+  },
+  {
+    "name": "Floor issues by line and shift",
+    "description": "Operator-logged floor issues by line, shift, and category.",
+    "gql": "MATCH (f:floorops_FloorIssue)-[:floorops_floorops_IssueAtStation]->(s:equipment_Station)-[:equipment_equipment_StationOnLine]->(l:equipment_ProductionLine), (f)-[:floorops_floorops_IssueDuringShift]->(sh:production_Shift)\nRETURN l.line_id AS line, sh.shift AS shift, f.category AS category, count(f) AS issues\nGROUP BY line, shift, category\nORDER BY issues DESC\nLIMIT 20"
+  }
+]

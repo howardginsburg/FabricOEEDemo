@@ -30,7 +30,8 @@ public sealed class MaintenanceManager
         }
     }
 
-    public MaintenanceWorkOrder CreateWorkOrder(string deviceId, string machineType, string lineId, int stationPosition, string issueType)
+    public MaintenanceWorkOrder CreateWorkOrder(string deviceId, string machineType, string lineId, int stationPosition,
+        string issueType, MaintenanceTiming? timing = null)
     {
         var wo = new MaintenanceWorkOrder(deviceId, machineType, lineId, stationPosition, issueType);
         wo.TechnicianId = _config.Technicians[_random.Next(_config.Technicians.Count)];
@@ -40,35 +41,35 @@ public sealed class MaintenanceManager
 
         _logger.LogInformation("Work order {WoId} created for {DeviceId}: {IssueType}", wo.Id, deviceId, issueType);
 
-        _ = RunLifecycleAsync(wo);
+        _ = RunLifecycleAsync(wo, timing);
         return wo;
     }
 
-    private async Task RunLifecycleAsync(MaintenanceWorkOrder wo)
+    private async Task RunLifecycleAsync(MaintenanceWorkOrder wo, MaintenanceTiming? timing)
     {
         try
         {
             await EmitEventAsync(wo, "Created");
 
-            var ackDelay = _random.Next(_config.AcknowledgeDelayMinSeconds, _config.AcknowledgeDelayMaxSeconds + 1);
-            await Task.Delay(TimeSpan.FromSeconds(ackDelay));
+            var ackDelay = timing?.Acknowledge ?? RandomDelay(_config.AcknowledgeDelayMinSeconds, _config.AcknowledgeDelayMaxSeconds);
+            await Task.Delay(ackDelay);
             wo.Status = WorkOrderStatus.Acknowledged;
             wo.AcknowledgedAtUtc = DateTime.UtcNow;
             await EmitEventAsync(wo, "Acknowledged");
-            _logger.LogInformation("Work order {WoId} acknowledged after {Delay}s", wo.Id, ackDelay);
+            _logger.LogInformation("Work order {WoId} acknowledged after {Delay}s", wo.Id, ackDelay.TotalSeconds);
 
-            var ipDelay = _random.Next(_config.InProgressDelayMinSeconds, _config.InProgressDelayMaxSeconds + 1);
-            await Task.Delay(TimeSpan.FromSeconds(ipDelay));
+            var ipDelay = timing?.InProgress ?? RandomDelay(_config.InProgressDelayMinSeconds, _config.InProgressDelayMaxSeconds);
+            await Task.Delay(ipDelay);
             wo.Status = WorkOrderStatus.InProgress;
             wo.InProgressAtUtc = DateTime.UtcNow;
             await EmitEventAsync(wo, "InProgress");
-            _logger.LogInformation("Work order {WoId} in progress after {Delay}s", wo.Id, ipDelay);
+            _logger.LogInformation("Work order {WoId} in progress after {Delay}s", wo.Id, ipDelay.TotalSeconds);
 
-            var resolveDelay = _random.Next(_config.ResolveDelayMinSeconds, _config.ResolveDelayMaxSeconds + 1);
-            await Task.Delay(TimeSpan.FromSeconds(resolveDelay));
+            var resolveDelay = timing?.Resolve ?? RandomDelay(_config.ResolveDelayMinSeconds, _config.ResolveDelayMaxSeconds);
+            await Task.Delay(resolveDelay);
             wo.MarkResolved();
             await EmitEventAsync(wo, "Resolved");
-            _logger.LogInformation("Work order {WoId} resolved after {Delay}s", wo.Id, resolveDelay);
+            _logger.LogInformation("Work order {WoId} resolved after {Delay}s", wo.Id, resolveDelay.TotalSeconds);
         }
         catch (Exception ex)
         {
@@ -81,6 +82,9 @@ public sealed class MaintenanceManager
                 _activeOrders.Remove(wo);
         }
     }
+
+    private TimeSpan RandomDelay(int minSeconds, int maxSeconds) =>
+        TimeSpan.FromSeconds(_random.Next(minSeconds, maxSeconds + 1));
 
     private Task EmitEventAsync(MaintenanceWorkOrder wo, string action)
     {

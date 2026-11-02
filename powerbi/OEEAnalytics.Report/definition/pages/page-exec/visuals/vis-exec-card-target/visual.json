@@ -13,6 +13,14 @@
         }
       }
     },
+    "objects": {
+      "categoryLabels": [
+        { "properties": { "show": { "expr": { "Literal": { "Value": "false" } } } } }
+      ],
+      "labels": [
+        { "properties": { "fontSize": { "expr": { "Literal": { "Value": "30D" } } } } }
+      ]
+    },
     "visualContainerObjects": {
       "title": [ { "properties": { "text": { "expr": { "Literal": { "Value": "'Target OEE'" } } } } } ]
     },

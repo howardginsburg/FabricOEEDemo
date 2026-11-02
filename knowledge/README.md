@@ -20,7 +20,7 @@ Plus:
   structure across every SOP. Use this when adding a new station.
 
 The PDFs (one per markdown source) are produced by
-[`scripts/build-sops.sh`](../scripts/build-sops.sh) and **committed to the
+[`scripts/dev-build-sops.sh`](../scripts/dev-build-sops.sh) and **committed to the
 repo** so demo users don't need pandoc or LaTeX installed to run the demo.
 
 ## File naming convention
@@ -65,10 +65,10 @@ or the agent's recall on that fault will drop.
 
 ```bash
 # Build all 36 PDFs from source/*.md → knowledge/*.pdf
-bash scripts/build-sops.sh
+bash scripts/dev-build-sops.sh
 
 # Build a single doc
-bash scripts/build-sops.sh --file Line-B_02_Hydraulic-Press_Maintenance_SOP
+bash scripts/dev-build-sops.sh --file Line-B_02_Hydraulic-Press_Maintenance_SOP
 ```
 
 The script uses `pandoc` + `wkhtmltopdf` by default (lightweight, HTML-styled,
@@ -151,6 +151,6 @@ header for prerequisites.
    `station_type`).
 3. Section 4 — one heading per `faultType` from `simulator.yaml`, **verbatim
    string match**.
-4. `bash scripts/build-sops.sh` to produce the PDF.
-5. Re-run `bash scripts/5-setup-aisearch.sh` to re-index, or wait for the
+4. `bash scripts/dev-build-sops.sh` to produce the PDF.
+5. Re-run `bash scripts/9-setup-aisearch.sh` to re-index, or wait for the
    indexer's scheduled run.

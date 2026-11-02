@@ -1,0 +1,96 @@
+/// One part passing one station: the result (completed or rejected) and how long it took. Reject rate and first-pass yield by station come from these events.
+entity production#PartPass
+	lineageTag: 462594fa-b04f-56d7-9f39-e84b9a1eb2f9
+	backingTable: PartPassResults
+
+	/// Part that made the pass.
+	property part_id
+		dataType: string
+		lineageTag: f45b8715-8e7d-5a93-b5bd-cf2d36ceb400
+
+		backingConfiguration
+			valueColumn: PartPassResults.part_id
+
+	/// Station (and its machine) where the pass happened.
+	property device_id
+		dataType: string
+		lineageTag: e8b5cb43-f49a-5965-8c81-ea8bc4f353fb
+
+		backingConfiguration
+			valueColumn: PartPassResults.device_id
+
+	/// Line of the station.
+	property line_id
+		dataType: string
+		lineageTag: d5d4de4b-9ae6-5817-b842-cbb415ebcff3
+
+		backingConfiguration
+			valueColumn: PartPassResults.line_id
+
+	/// Position of the station in the line's flow.
+	property station_position
+		dataType: int64
+		lineageTag: d1a84bda-ea92-5465-ba75-0bddd9724197
+
+		backingConfiguration
+			valueColumn: PartPassResults.station_position
+
+	/// Result of the pass: completed or rejected.
+	property outcome
+		dataType: string
+		lineageTag: a0c4d68b-690c-5b50-9a3c-131a7e7f862c
+
+		backingConfiguration
+			valueColumn: PartPassResults.outcome
+
+		synonym result
+		synonym disposition
+
+	/// Processing time in seconds.
+	property cycle_time
+		dataType: double
+		lineageTag: 8c8525df-3c43-5a52-8713-8825c118f122
+
+		backingConfiguration
+			valueColumn: PartPassResults.cycle_time
+
+		synonym 'processing time'
+
+	/// 1 when the part passed quality at this station, else 0.
+	property is_pass
+		dataType: int64
+		lineageTag: 66f3ee8e-5fce-5893-9071-61b586ac639b
+
+		backingConfiguration
+			valueColumn: PartPassResults.is_pass
+
+	/// 1 when the part was rejected at this station, else 0.
+	property is_rejected
+		dataType: int64
+		lineageTag: 3ccfaf9a-6a9a-5ae7-8922-4dff8af3f247
+
+		backingConfiguration
+			valueColumn: PartPassResults.is_rejected
+
+		synonym scrap
+		synonym reject
+
+	/// Shift in which the pass happened.
+	property shift_id
+		dataType: string
+		lineageTag: bd4f37ab-83a4-56ec-8625-60d7527e5079
+
+		backingConfiguration
+			valueColumn: PartPassResults.shift_id
+
+	/// When the part left the station.
+	property passed_at
+		dataType: dateTime
+		lineageTag: c9302efc-73d5-5be0-95f6-958109ae6fcf
+
+		backingConfiguration
+			valueColumn: PartPassResults.passed_at
+
+	synonym 'part pass'
+	synonym 'station pass'
+	synonym 'quality result'

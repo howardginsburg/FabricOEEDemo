@@ -1,0 +1,44 @@
+/// A serialized part produced on a line. Its path through the stations is the PartProcessedAtStation relationship (part genealogy); each pass's result is a PartPass.
+entity production#Part
+	lineageTag: 6f6e78aa-95bc-50e7-8cf3-19ad0961be36
+	backingTable: Parts
+	keyProperty: part_id
+
+	/// Part serial, for example LA-P-<guid>.
+	property part_id
+		dataType: string
+		lineageTag: 6ea60ee6-7dd2-5cce-a5c1-098403f25ee1
+
+		backingConfiguration
+			valueColumn: Parts.part_id
+
+		synonym 'serial number'
+		synonym 'part number'
+
+	/// Line that produced the part.
+	property line_id
+		dataType: string
+		lineageTag: 8d7dbf70-d99f-5a3c-82bb-49f3d196842e
+
+		backingConfiguration
+			valueColumn: Parts.line_id
+
+	/// Shift in which the part entered the line.
+	property shift_id
+		dataType: string
+		lineageTag: a552de32-468c-5fac-aa53-c75c7195affb
+
+		backingConfiguration
+			valueColumn: Parts.shift_id
+
+	/// When the part entered station 1.
+	property started_at
+		dataType: dateTime
+		lineageTag: 3501ac2e-d3ed-571e-8ef0-d1c0e201cccc
+
+		backingConfiguration
+			valueColumn: Parts.started_at
+
+	synonym unit
+	synonym workpiece
+	synonym serial

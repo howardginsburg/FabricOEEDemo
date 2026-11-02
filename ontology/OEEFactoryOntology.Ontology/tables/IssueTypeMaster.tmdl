@@ -1,0 +1,19 @@
+table IssueTypeMaster
+	lineageTag: 1e704ab6-bd5c-5c2f-a289-3433d6b3b0ef
+
+	column issue_type
+		dataType: string
+		lineageTag: 6cefe21a-a3b4-5053-83e8-e09850dc0e0f
+		sourceColumn: issue_type
+
+	column category
+		dataType: string
+		lineageTag: 7ac201d1-711e-5255-af6e-c07d6e910d2b
+		sourceColumn: category
+
+	partition IssueTypeMaster = entity
+		mode: directLake
+		source
+			entityName: IssueTypeMaster
+			schemaName: dbo
+			expressionSource: 'DirectLake - ManufacturingLH'

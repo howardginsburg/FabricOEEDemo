@@ -1,0 +1,146 @@
+/// The line a station belongs to.
+entityRelationship equipment#StationOnLine
+	lineageTag: 72b71710-dfa5-5b9d-8021-51cf815b7d9e
+	fromEntity: equipment#Station
+	toEntity: equipment#ProductionLine
+
+	backingConfiguration
+		relationship: rel_station_line
+
+/// The type of machine a station runs.
+entityRelationship equipment#StationRunsMachineType
+	lineageTag: 643af1bd-24e8-51a4-8409-f783a1d3f770
+	fromEntity: equipment#Station
+	toEntity: equipment#MachineType
+
+	backingConfiguration
+		relationship: rel_station_machinetype
+
+/// The station where a machine is installed.
+entityRelationship equipment#MachineAtStation
+	lineageTag: fe53a9a0-47c3-593f-bbfe-7c7c45ee7077
+	fromEntity: equipment#Machine
+	toEntity: equipment#Station
+
+	backingConfiguration
+		relationship: rel_machine_station
+
+/// The line a production plan applies to.
+entityRelationship production#ScheduleForLine
+	lineageTag: 66a903fc-c897-5952-814e-a88e48233e1e
+	fromEntity: production#ProductionSchedule
+	toEntity: equipment#ProductionLine
+
+	backingConfiguration
+		relationship: rel_schedule_line
+
+/// The shift a production plan applies to.
+entityRelationship production#ScheduleForShift
+	lineageTag: 125a5672-19fd-5f24-8bca-d78ce2329b71
+	fromEntity: production#ProductionSchedule
+	toEntity: production#Shift
+
+	backingConfiguration
+		relationship: rel_schedule_shift
+
+/// The line an OEE target applies to.
+entityRelationship production#TargetForLine
+	lineageTag: ef982346-fb5b-5502-94a3-9bd70ba9cc40
+	fromEntity: production#OeeTarget
+	toEntity: equipment#ProductionLine
+
+	backingConfiguration
+		relationship: rel_target_line
+
+/// Stations a part passed through (part genealogy); one link per completed or rejected pass.
+entityRelationship production#PartProcessedAtStation
+	lineageTag: fed133c4-40ea-587a-8b67-746998c0ac84
+	fromEntity: production#Part
+	toEntity: equipment#Station
+
+	backingConfiguration
+		type: table
+		table: PartPasses
+		fromRelationship: rel_pass_part
+		toRelationship: rel_pass_station
+
+/// The part that made a pass.
+entityRelationship production#PassOfPart
+	lineageTag: e2808fd8-646f-59cc-8d6c-4a8406177455
+	fromEntity: production#PartPass
+	toEntity: production#Part
+
+	backingConfiguration
+		relationship: rel_passresult_part
+
+/// The station where a pass happened.
+entityRelationship production#PassAtStation
+	lineageTag: e6b8cfac-b20f-5e0a-ad1e-cb13a9641d4c
+	fromEntity: production#PartPass
+	toEntity: equipment#Station
+
+	backingConfiguration
+		relationship: rel_passresult_station
+
+/// The station whose machine faulted.
+entityRelationship maintenance#WorkOrderOnStation
+	lineageTag: 4e4aedb7-1139-5fbe-8267-a73127e37f5e
+	fromEntity: maintenance#WorkOrder
+	toEntity: equipment#Station
+
+	backingConfiguration
+		relationship: rel_workorder_station
+
+/// The technician assigned to a work order.
+entityRelationship maintenance#WorkOrderAssignedTo
+	lineageTag: 1b43eacd-8832-5df7-9cc7-1f08959f10f3
+	fromEntity: maintenance#WorkOrder
+	toEntity: maintenance#Technician
+
+	backingConfiguration
+		relationship: rel_workorder_technician
+
+/// The fault type of a work order.
+entityRelationship maintenance#WorkOrderClassifiedAs
+	lineageTag: 62b54773-8143-5207-b849-f89eacd26d79
+	fromEntity: maintenance#WorkOrder
+	toEntity: maintenance#IssueType
+
+	backingConfiguration
+		relationship: rel_workorder_issuetype
+
+/// The work order a lifecycle step belongs to.
+entityRelationship maintenance#EventOfWorkOrder
+	lineageTag: bb04bc86-9270-5a26-bedd-55b82e51edf0
+	fromEntity: maintenance#MaintenanceEvent
+	toEntity: maintenance#WorkOrder
+
+	backingConfiguration
+		relationship: rel_mevent_workorder
+
+/// The station an SOP applies to.
+entityRelationship knowledge#SopForStation
+	lineageTag: b195afda-ae2e-5e77-884d-e6215f74f16e
+	fromEntity: knowledge#SOP
+	toEntity: equipment#Station
+
+	backingConfiguration
+		relationship: rel_sop_station
+
+/// The station a floor issue was logged against.
+entityRelationship floorops#IssueAtStation
+	lineageTag: 3dfaec1d-38f3-5b61-9fdc-4cce68b83d32
+	fromEntity: floorops#FloorIssue
+	toEntity: equipment#Station
+
+	backingConfiguration
+		relationship: rel_floor_station
+
+/// The shift when a floor issue was raised.
+entityRelationship floorops#IssueDuringShift
+	lineageTag: 5258bbe5-1b63-5bd2-8029-8b761aa24fdd
+	fromEntity: floorops#FloorIssue
+	toEntity: production#Shift
+
+	backingConfiguration
+		relationship: rel_floor_shift

@@ -1,0 +1,31 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.12.0/schema.json",
+  "name": "vis-fo-cat",
+  "position": { "x": 16, "y": 210, "z": 0, "width": 620, "height": 240, "tabOrder": 6 },
+  "visual": {
+    "visualType": "columnChart",
+    "query": {
+      "queryState": {
+        "Category": {
+          "projections": [
+            { "field": { "Column": { "Expression": { "SourceRef": { "Entity": "FloorEvent" } }, "Property": "category" } }, "queryRef": "FloorEvent.category", "nativeQueryRef": "category" }
+          ]
+        },
+        "Series": {
+          "projections": [
+            { "field": { "Column": { "Expression": { "SourceRef": { "Entity": "FloorEvent" } }, "Property": "priority" } }, "queryRef": "FloorEvent.priority", "nativeQueryRef": "priority" }
+          ]
+        },
+        "Y": {
+          "projections": [
+            { "field": { "Measure": { "Expression": { "SourceRef": { "Entity": "_Measures" } }, "Property": "Floor Events Logged" } }, "queryRef": "_Measures.Floor Events Logged", "nativeQueryRef": "Floor Events Logged" }
+          ]
+        }
+      }
+    },
+    "visualContainerObjects": {
+      "title": [ { "properties": { "text": { "expr": { "Literal": { "Value": "'Issues by Category & Priority'" } } } } } ]
+    },
+    "drillFilterOtherVisuals": true
+  }
+}

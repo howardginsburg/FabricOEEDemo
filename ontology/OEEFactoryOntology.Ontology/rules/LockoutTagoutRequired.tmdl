@@ -1,0 +1,11 @@
+rule LockoutTagoutRequired
+	lineageTag: 11961a1f-c526-58bc-9dc3-ab8a13b56ae4
+	statement: All maintenance work requires lockout/tagout before work starts. The tag must show the technician ID, date, time, and work order ID.
+
+	ruleReferencedEntity maintenance#WorkOrder
+
+	ruleReferencedEntity maintenance#Technician
+		propertyScope: specific
+		ruleReferencedProperty technician_id
+
+	ruleReferencedRelationship maintenance#WorkOrderAssignedTo

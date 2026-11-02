@@ -1,0 +1,9 @@
+/// Average OEE target across the selected lines (from OeeTarget). Same definition as the OEEAnalytics semantic model measure [Target OEE].
+metric TargetOee
+	lineageTag: 6a239da6-a46d-5d6a-8fa3-a5a1127e33f0
+
+	expression
+		dialect: SQL
+		expression: SELECT AVG(CAST(target_oee AS FLOAT)) FROM dbo.OeeTarget
+
+	synonym 'OEE target'

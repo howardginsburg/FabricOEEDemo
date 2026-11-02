@@ -55,5 +55,13 @@ relationship 3f2a9d10-4000-0004-0000-000000000001
 	toColumn: DimLine.line_id
 
 relationship 3f2a9d10-4000-0005-0000-000000000001
-	fromColumn: DowntimeReason.device_id
+	fromColumn: FloorEvent.device_id
 	toColumn: StationDim.device_id
+
+relationship 3f2a9d10-4000-0005-0000-000000000002
+	fromColumn: FloorEvent.line_id
+	toColumn: DimLine.line_id
+
+relationship 3f2a9d10-4000-0005-0000-000000000003
+	fromColumn: FloorEvent.shift
+	toColumn: DimShift.shift

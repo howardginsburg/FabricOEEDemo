@@ -1,0 +1,12 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "Ontology",
+    "displayName": "OEEFactoryOntology",
+    "description": "OEE factory ontology: lines, stations, machines, production, maintenance, and plant knowledge."
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "cb248667-82ac-55d6-af74-a7719867ab76"
+  }
+}

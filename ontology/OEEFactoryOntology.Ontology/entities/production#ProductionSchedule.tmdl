@@ -1,0 +1,43 @@
+/// Planned output for one line in one shift.
+entity production#ProductionSchedule
+	lineageTag: 0f013ff1-6104-57fe-87ad-930f784a6594
+	backingTable: ProductionSchedule
+	keyProperty: schedule_id
+
+	/// Line and shift, for example Line-A-Day.
+	property schedule_id
+		dataType: string
+		lineageTag: b9decd0b-eb8d-5e77-b42f-2bd7bb3ec1b1
+
+		backingConfiguration
+			valueColumn: ProductionSchedule.schedule_id
+
+	/// Line the plan applies to.
+	property line_id
+		dataType: string
+		lineageTag: aeec4e54-3bd7-58e2-a55e-233e7bb7f4b6
+
+		backingConfiguration
+			valueColumn: ProductionSchedule.line_id
+
+	/// Shift the plan applies to (Day or Night).
+	property shift
+		dataType: string
+		lineageTag: 0bc8d209-1ca3-58e0-9403-9999b3d13287
+
+		backingConfiguration
+			valueColumn: ProductionSchedule.shift
+
+	/// Parts planned for the shift.
+	property planned_parts
+		dataType: int64
+		lineageTag: e410de2e-416f-5aec-b458-a9bdc1830c14
+
+		backingConfiguration
+			valueColumn: ProductionSchedule.planned_parts
+
+		synonym 'planned output'
+		synonym 'target parts'
+
+	synonym 'production plan'
+	synonym schedule

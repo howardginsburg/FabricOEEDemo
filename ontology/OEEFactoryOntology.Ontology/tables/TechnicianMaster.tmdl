@@ -1,0 +1,19 @@
+table TechnicianMaster
+	lineageTag: 20280a78-45c3-5800-bf99-8d1bb3d49a89
+
+	column technician_id
+		dataType: string
+		lineageTag: b5d89be1-8992-5ba8-858b-1043e73da549
+		sourceColumn: technician_id
+
+	column name
+		dataType: string
+		lineageTag: 716464f3-921c-5ac6-b6c0-ffa52affd2a8
+		sourceColumn: name
+
+	partition TechnicianMaster = entity
+		mode: directLake
+		source
+			entityName: TechnicianMaster
+			schemaName: dbo
+			expressionSource: 'DirectLake - ManufacturingLH'

@@ -1,9 +1,11 @@
-# Knowledge Source #2 — Azure AI Search `oee-sops`
+# SOP index — Azure AI Search `oee-sops`
 
 ## Identity
 
-- **Type:** Azure AI Search index
-- **Role:** Static SOP corpus
+- **Type:** Azure AI Search index, created by `scripts/9-setup-aisearch.sh`
+- **Role:** The SOP corpus. In the agent's default mode it's the `oee-sops-ks` knowledge
+  source of the Foundry IQ knowledge base `oee-factory-kb`; in `--knowledge tools` mode the
+  agent queries it directly with the AI Search tool.
 - **Endpoint:** `https://<search-service>.search.windows.net`
 - **Index name:** `oee-sops`
 - **Embedding model:** `text-embedding-3-large` (dim 3072)
@@ -63,10 +65,9 @@
 
 ## What it will NOT answer well
 
-- "Is the Curing-Oven running right now?" — live state; use Fabric Data
-  Agent.
-- "How many open work orders on Line-C?" — live state; use Fabric Data
-  Agent.
+- "Is the Curing-Oven running right now?" — current state; use the ontology or the
+  OEE Data Agent.
+- "How many open work orders on Line-C?" — operational data; use the OEE Data Agent.
 
 ## Citation format
 

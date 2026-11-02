@@ -1,0 +1,71 @@
+relationship rel_station_line
+	fromColumn: StationMaster.line_id
+	toColumn: LineMaster.line_id
+
+relationship rel_station_machinetype
+	fromColumn: StationMaster.machine_type
+	toColumn: MachineTypeMaster.machine_type
+
+relationship rel_machine_station
+	fromColumn: MachineAsset.device_id
+	toColumn: StationMaster.device_id
+
+relationship rel_schedule_line
+	fromColumn: ProductionSchedule.line_id
+	toColumn: LineMaster.line_id
+
+relationship rel_schedule_shift
+	fromColumn: ProductionSchedule.shift
+	toColumn: ShiftMaster.shift
+
+relationship rel_target_line
+	fromColumn: OeeTarget.line_id
+	toColumn: LineMaster.line_id
+
+relationship rel_workorder_station
+	fromColumn: WorkOrders.device_id
+	toColumn: StationMaster.device_id
+
+relationship rel_workorder_technician
+	fromColumn: WorkOrders.technician_id
+	toColumn: TechnicianMaster.technician_id
+
+relationship rel_workorder_issuetype
+	fromColumn: WorkOrders.issue_type
+	toColumn: IssueTypeMaster.issue_type
+
+relationship rel_mevent_workorder
+	fromColumn: MaintenanceEvents.work_order_id
+	toColumn: WorkOrders.work_order_id
+
+relationship rel_pass_part
+	fromColumn: PartPasses.part_id
+	toColumn: Parts.part_id
+
+relationship rel_pass_station
+	fromColumn: PartPasses.device_id
+	toColumn: StationMaster.device_id
+
+relationship rel_sop_station
+	fromColumn: SopMaster.device_id
+	toColumn: StationMaster.device_id
+
+relationship rel_floor_station
+	fromColumn: FloorEvent.device_id
+	toColumn: StationMaster.device_id
+
+relationship rel_floor_shift
+	fromColumn: FloorEvent.shift
+	toColumn: ShiftMaster.shift
+
+relationship rel_telemetry_machine
+	fromColumn: MachineTelemetry.device_id
+	toColumn: MachineAsset.device_id
+
+relationship rel_passresult_part
+	fromColumn: PartPassResults.part_id
+	toColumn: Parts.part_id
+
+relationship rel_passresult_station
+	fromColumn: PartPassResults.device_id
+	toColumn: StationMaster.device_id

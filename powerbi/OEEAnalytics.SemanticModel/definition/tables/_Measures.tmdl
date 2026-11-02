@@ -65,11 +65,25 @@ table _Measures
 		formatString: 0.0%;-0.0%;0.0%
 		lineageTag: 3f2a9d10-3001-4b7c-9e11-aa0000020011
 
-	measure Throughput = [Parts Completed]
+	/// Line output: parts that left the line (see Parts Finished).
+	measure Throughput = [Parts Finished]
 		formatString: #,0
 		lineageTag: 3f2a9d10-3001-4b7c-9e11-aa0000020012
 
-	/// Planned parts for the current line + shift selection (ProductionSchedule is
+	/// Parts that left the line: completions at the line's last station (DimLine[station_count]).
+	/// Parts Completed counts every station pass, so use this for output and schedule adherence.
+	measure 'Parts Finished' = ```
+			SUMX (
+			    VALUES ( DimLine[line_id] ),
+			    VAR LastStation = CALCULATE ( MAX ( DimLine[station_count] ) )
+			    RETURN
+			        CALCULATE ( SUM ( PartEvents[is_completed] ), PartEvents[station_position] = LastStation )
+			)
+			```
+		formatString: #,0
+		lineageTag: 3f2a9d10-3001-4b7c-9e11-aa0000020031
+
+	/// Planned parts per shift for the current line + shift selection (ProductionSchedule is
 	/// unrelated; map filter context onto it with TREATAS).
 	measure 'Planned Parts' = ```
 			CALCULATE (
@@ -81,7 +95,37 @@ table _Measures
 		formatString: #,0
 		lineageTag: 3f2a9d10-3001-4b7c-9e11-aa0000020013
 
-	measure 'Schedule Adherence' = DIVIDE([Parts Completed], [Planned Parts])
+	/// The plan pro-rated to the time each line actually ran: planned parts per shift × minutes
+	/// in which the line's first station reported telemetry ÷ shift length. Time the simulator
+	/// wasn't running adds nothing; downtime while it runs counts against the plan.
+	measure 'Expected Parts' = ```
+			SUMX (
+			    CROSSJOIN ( VALUES ( DimLine[line_id] ), VALUES ( DimShift[shift] ) ),
+			    VAR LineId = DimLine[line_id]
+			    VAR ShiftName = DimShift[shift]
+			    VAR Planned =
+			        CALCULATE (
+			            SUM ( ProductionSchedule[planned_parts] ),
+			            ProductionSchedule[line_id] = LineId,
+			            ProductionSchedule[shift] = ShiftName
+			        )
+			    VAR ShiftMinutes =
+			        CALCULATE ( MOD ( MAX ( DimShift[end_hour] ) - MAX ( DimShift[start_hour] ), 24 ) * 60 )
+			    VAR MinutesRun =
+			        CALCULATE (
+			            COUNTROWS (
+			                DISTINCT ( SELECTCOLUMNS ( MachineEvents, "minute", INT ( MachineEvents[timestamp] * 1440 ) ) )
+			            ),
+			            MachineEvents[station_position] = 1
+			        )
+			    RETURN DIVIDE ( Planned * MinutesRun, ShiftMinutes )
+			)
+			```
+		formatString: #,0
+		lineageTag: 3f2a9d10-3001-4b7c-9e11-aa0000020032
+
+	/// Schedule adherence = parts finished ÷ expected parts (the plan pro-rated to time run).
+	measure 'Schedule Adherence' = DIVIDE([Parts Finished], [Expected Parts])
 		formatString: 0.0%;-0.0%;0.0%
 		lineageTag: 3f2a9d10-3001-4b7c-9e11-aa0000020014
 
@@ -136,10 +180,51 @@ table _Measures
 		formatString: 0.0%;-0.0%;0.0%
 		lineageTag: 3f2a9d10-3001-4b7c-9e11-aa0000020021
 
-	/// ── Component B (Rayfin downtime logbook) blend ────────────────────────────
-	measure 'Downtime Reasons Logged' = COUNTROWS(DowntimeReason)
-		formatString: #,0
+	/// Currently selected line_id — feeds the translytical write-back button's lineId parameter.
+	measure 'Selected Line ID' = SELECTEDVALUE(DimLine[line_id])
+		lineageTag: 3f2a9d10-3001-4b7c-9e11-aa0000020023
+
+	/// ── Floor Ops Console (Fabric app) blend ───────────────────────────────────
+	/// FloorEvent is written by the Fabric app and joins the OEE star on station/line/shift.
+	measure 'Floor Events Logged' = COUNTROWS(FloorEvent)
+		formatString: #,##0
+		displayFolder: Floor Ops
 		lineageTag: 3f2a9d10-3001-4b7c-9e11-aa0000020022
+
+	measure 'Open Issues' = CALCULATE(COUNTROWS(FloorEvent), FloorEvent[status] IN {"Open","Acknowledged","In Progress"})
+		formatString: #,##0
+		displayFolder: Floor Ops
+		lineageTag: 3f2a9d10-3001-4b7c-9e11-aa0000020030
+
+	measure 'Critical Open' = CALCULATE(COUNTROWS(FloorEvent), FloorEvent[status] IN {"Open","Acknowledged","In Progress"}, FloorEvent[priority] = "Critical")
+		formatString: #,##0
+		displayFolder: Floor Ops
+		lineageTag: 3f2a9d10-3001-4b7c-9e11-aa0000020024
+
+	measure 'Resolved Issues' = CALCULATE(COUNTROWS(FloorEvent), FloorEvent[status] = "Resolved")
+		formatString: #,##0
+		displayFolder: Floor Ops
+		lineageTag: 3f2a9d10-3001-4b7c-9e11-aa0000020025
+
+	measure 'Resolution Rate' = DIVIDE([Resolved Issues], [Floor Events Logged])
+		formatString: 0.0%
+		displayFolder: Floor Ops
+		lineageTag: 3f2a9d10-3001-4b7c-9e11-aa0000020026
+
+	measure 'Human MTTA (min)' = AVERAGEX(FILTER(FloorEvent, NOT ISBLANK(FloorEvent[acknowledged_at])), DATEDIFF(FloorEvent[event_ts], FloorEvent[acknowledged_at], MINUTE))
+		formatString: 0.0
+		displayFolder: Floor Ops
+		lineageTag: 3f2a9d10-3001-4b7c-9e11-aa0000020027
+
+	measure 'Human MTTR (min)' = AVERAGEX(FILTER(FloorEvent, NOT ISBLANK(FloorEvent[resolved_at])), DATEDIFF(FloorEvent[event_ts], FloorEvent[resolved_at], MINUTE))
+		formatString: 0.0
+		displayFolder: Floor Ops
+		lineageTag: 3f2a9d10-3001-4b7c-9e11-aa0000020028
+
+	measure 'Scrap Qty' = SUM(FloorEvent[scrap_qty])
+		formatString: #,##0
+		displayFolder: Floor Ops
+		lineageTag: 3f2a9d10-3001-4b7c-9e11-aa0000020029
 
 	column Value
 		isHidden

@@ -1,0 +1,10 @@
+/// Rejected parts divided by parts produced. Same definition as the OEEAnalytics semantic model measure [Rejection Rate].
+metric RejectRate
+	lineageTag: e2109f51-9af0-5bdd-aecf-e519fd47e308
+
+	expression
+		dialect: SQL
+		expression: SELECT CAST(SUM(is_rejected) AS FLOAT) / NULLIF(SUM(is_completed) + SUM(is_rejected), 0) FROM dbo.PartPasses
+
+	synonym 'scrap rate'
+	synonym 'rejection rate'

@@ -1,0 +1,52 @@
+/// A plant-wide policy, procedure, or checklist, for example OEE Targets and Escalation or Lockout/Tagout.
+entity knowledge#Policy
+	lineageTag: d0aaf5fb-8f32-5546-8377-93bcb5cc5032
+	backingTable: PolicyMaster
+	baseEntityType: knowledge#Document
+	keyProperty: policy_id
+
+	/// Policy identifier, for example OEE_Targets_and_Escalation.
+	property policy_id
+		dataType: string
+		lineageTag: 3f75d377-fab9-5d90-bebd-d6101191ac80
+
+		backingConfiguration
+			valueColumn: PolicyMaster.policy_id
+
+	/// Where the policy applies (Global).
+	property scope
+		dataType: string
+		lineageTag: bcab97d1-5aad-52ed-a56a-481f5c796007
+
+		backingConfiguration
+			valueColumn: PolicyMaster.scope
+
+	property title
+		dataType: string
+		lineageTag: 22295e68-1933-5eb6-9e91-bfd53af1fded
+		redefines: knowledge#Document.title
+
+		backingConfiguration
+			valueColumn: PolicyMaster.title
+
+	property doc_type
+		dataType: string
+		lineageTag: ddd3788f-764b-5ec5-9b86-0507401a1392
+		redefines: knowledge#Document.doc_type
+
+		backingConfiguration
+			valueColumn: PolicyMaster.doc_type
+
+	property file_name
+		dataType: string
+		lineageTag: bd729261-8d9a-57eb-a4aa-e08f931b2d71
+		redefines: knowledge#Document.file_name
+
+		backingConfiguration
+			valueColumn: PolicyMaster.file_name
+
+	overriddenMetadataField description
+	overriddenMetadataField synonyms
+
+	synonym 'plant policy'
+	synonym standard

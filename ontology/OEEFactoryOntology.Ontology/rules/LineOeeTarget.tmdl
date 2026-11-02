@@ -1,0 +1,11 @@
+rule LineOeeTarget
+	lineageTag: de05337f-9b87-5701-a713-ad764f3775d3
+	statement: Each line is measured against its own OEE target (OeeTarget.target_oee), which can change from the Power BI report. The site commits to at least 75% OEE; 85% or higher is world-class; below 60% requires action.
+
+	ruleReferencedEntity production#OeeTarget
+		propertyScope: specific
+		ruleReferencedProperty target_oee
+
+	ruleReferencedEntity equipment#ProductionLine
+
+	ruleReferencedRelationship production#TargetForLine

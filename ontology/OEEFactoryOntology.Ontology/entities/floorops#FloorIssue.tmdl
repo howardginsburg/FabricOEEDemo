@@ -1,0 +1,155 @@
+/// An issue, quality defect, or shift event logged by an operator in the Floor Ops Console, with its Andon lifecycle.
+entity floorops#FloorIssue
+	lineageTag: e9be13de-e27e-54ae-baaa-7a2c9c0f4623
+	backingTable: FloorEvent
+	keyProperty: id
+
+	/// Floor event identifier.
+	property id
+		dataType: string
+		lineageTag: 0b142067-4d17-5e5d-8818-1173720e6cb4
+
+		backingConfiguration
+			valueColumn: FloorEvent.id
+
+	/// Station the issue was logged against.
+	property device_id
+		dataType: string
+		lineageTag: 966e750f-7ed6-5e4f-b059-bc9935c3ae78
+
+		backingConfiguration
+			valueColumn: FloorEvent.device_id
+
+	/// Line of the station.
+	property line_id
+		dataType: string
+		lineageTag: da80753b-15ad-50f2-abd2-d3aff640b0e5
+
+		backingConfiguration
+			valueColumn: FloorEvent.line_id
+
+	/// Shift when the issue was raised.
+	property shift
+		dataType: string
+		lineageTag: 3c367712-8c33-5bed-99d7-98956c186538
+
+		backingConfiguration
+			valueColumn: FloorEvent.shift
+
+	/// When the issue was raised.
+	property event_ts
+		dataType: dateTime
+		lineageTag: 69ba1df2-6eb4-5b2b-a53a-3cc2fec3e115
+
+		backingConfiguration
+			valueColumn: FloorEvent.event_ts
+
+		synonym 'raised at'
+
+	/// Issue category, aligned with the OEE loss buckets.
+	property category
+		dataType: string
+		lineageTag: 3867af26-9033-57e9-a172-14e7f35bc3c9
+
+		backingConfiguration
+			valueColumn: FloorEvent.category
+
+	/// Priority, for example Critical or High.
+	property priority
+		dataType: string
+		lineageTag: b5832dec-f33c-5285-992e-ebb39352b3a7
+
+		backingConfiguration
+			valueColumn: FloorEvent.priority
+
+	/// Operator's description of the issue.
+	property issue_description
+		dataType: string
+		lineageTag: 31e137af-4793-58ae-954f-4ddd186bd6c7
+
+		backingConfiguration
+			valueColumn: FloorEvent.description
+
+	/// Andon status: Open, Acknowledged, In Progress, or Resolved.
+	property status
+		dataType: string
+		lineageTag: 681128c9-be8f-5daf-b1e6-09ae9e5b0577
+
+		backingConfiguration
+			valueColumn: FloorEvent.status
+
+	/// When the issue was acknowledged.
+	property acknowledged_at
+		dataType: dateTime
+		lineageTag: 6fef5c67-d2cd-5fbb-9cf7-06be351ab8a0
+
+		backingConfiguration
+			valueColumn: FloorEvent.acknowledged_at
+
+	/// When the issue was resolved.
+	property resolved_at
+		dataType: dateTime
+		lineageTag: 1fc26665-5894-5fb1-830e-934fe256bc70
+
+		backingConfiguration
+			valueColumn: FloorEvent.resolved_at
+
+	/// Root-cause code recorded at resolution.
+	property root_cause_code
+		dataType: string
+		lineageTag: e7908852-0c4f-514f-be8b-e022b545bac7
+
+		backingConfiguration
+			valueColumn: FloorEvent.root_cause_code
+
+	/// Corrective action taken.
+	property corrective_action
+		dataType: string
+		lineageTag: df7c3e51-d085-5535-ab31-78f8176ab183
+
+		backingConfiguration
+			valueColumn: FloorEvent.corrective_action
+
+	/// Defect type for quality issues.
+	property defect_type
+		dataType: string
+		lineageTag: 97f2d653-1e88-5dd4-9071-a36b7b5ff38d
+
+		backingConfiguration
+			valueColumn: FloorEvent.defect_type
+
+	/// Defect severity.
+	property severity
+		dataType: string
+		lineageTag: 1b696716-3800-530f-a1e9-abb9684de04d
+
+		backingConfiguration
+			valueColumn: FloorEvent.severity
+
+	/// Parts scrapped.
+	property scrap_qty
+		dataType: int64
+		lineageTag: b5f68131-e674-50f2-8af3-49348d089de7
+
+		backingConfiguration
+			valueColumn: FloorEvent.scrap_qty
+
+	/// Operator who raised the issue.
+	property raised_by
+		dataType: string
+		lineageTag: 311778da-28fa-57c0-b465-0b044f511cff
+
+		backingConfiguration
+			valueColumn: FloorEvent.raised_by
+
+	/// Person who resolved the issue.
+	property resolved_by
+		dataType: string
+		lineageTag: e62cb9b0-0c52-59bf-960a-656f9081c7cb
+
+		backingConfiguration
+			valueColumn: FloorEvent.resolved_by
+
+	synonym 'floor event'
+	synonym andon
+	synonym 'operator issue'

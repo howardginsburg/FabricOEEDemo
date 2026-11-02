@@ -1,0 +1,3 @@
+/// Maintenance: work orders, their lifecycle events, technicians, and fault types.
+namespace maintenance
+	lineageTag: efee0076-03e9-559b-99cf-30adb645335c

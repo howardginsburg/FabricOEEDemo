@@ -1,250 +1,138 @@
-# OEE Manufacturing Ontology
+# OEE Factory Ontology (Fabric IQ)
 
-This ontology models the Overall Equipment Effectiveness (OEE) manufacturing domain for the Fabric OEE Demo, enabling AI-powered semantic queries over production lines, stations, schedules, machine types, and the station SOP knowledge base. Fault types, technicians, and plant-wide policies are queried through the Data Agent's KQL Database source rather than the graph (they have no graph edge).
+`OEEFactoryOntology` is the plant's shared business model in **Fabric IQ**: the entity types,
+their relationships, the business rules, and the governed metrics that every AI and analytics
+surface in the demo reads. It uses the **new ontology experience**, whose item definition is
+TMDL (the old JSON experience retires on January 31, 2027).
 
-## Architecture
+Who uses it:
 
-The ontology follows the **slim-ontology** design (see `docs/ONTOLOGY_LESSONS.md`):
-only dimensions with a unique-per-identifier source table become entities. Event
-streams (MachineEvents, PartEvents, MaintenanceEvents) have duplicate natural
-keys, so they are **not** entities — they bind as *time-series* properties on the
-dimensions they describe and are queried via the Data Agent's KQL Database source.
+| Consumer | How |
+|---|---|
+| OEE Data Agent ([scripts/7](../scripts/7-setup-data-agent.py)) | Ontology source first; its rules, metric names, and time-series properties are rendered into the agent's instructions. |
+| Foundry IQ knowledge base ([scripts/10](../scripts/10-setup-foundry-agent.py)) | `oee-ontology-ks`, a `fabricOntology` knowledge source next to the SOP index. |
+| OEE Operations Agent ([scripts/11](../scripts/11-setup-operations-agent.py)) | Its alert rules come from the ontology's rules; each is checked by a `Rule<RuleName>()` function in `ManufacturingEH`. |
+| Graph | `OEEFactoryOntology_graph_…`, with the saved queries in `OEE Graph Queries`. |
+| Ontology MCP endpoint | `ask_ontology`, `list_ontology_rules`, `list_ontology_entities` (user identity only). |
 
-### Entity Types (6)
-
-**Operational dimensions (static identity + time-series telemetry):**
-| Entity | Source Table | Key(s) | Purpose |
-|---|---|---|---|
-| **ProductionLine** | LineMaster | line_id | Production lines (5 lines: A-E). Time-series from MachineEvents + PartEvents. |
-| **Station** | StationMaster | line_id + station_position | Stations within lines (30 total). Station *is* the device. Time-series from MachineEvents + PartEvents. |
-| **ProductionSchedule** | ProductionSchedule | line_id + shift | Production targets by line and shift. Time-series from PartEvents. |
-
-**Reference dimensions (static lookup, no time-series):**
-| Entity | Source Table | Key(s) | Rows | Purpose |
-|---|---|---|---|---|
-| **Shift** | ShiftMaster | shift | 2 | Day / Night windows. |
-| **MachineType** | MachineTypeMaster | machine_type | 30 | Machine model + `category` rollup (6 process families). |
-| **SOP** | SopMaster | sop_id | 30 | Station-scoped knowledge docs; `file_name` joins to the Azure AI Search index. |
-
-**OEE excluded by design**: OEE is composed on the fly from numeric proxy columns on the Silver `MachineEvents` and `PartEvents` tables (`is_running`, `performance_ratio`, `is_pass` filtered to `is_completed == 1`). No materialized view, no continuous export. The Data Agent, the Activator low-OEE rule, and the dashboard all use the same columns — no metric drift between sources. See `docs/ONTOLOGY_LESSONS.md` (Root Cause 6).
-
-### Relationships (5)
-
-- `Station_BelongsTo_ProductionLine` — Station → ProductionLine (StationMaster)
-- `ProductionSchedule_For_ProductionLine` — ProductionSchedule → ProductionLine (ProductionSchedule)
-- `ProductionSchedule_For_Shift` — ProductionSchedule → Shift (ProductionSchedule)
-- `Station_Is_Of_MachineType` — Station → MachineType (StationMaster)
-- `SOP_AppliesTo_Station` — SOP → Station (SopMaster)
-
-**KQL-only reference tables (not ontology entities, no graph edge):** `IssueTypeMaster`,
-`TechnicianMaster`, and `PolicyMaster` have keys that live only in event data or are
-plant-wide, so as graph nodes they would be edgeless. They are deliberately left out
-of the ontology and the Data Agent joins them via NL2KQL against the KQL Database
-(e.g. `MaintenanceEvents` ⋈ `IssueTypeMaster` on `issue_type` to roll faults up
-by category).
-
-### Data Binding Strategy
-
-Event tables follow a **two-tier Medallion**: Bronze `*_Raw` tables receive raw events from Eventstream, and KQL update policies enrich into Silver tables (`MachineEvents`, `PartEvents`, `MaintenanceEvents`) that the ontology binds against. Silver tables are OneLake-mirrored at 5-minute latency, so both binding sides see the same enriched data.
-
-**Static Bindings (indexed in graph, fast queries):**
-- **Source:** Silver KQL tables via OneLake availability (lakehouse bindings)
-- **Purpose:** Graph indexing for fast traversals and joins
-- **Entities:** All 6 entity types have lakehouse bindings for identifiers/FKs/display names. The 3 reference dimensions are lakehouse-only.
-- **Query use case:** "Which stations on Line-A are CNC-Lathes?"
-
-**Time Series Bindings (real-time lookup, always fresh):**
-- **Source:** Eventhouse Silver KQL tables (direct)
-- **Purpose:** Real-time data queries without 5-minute mirror lag
-- **Entities:** ProductionLine, Station (telemetry from MachineEvents + PartEvents), ProductionSchedule (from PartEvents) — numeric proxies for OEE composition
-- **Query use case:** "Show current buffer status for Line-A stations"
-
-**Dual-bound slicers:** `line_id`, `station_position`, and `shift_id` are bound on **both** sides of every event entity. This lets the Data Agent's `TimeSeriesSelector` group time-series aggregates by line/station/shift without joining out to the dimension tables — which would otherwise fail because `device_id` (`line-a-station-1`) doesn't match `line_id` (`Line-A`).
-
-## File Structure
+## Folder
 
 ```
 ontology/
-├── ontology.yaml   # Single nested manifest (entities + relationships)
-└── README.md       # This file
-
-scripts/
-└── 6-publish-ontology.py   # Validates the YAML and publishes to Fabric via REST
+├── OEEFactoryOntology.Ontology/   the item definition, in TMDL (the format Fabric Git integration uses)
+│   ├── .platform                  item type and display name
+│   ├── database.tmdl
+│   ├── expressions.tmdl           Direct Lake source: ManufacturingLH through its SQL analytics endpoint
+│   ├── tables/                    18 backing tables over ManufacturingLH (schema dbo)
+│   ├── relationships.tmdl         joins between backing tables
+│   ├── namespaces/                equipment, production, maintenance, knowledge, floorops
+│   ├── entities/                  17 entity types, one file each: <namespace>#<Entity>.tmdl
+│   ├── entityRelationships.tmdl   16 relationship types
+│   ├── rules/                     13 business rules
+│   └── metrics/                   9 governed metrics
+└── graph-queries.json             GQL queries saved as the "OEE Graph Queries" queryset
 ```
 
-## YAML Manifest
+The TMDL is the single source of truth. Descriptions (`///`), synonyms, and rule statements
+live next to what they describe; this README only maps the model.
 
-`ontology/ontology.yaml` is the single source of truth. Schema:
+## Model
 
-```yaml
-ontology:
-  name: OEEManufacturingOntology
+| Namespace | Entity types |
+|---|---|
+| `equipment` | `ProductionLine`, `Station` (a process position, key `device_id`), `Machine` (the asset at a station, with live telemetry as time series), `MachineType` (process-family rollup) |
+| `production` | `Shift`, `ProductionSchedule` (plan per line and shift, key `schedule_id`), `OeeTarget` (each line's write-back target), `Part`, `PartPass` (one row per station pass) |
+| `maintenance` | `WorkOrder`, `MaintenanceEvent` (one row per lifecycle step), `Technician`, `IssueType` (fault code to category) |
+| `knowledge` | `Document` (abstract), with `SOP` and `Policy` inheriting from it |
+| `floorops` | `FloorIssue` (operator-logged events from the Floor Ops Console) |
 
-entities:
-  - name: <EntityType>
-    identifiers: [<prop>, ...]        # composite keys supported
-    displayName: <prop>               # optional; defaults to first identifier
-    timestampProperty: <prop>         # required when timeseries: is present
-    properties:                       # static props → LakehouseTable / NonTimeSeries
-      - {name, type}                  # type ∈ String|BigInt|Double|Boolean|DateTime
-    timeseries:                       # TS props → KustoTable / TimeSeries
-      - {name, type}
-    bindings:
-      - target: lakehouse|eventhouse
-        table: <delta or KQL table>
-        columns: {<prop>: <col>}      # optional rename map
-        slicers: [<prop>, ...]        # extra static props dual-bound on TS side
+**Relationships:** `StationOnLine`, `StationRunsMachineType`, `MachineAtStation`, `ScheduleForLine`,
+`ScheduleForShift`, `TargetForLine`, `PartProcessedAtStation`, `PassOfPart`, `PassAtStation`,
+`WorkOrderOnStation`, `WorkOrderAssignedTo`, `WorkOrderClassifiedAs`, `EventOfWorkOrder`,
+`SopForStation`, `IssueAtStation`, `IssueDuringShift`.
 
-relationships:
-  - name: <RelationshipName>
-    source: <EntityType>
-    target: <EntityType>
-    binding:
-      table: <delta table>
-      sourceKey: [<prop>, ...]
-      targetKey: [<prop>, ...]
+**Rules** (natural-language statements tied to the properties they reference, from the SOPs and
+policies): `LineOeeEscalation`, `StationOeeEscalation`, `LineOeeTarget`, `BottleneckDowntime`,
+`RejectRateQuarantine`, `RepeatFaultsPreventiveMaintenance`, `ConcurrentOpenWorkOrders`,
+`ShiftHandoverAgedWorkOrders`, `LockoutTagoutRequired`, `WorkOrderLifecycle`,
+`StarvedBlockedRootCause`, `ShiftAttribution`, `AvailabilityDefinition`.
+
+**Metrics** (SQL over the backing tables): `OEE`, `Availability`, `Performance`, `Quality`,
+`RejectRate`, `MTTR`, `MTBF`, `ScheduleAdherence`, `TargetOee`. Each has a DAX twin in the
+`OEEAnalytics` semantic model; `--check-metrics` compares them.
+
+## Binding
+
+- Every backing table is a Direct Lake partition on a `ManufacturingLH` table (schema `dbo`):
+  OneLake shortcuts to the Eventhouse's mirrored tables, plus `OeeTarget` (translytical write-back)
+  and `FloorEvent` (Floor Ops Console) when those layers are deployed.
+- The source is a `Sql.Database` expression on the lakehouse's SQL analytics endpoint, and each
+  partition carries the eight `ONT_*` annotations that identify the lakehouse item. The publisher
+  injects both. Without the annotations the definition is accepted, but the graph and the Data
+  Agent can't resolve the source.
+- `Machine` reads its telemetry (`machine_status`, `idle_reason`, `is_running`, buffers, cycle
+  time) as time-series properties from `MachineTelemetry` (the mirrored `MachineEvents`), so the
+  ontology trails the Eventhouse by the OneLake mirror's latency (about 5 minutes). Windowed and
+  minute-level questions go to the Eventhouse through the Data Agent.
+- Keyed entities have a single key property; `ProductionSchedule` uses the computed
+  `schedule_id` (line and shift). `PartPass` and `MaintenanceEvent` are keyless events.
+
+## Publish
+
+```bash
+python scripts/6-publish-ontology.py --workspace-name "<WORKSPACE>"
 ```
 
-Identifiers are dual-bound automatically. `slicers:` lets you also bind static properties such as `line_id`, `station_position`, and `shift_id` on the eventhouse side so the Data Agent can group time-series aggregates without joining out to dimensions.
+`scripts/1-setup-fabric.sh` runs this for you (Step 6). Re-run it after scripts 2 and 3: entities
+whose source table isn't in the lakehouse yet (`OeeTarget`, `FloorIssue`) are left out until it
+is. The script's docstring lists every step; the useful options are:
 
-## Deployment
+| Option | Does |
+|---|---|
+| `--check-metrics` | Runs each SQL metric against the lakehouse and its DAX twin against `OEEAnalytics`, and reports drift. Needs `pyodbc` and ODBC Driver 18. |
+| `--refresh-graph` | Reloads the graph's data after publishing. |
+| `--recreate` | Deletes the ontology and creates it again. |
+| `--dry-run --out <dir>` | Writes the final definition parts without calling Fabric. |
+| `--export-ttl <path>` | Writes the ontology as RDF Turtle (OWL classes and properties, with labels, descriptions, synonyms, and inheritance), using the portal Export's mapping. Generated on demand, not checked in. |
 
-### Prerequisites
+### Portal step: materialize the graph
 
-1. **Fabric Workspace** with Real-Time Intelligence enabled
-2. **ManufacturingEH Eventhouse** with KQL database created (via `scripts/1-setup-fabric.sh`)
-3. **OneLake availability enabled** on the KQL database — Fabric UI → ManufacturingEH KQL Database → Settings → OneLake availability → Enable. This exposes KQL tables as Delta tables in OneLake for lakehouse bindings.
-4. **ManufacturingLH Lakehouse** exists in the workspace with `Tables/dbo/<Table>` shortcuts to the OneLake-available KQL tables (`scripts/1-setup-fabric.sh` creates or refreshes this after OneLake availability is enabled)
-5. **Ontology enabled** on your Fabric tenant (Admin Portal → Tenant settings → Ontology item)
-6. **Local tooling:** Python 3.10+, `pip install pyyaml`, and `az login` against an identity with workspace contributor permissions
+The ontology's graph (`OEEFactoryOntology_graph_<id>`) is created empty. Open the ontology and
+select **Manage graph** to load it; do it again after you add properties you want in the graph
+(the projection can't be set through the definition, and the graph item itself is read-only).
+`Machine` isn't eligible because its telemetry is a second backing table, and neither are the
+keyless events or the abstract `Document`; `Station` carries the plant structure instead.
+Once it has data, the publisher validates each query in `graph-queries.json` and saves the
+passing ones as the **OEE Graph Queries** queryset. GQL labels are `<namespace>_<Entity>`; edge
+labels repeat the namespace (`<ns>_<ns>_<Relationship>`).
 
-### Steps
+## Change the ontology
 
-1. **Validate the manifest (no REST calls):**
-   ```bash
-   python scripts/6-publish-ontology.py --dry-run --out .tmp/parts
-   ```
-   Inspect `.tmp/parts/` to see the multi-part REST definition the publisher will send.
+1. Edit the TMDL. Give each new object a unique `lineageTag`. An entity that inherits from
+   another (`baseEntityType`) must declare `overriddenMetadataField synonyms` when it sets its
+   own synonyms.
+2. Preview with `--dry-run`, then publish.
+3. If the change adds a property the graph should expose, run **Manage graph**, then
+   `--refresh-graph`.
+4. If the change adds a rule, re-run `scripts/7-setup-data-agent.py` (it renders the rules into
+   the Data Agent's instructions). For an operations agent alert rule, also add its
+   `Rule<RuleName>()` check function to `scripts/1-setup-fabric.sh` and its name to
+   `ALERT_RULES` in `scripts/11-setup-operations-agent.py`, then re-run script 11 (it regenerates
+   the playbook when the rules change).
 
-2. **Publish to the workspace:**
-   ```bash
-   python scripts/6-publish-ontology.py --workspace-name <WORKSPACE>
-   # add --recreate to delete + recreate the ontology in place
-   ```
-   The script resolves `ManufacturingLH` and `ManufacturingEH` by name, allocates deterministic IDs (BLAKE2b → BigInt, UUIDv5 → GUID), base64-wraps each part, and calls `POST /workspaces/{ws}/items` (or `updateDefinition` on an existing item).
+## Known limits
 
-3. **Verify deployment:** The script prints the new Ontology item ID on success. Fabric auto-provisions a companion `*_lh_*` Lakehouse and `*_graph_*` GraphModel; within a few minutes, the GraphModel should show 6 nodeTypes + 5 edgeTypes. Open the ontology in Fabric UI to preview the graph.
-
-### Troubleshooting
-
-**Validation errors before any REST call**
-- The publisher runs structural validation first: identifier must be String/BigInt, `displayName` must be a declared property, `timestampProperty` must be `DateTime` and listed under `timeseries:`, etc. Fix `ontology.yaml` and rerun.
-
-**`ItemDisplayNameNotAvailableYet` on create**
-- Fabric reserves a deleted item's display name for a few minutes. The publisher retries every 30s for up to 10 minutes; just wait.
-
-**"Lakehouse not available as data source"**
-- Ensure OneLake availability is enabled on the KQL database (prereq 3).
-- Re-run `scripts/1-setup-fabric.sh` after OneLake availability is enabled so `ManufacturingLH` and its `Tables/dbo/<Table>` shortcuts exist.
-
-**"GraphModel has 0 nodeTypes"**
-- Wait a few minutes for the graph to populate.
-- Check that `bindings.table` and any `bindings.columns` overrides match the real KQL/Delta table and column names exactly.
-- Verify `type:` for each property matches the underlying column type.
-
-## Usage
-
-### Data Agent Queries
-
-Create a Fabric Data Agent connected to this ontology to query using natural language:
-
-**Operational queries (real-time via time series bindings):**
-- "What's the current machine status for all stations on Line-A?"
-- "Show buffer counts for Line-C station 4"
-- "List all parts rejected in the last hour"
-- "Which machines are currently in fault state?"
-- "Show all machine events for device Line-A_Stn1 in the last hour"
-
-**Maintenance queries:**
-- "Show all open maintenance work orders"
-- "Which stations have the most maintenance events this week?"
-- "What's the average time to resolve hydraulic press faults?"
-- "Show maintenance history for Line-B station 2"
-
-**Production tracking queries:**
-- "Show the journey of part P-00042"
-- "Which parts were processed by Line-C today?"
-- "List all stations that processed parts in the last 30 minutes"
-
-**Schedule queries:**
-- "Show production schedules for all lines"
-- "What's the planned target for Line-D day shift?"
-
-**Reference-dimension queries:**
-- "Group OEE by machine-type category across all lines" (MachineType.category, via the graph)
-- "Which fault category causes the most downtime?" (KQL: MaintenanceEvents ⋈ IssueTypeMaster on issue_type)
-- "How many work orders did each technician close this week?" (KQL: MaintenanceEvents ⋈ TechnicianMaster on technician_id)
-- "What's the SOP for the Line-D Paint-Booth?" (SOP → Station via the graph, then retrieve `file_name` from AI Search)
-- "Show the OEE-targets-and-escalation policy" (KQL: PolicyMaster → AI Search by `file_name`)
-
-**Note**: OEE is not stored as an entity. The Data Agent composes it on the fly from Silver-tier numeric proxy columns (`MachineEvents.is_running`, `MachineEventsEnriched.performance_ratio`, `PartEvents.is_pass`). `MachineEventsEnriched()` is a view function that joins `MachineEvents` to `StationMaster` at query time to populate `ideal_cycle_time` and `performance_ratio` (Fabric Eventhouse update policies cannot do cross-table lookups). See `docs/ONTOLOGY_LESSONS.md` (Root Causes 5 and 6).
-
-### Graph Queries (GQL)
-
-The ontology supports Graph Query Language (GQL) for complex graph traversals:
-
-```gql
-// Find all CNC machining stations on Line-A and their machine-type category
-MATCH (line:ProductionLine {line_id: 'Line-A'})<-[:Station_BelongsTo_ProductionLine]-(station:Station)
-      -[:Station_Is_Of_MachineType]->(mt:MachineType)
-WHERE mt.category = 'Machining'
-RETURN station.machine_type, station.station_position, mt.category
-ORDER BY station.station_position
-```
-
-## Data Pipeline Integration
-
-The ontology sits on top of the existing Fabric OEE Demo data pipeline:
-
-1. **Simulator** → sends telemetry to Event Hub
-2. **Eventstream** → routes events to Bronze `*_Raw` tables in ManufacturingEH (MachineEvents_Raw, PartEvents_Raw, MaintenanceEvents_Raw)
-3. **KQL update policies** → enrich Bronze → Silver tables (MachineEvents, PartEvents, MaintenanceEvents) adding numeric proxies (`is_running`, `is_fault`, `performance_ratio`, `is_pass`, ...) and shift/root-cause attributes
-4. **OneLake mirroring** → Silver tables replicate to Delta at 5-min latency for graph-side bindings
-5. **Ontology** → binds to Silver tables via hybrid strategy (lakehouse + eventhouse), with `line_id`/`station_position`/`shift_id` dual-bound for time-series slicing
-6. **Data Agent** → natural language queries; composes OEE on the fly from the numeric proxies
-
-## Extending the Ontology
-
-### Adding a New Entity Type
-
-1. Append the entity to `entities:` in `ontology/ontology.yaml`, declaring `identifiers`, `properties`, optional `timeseries`, and at least one `bindings:` entry.
-2. (Optional) Add a relationship under `relationships:` referencing the new entity.
-3. Republish: `python scripts/6-publish-ontology.py --workspace-name <WORKSPACE> --recreate`.
-
-### Adding Time Series Properties
-
-Add entries under the entity's `timeseries:` list and ensure an `eventhouse` binding exists for that entity (slicers go in `bindings[].slicers`). The publisher dual-binds identifiers automatically.
+- Eventhouse-native (zero-lag) time-series bindings exist in the portal, but their TMDL shape
+  isn't documented, so telemetry binds through the lakehouse.
+- The `fabricOntology` knowledge source answers rule questions with the rule's content but not
+  its name.
+- Operations agents over an ontology evaluate only a property's latest value (no aggregations
+  over a window) and don't support ontologies bound to a semantic model, so the operations agent
+  monitors `ManufacturingEH` and takes its rules from this ontology.
+- The ontology MCP endpoint accepts user identities only, not service principals.
 
 ## References
 
-- [Fabric Ontology overview](https://learn.microsoft.com/fabric/iq/ontology/overview)
-- [Data Binding guide](https://learn.microsoft.com/fabric/iq/ontology/how-to-bind-data)
-- [Ontology Definition REST reference](https://learn.microsoft.com/rest/api/fabric/articles/item-management/definitions/ontology-definition)
+- [Ontology overview](https://learn.microsoft.com/fabric/iq/ontology/overview)
+- [Ontology definition (REST)](https://learn.microsoft.com/rest/api/fabric/articles/item-management/definitions/ontology-definition)
 - [Graph in Microsoft Fabric](https://learn.microsoft.com/fabric/graph/overview)
-
-## Property Summary
-
-**Operational dimensions**
-- **ProductionLine** (4 static): line_id, line_name, purpose, station_count — plus MachineEvents + PartEvents time-series.
-- **Station** (7 static): line_id, station_position, machine_type, ideal_cycle_time, manufacturer, install_year, buffer_capacity — plus MachineEvents + PartEvents time-series.
-- **ProductionSchedule** (3 static): line_id, shift, planned_parts — plus PartEvents time-series.
-
-**Reference dimensions (lakehouse-only)**
-- **Shift** (3): shift, start_hour, end_hour
-- **MachineType** (2): machine_type, category
-- **IssueType** (2): issue_type, category
-- **Technician** (2): technician_id, name
-- **SOP** (7): sop_id, line_id, station_position, machine_type, doc_type, title, file_name
-- **Policy** (5): policy_id, scope, doc_type, title, file_name
-
-**Total**: 9 entity types, 5 relationships. Event telemetry (MachineEvents, PartEvents, MaintenanceEvents) is queried via the Data Agent's KQL Database source, not modelled as entities.

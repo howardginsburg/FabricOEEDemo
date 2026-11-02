@@ -14,15 +14,16 @@
 #   CORE            scripts/1-setup-fabric.sh and every other script
 #                     → az (logged in), jq, curl, base64, sed
 #   FABRIC IQ       scripts/6-publish-ontology.py, scripts/7-setup-data-agent.py
-#                     → python3, PyYAML
-#   FOUNDRY/SEARCH  scripts/4-setup-foundry.sh, scripts/5-setup-aisearch.sh
+#                     → python3 (standard library); optional pyodbc + ODBC Driver 18
+#                       for 6-publish-ontology.py --check-metrics
+#   FOUNDRY/SEARCH  scripts/8-setup-foundry.sh, scripts/9-setup-aisearch.sh
 #                     → Azure CLI 2.67+ (Foundry project management), plus
 #                       consumption (GlobalStandard) model quota in your region
-#   FOUNDRY AGENT   scripts/8-setup-foundry-agent.py
-#                     → python3 + azure-ai-projects (2.x) + azure-identity
+#   FOUNDRY AGENT   scripts/10-setup-foundry-agent.py, scripts/12-evaluate-agent.py
+#                     → python3 + azure-ai-projects (2.x) + azure-identity + openai
 #   LOCAL SIM       running the simulator locally with 'dotnet run'
 #                     → .NET SDK 10
-#   DEV (optional)  scripts/build-sops.sh — regenerate SOP PDFs (committed already)
+#   DEV (optional)  scripts/dev-build-sops.sh — regenerate SOP PDFs (committed already)
 #                     → pandoc, wkhtmltopdf
 #
 # Usage:
@@ -78,7 +79,7 @@ if have az; then
   # Foundry (scripts 4/8) need 2.67+ for --allow-project-management / project subcommands
   if [[ "$AZ_VER" != "?" ]]; then
     if [[ "$(printf '2.67.0\n%s\n' "$AZ_VER" | sort -V | head -n1)" != "2.67.0" ]]; then
-      warn "Azure CLI $AZ_VER is older than 2.67.0 — scripts/4-setup-foundry.sh needs 2.67+ (Foundry project management). Core Fabric scripts still work."
+      warn "Azure CLI $AZ_VER is older than 2.67.0 — scripts/8-setup-foundry.sh needs 2.67+ (Foundry project management). Core Fabric scripts still work."
       fix "az upgrade   # or reinstall the MSI from https://aka.ms/installazurecliwindows"
     fi
   fi
@@ -137,12 +138,10 @@ if have python3; then PY=python3; elif have python; then PY=python; fi
 if [[ -n "$PY" ]]; then
   PY_VER="$($PY -c 'import sys; print(".".join(map(str, sys.version_info[:3])))' 2>/dev/null || echo '?')"
   pass "Python present ($PY $PY_VER)"
-  if $PY -c 'import yaml' >/dev/null 2>&1; then
-    pass "PyYAML present (needed by 6-publish-ontology.py)"
+  if $PY -c 'import pyodbc, sys; sys.exit(0 if any("ODBC Driver 18" in d for d in pyodbc.drivers()) else 1)' >/dev/null 2>&1; then
+    pass "pyodbc + ODBC Driver 18 present (6-publish-ontology.py --check-metrics)"
   else
-    fail "PyYAML not installed"
-    fix "$PY -m pip install pyyaml"
-    FABRIC_IQ_MISSING=$((FABRIC_IQ_MISSING + 1))
+    warn "pyodbc / ODBC Driver 18 not found (only needed for 6-publish-ontology.py --check-metrics)"
   fi
 else
   fail "Python 3 not found"
@@ -150,18 +149,18 @@ else
   FABRIC_IQ_MISSING=$((FABRIC_IQ_MISSING + 1))
 fi
 
-# ── FOUNDRY AGENT (prompt agent automation) ───────────────────────────────────
-group "FOUNDRY AGENT — scripts/8-setup-foundry-agent.py"
+# ── FOUNDRY AGENT (prompt agent automation + evaluation) ──────────────────────
+group "FOUNDRY AGENT — scripts/10-setup-foundry-agent.py, scripts/12-evaluate-agent.py"
 
 if [[ -n "$PY" ]]; then
-  if $PY -c 'import azure.ai.projects, azure.identity, httpx' >/dev/null 2>&1; then
-    pass "azure-ai-projects + azure-identity present"
+  if $PY -c 'import azure.ai.projects, azure.identity, openai, httpx' >/dev/null 2>&1; then
+    pass "azure-ai-projects + azure-identity + openai present"
   else
-    warn "azure-ai-projects / azure-identity not installed (only needed to script the Foundry agent)"
-    fix "$PY -m pip install azure-ai-projects azure-identity openai httpx"
+    warn "azure-ai-projects / azure-identity / openai not installed (needed to script and evaluate the Foundry agent)"
+    fix "$PY -m pip install \"azure-ai-projects>=2.2.0\" azure-identity openai httpx"
   fi
 else
-  warn "Python 3 not found — needed for scripts/8-setup-foundry-agent.py"
+  warn "Python 3 not found — needed for scripts/10-setup-foundry-agent.py and scripts/12-evaluate-agent.py"
   fix "$PKG_HINT python3"
 fi
 
@@ -185,7 +184,7 @@ else
 fi
 
 # ── DEV-ONLY: SOP PDF rebuild ─────────────────────────────────────────────────
-group "DEV (optional) — scripts/build-sops.sh (PDFs are already committed)"
+group "DEV (optional) — scripts/dev-build-sops.sh (PDFs are already committed)"
 
 if have pandoc; then pass "pandoc present"; else warn "pandoc not found — only needed to regenerate SOP PDFs"; fix "$PKG_HINT pandoc"; fi
 if have wkhtmltopdf; then pass "wkhtmltopdf present"; else warn "wkhtmltopdf not found — only needed to regenerate SOP PDFs"; fix "$PKG_HINT wkhtmltopdf"; fi

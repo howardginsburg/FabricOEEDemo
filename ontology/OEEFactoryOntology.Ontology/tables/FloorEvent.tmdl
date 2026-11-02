@@ -1,0 +1,102 @@
+table FloorEvent
+	lineageTag: c18b5ac7-a9fb-5275-a160-bd604a63fbcd
+
+	column id
+		dataType: string
+		lineageTag: 09be43e7-9515-5e0e-9ef5-87a2f0d69497
+		sourceColumn: id
+
+	column device_id
+		dataType: string
+		lineageTag: 2b081bd1-b019-5740-9a62-a972042abbd5
+		sourceColumn: device_id
+
+	column line_id
+		dataType: string
+		lineageTag: 11af59c8-a23b-5ae5-894b-3c958a7c45a8
+		sourceColumn: line_id
+
+	column shift
+		dataType: string
+		lineageTag: a55b2d41-ac0f-507d-8fba-e8f458b1c250
+		sourceColumn: shift
+
+	column event_ts
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: 1c509b23-d5b4-5788-9c43-fed6256aea45
+		sourceColumn: event_ts
+
+	column category
+		dataType: string
+		lineageTag: da348ddb-c72b-5e29-8c8c-b18001118d3c
+		sourceColumn: category
+
+	column priority
+		dataType: string
+		lineageTag: dea23d3d-220e-50fd-bcd3-59a7a19aaf3e
+		sourceColumn: priority
+
+	column description
+		dataType: string
+		lineageTag: 72252201-5874-5809-9950-b3a2ccc5ef7d
+		sourceColumn: description
+
+	column status
+		dataType: string
+		lineageTag: 9aade8a3-0e5b-50e9-acdf-9332031a86e5
+		sourceColumn: status
+
+	column acknowledged_at
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: c6d70903-5671-58fd-bbb3-922ae5a2c0c4
+		sourceColumn: acknowledged_at
+
+	column resolved_at
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: 96810f9b-44cc-5be1-a315-a9a791f8a073
+		sourceColumn: resolved_at
+
+	column root_cause_code
+		dataType: string
+		lineageTag: 96a24f0d-9baf-585c-8d77-2e9d68a96f84
+		sourceColumn: root_cause_code
+
+	column corrective_action
+		dataType: string
+		lineageTag: 210306e2-619b-5e82-a652-37d65df91ce4
+		sourceColumn: corrective_action
+
+	column defect_type
+		dataType: string
+		lineageTag: 45d5caf6-9abf-5f9b-a0ec-1856d4b32e3f
+		sourceColumn: defect_type
+
+	column severity
+		dataType: string
+		lineageTag: 473a3544-6631-5732-8f9e-4e70ee75cc9a
+		sourceColumn: severity
+
+	column scrap_qty
+		dataType: int64
+		lineageTag: 32ba4b14-fd5c-5254-85ab-1d788925c382
+		sourceColumn: scrap_qty
+
+	column raised_by
+		dataType: string
+		lineageTag: 292f14aa-4003-5d14-845b-da5387420b53
+		sourceColumn: raised_by
+
+	column resolved_by
+		dataType: string
+		lineageTag: 1363f9ba-ffca-527f-840a-eea2ff212601
+		sourceColumn: resolved_by
+
+	partition FloorEvent = entity
+		mode: directLake
+		source
+			entityName: FloorEvent
+			schemaName: dbo
+			expressionSource: 'DirectLake - ManufacturingLH'

@@ -1,0 +1,18 @@
+rule RejectRateQuarantine
+	lineageTag: f693c261-f7ab-58d1-bea3-90f6898669bb
+	statement: If a station's reject rate over a rolling hour exceeds twice its target reject rate, the Quality Engineer quarantines all buffered parts at that station per the Quality Reject Disposition Policy.
+
+	ruleReferencedEntity production#PartPass
+		propertyScope: specific
+		ruleReferencedProperty is_rejected
+		ruleReferencedProperty outcome
+
+	ruleReferencedEntity equipment#Station
+		propertyScope: specific
+		ruleReferencedProperty target_reject_rate
+
+	ruleReferencedEntity production#Part
+
+	ruleReferencedRelationship production#PassAtStation
+
+	ruleReferencedRelationship production#PassOfPart

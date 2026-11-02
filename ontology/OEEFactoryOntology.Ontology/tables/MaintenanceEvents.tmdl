@@ -1,0 +1,45 @@
+table MaintenanceEvents
+	lineageTag: ce51b6ab-1e3e-5e07-a3e8-266409240218
+
+	column work_order_id
+		dataType: string
+		lineageTag: bcbae241-26c2-5926-9451-613802d365dc
+		sourceColumn: work_order_id
+
+	column device_id
+		dataType: string
+		lineageTag: 7ac6d07c-c63c-5d1d-8165-85edc4ba389c
+		sourceColumn: device_id
+
+	column action
+		dataType: string
+		lineageTag: 3573d5d4-a831-5adc-bfda-1def82467888
+		sourceColumn: action
+
+	column issue_type
+		dataType: string
+		lineageTag: 85c67183-c032-57b0-b0aa-611508afdbb4
+		sourceColumn: issue_type
+
+	column technician_id
+		dataType: string
+		lineageTag: 18b758fa-bc16-5438-b503-e8b90de74268
+		sourceColumn: technician_id
+
+	column shift_id
+		dataType: string
+		lineageTag: b02942a6-5db4-5df7-85f5-edb60d84bb1f
+		sourceColumn: shift_id
+
+	column timestamp
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: da8e5c98-16d6-5999-90cb-4d0b9b24f068
+		sourceColumn: timestamp
+
+	partition MaintenanceEvents = entity
+		mode: directLake
+		source
+			entityName: MaintenanceEvents
+			schemaName: dbo
+			expressionSource: 'DirectLake - ManufacturingLH'

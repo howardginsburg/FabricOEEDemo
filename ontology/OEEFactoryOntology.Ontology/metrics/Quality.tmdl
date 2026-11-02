@@ -1,0 +1,11 @@
+/// Completed parts divided by parts produced (completed + rejected). First-pass yield. Same definition as the OEEAnalytics semantic model measure [Quality].
+metric Quality
+	lineageTag: a487aae9-2c6a-555e-8f4d-e2c231046705
+
+	expression
+		dialect: SQL
+		expression: SELECT CAST(SUM(is_completed) AS FLOAT) / NULLIF(SUM(is_completed) + SUM(is_rejected), 0) FROM dbo.PartPasses
+
+	synonym 'first pass yield'
+	synonym FPY
+	synonym yield

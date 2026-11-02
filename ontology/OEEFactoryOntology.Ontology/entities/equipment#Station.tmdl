@@ -1,0 +1,69 @@
+/// A workstation position on a production line. Stations are numbered 1..N in flow order; parts move through them in sequence.
+entity equipment#Station
+	lineageTag: 549668cd-03a1-50d4-9643-8df80c8c12fa
+	backingTable: StationMaster
+	keyProperty: device_id
+
+	/// Station identifier, for example line-a-station-1. Same value as the hosted machine's device_id.
+	property device_id
+		dataType: string
+		lineageTag: c5d4d0a8-cc33-525e-aa59-171f6c448d00
+
+		backingConfiguration
+			valueColumn: StationMaster.device_id
+
+		synonym 'station id'
+		synonym 'device id'
+
+	/// Line the station belongs to (Line-A..Line-E).
+	property line_id
+		dataType: string
+		lineageTag: 8ab1b304-efdd-5e7c-ae05-8db02fe8f7d5
+
+		backingConfiguration
+			valueColumn: StationMaster.line_id
+
+	/// Position in the line's flow, starting at 1. Upstream = position - 1, downstream = position + 1.
+	property station_position
+		dataType: int64
+		lineageTag: a48c05f7-077f-5fb8-b959-e61d6fc823fd
+
+		backingConfiguration
+			valueColumn: StationMaster.station_position
+
+		synonym position
+		synonym 'station number'
+
+	/// Type of machine at the station, for example CNC-Lathe, Curing-Oven, or Leak-Test.
+	property machine_type
+		dataType: string
+		lineageTag: 1490b0dc-ddb6-5ffa-92ac-38a0c9bd5497
+
+		backingConfiguration
+			valueColumn: StationMaster.machine_type
+
+		synonym machine
+
+	/// Maximum parts in the station's input buffer before the upstream station blocks.
+	property buffer_capacity
+		dataType: int64
+		lineageTag: 3b5457b4-3740-5934-be32-d188b458a480
+
+		backingConfiguration
+			valueColumn: StationMaster.buffer_capacity
+
+	/// Expected share of parts the station rejects, from the Quality Reject Disposition Policy (0.02 = 2%). Rule RejectRateQuarantine compares the rolling-hour reject rate with twice this value.
+	property target_reject_rate
+		dataType: double
+		lineageTag: a2598316-c4b8-554d-a486-e2cbf61ba741
+
+		backingConfiguration
+			valueColumn: StationMaster.target_reject_rate
+
+		synonym 'reject target'
+		synonym 'expected reject rate'
+		synonym 'scrap target'
+
+	synonym workstation
+	synonym 'work station'
+	synonym cell

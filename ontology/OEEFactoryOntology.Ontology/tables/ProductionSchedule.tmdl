@@ -1,0 +1,29 @@
+table ProductionSchedule
+	lineageTag: 2df965b4-dbff-551b-bb05-b7683b033d25
+
+	column schedule_id
+		dataType: string
+		lineageTag: 9775eee2-afca-5b86-b0e2-71fd61300463
+		sourceColumn: schedule_id
+
+	column line_id
+		dataType: string
+		lineageTag: 41282f55-37d0-5b6e-b2d4-ccc79c0adae2
+		sourceColumn: line_id
+
+	column shift
+		dataType: string
+		lineageTag: c0c923e1-0d18-5f88-bdef-20df059792ae
+		sourceColumn: shift
+
+	column planned_parts
+		dataType: int64
+		lineageTag: 05adfd51-e65e-58d1-b752-0e4614f1f724
+		sourceColumn: planned_parts
+
+	partition ProductionSchedule = entity
+		mode: directLake
+		source
+			entityName: ProductionSchedule
+			schemaName: dbo
+			expressionSource: 'DirectLake - ManufacturingLH'

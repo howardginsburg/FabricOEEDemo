@@ -1,0 +1,3 @@
+/// Plant-wide business rules.
+namespace default
+	lineageTag: default

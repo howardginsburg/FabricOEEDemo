@@ -1,0 +1,55 @@
+table WorkOrders
+	lineageTag: e7a2c998-bab0-5416-95aa-706a3c3076b5
+
+	column work_order_id
+		dataType: string
+		lineageTag: fff116ff-3436-5627-af08-549adb3453d4
+		sourceColumn: work_order_id
+
+	column device_id
+		dataType: string
+		lineageTag: bdbd030d-a725-5faa-a345-4b94456b887e
+		sourceColumn: device_id
+
+	column line_id
+		dataType: string
+		lineageTag: fdfeb3ee-26b0-5748-8f23-fe055e3cd7dc
+		sourceColumn: line_id
+
+	column station_position
+		dataType: int64
+		lineageTag: a5a1d5bb-34d2-5482-b48d-dbc3739bc394
+		sourceColumn: station_position
+
+	column machine_type
+		dataType: string
+		lineageTag: ad7e414f-bb85-5c5c-888d-eac18fd05a66
+		sourceColumn: machine_type
+
+	column issue_type
+		dataType: string
+		lineageTag: 188fe13b-e492-56f8-9739-9dd71cd5986b
+		sourceColumn: issue_type
+
+	column technician_id
+		dataType: string
+		lineageTag: 6c43e143-5fd9-5c84-90e8-fab0d1b49216
+		sourceColumn: technician_id
+
+	column shift_id
+		dataType: string
+		lineageTag: 399a9a6a-9278-5509-8f13-9182710d2635
+		sourceColumn: shift_id
+
+	column created_at
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: 519a320f-d7e7-5902-954c-e9e72fdc4aa7
+		sourceColumn: created_at
+
+	partition WorkOrders = entity
+		mode: directLake
+		source
+			entityName: WorkOrders
+			schemaName: dbo
+			expressionSource: 'DirectLake - ManufacturingLH'

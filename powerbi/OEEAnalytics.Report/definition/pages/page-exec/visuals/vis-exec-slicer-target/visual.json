@@ -1,0 +1,18 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.12.0/schema.json",
+  "name": "vis-exec-slicer-target",
+  "position": { "x": 216, "y": 478, "z": 1, "height": 150, "width": 420, "tabOrder": 9 },
+  "visual": {
+    "visualType": "textSlicer",
+    "visualContainerObjects": {
+      "title": [
+        {
+          "properties": {
+            "text": { "expr": { "Literal": { "Value": "'New Target OEE (0-1)'" } } }
+          }
+        }
+      ]
+    },
+    "drillFilterOtherVisuals": true
+  }
+}

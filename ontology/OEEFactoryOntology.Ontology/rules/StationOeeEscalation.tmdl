@@ -1,0 +1,14 @@
+rule StationOeeEscalation
+	lineageTag: 26583300-4c60-50fb-a674-9132741b43db
+	statement: Per the OEE Targets and Escalation policy, if a station's OEE stays below 60% for more than 15 minutes, notify the Line Manager, pause the station for triage, and follow section 4 of the station's SOP.
+
+	ruleReferencedEntity equipment#Station
+
+	ruleReferencedEntity knowledge#SOP
+
+	ruleReferencedEntity equipment#Machine
+		propertyScope: specific
+		ruleReferencedProperty is_running
+		ruleReferencedProperty actual_cycle_time
+
+	ruleReferencedRelationship knowledge#SopForStation

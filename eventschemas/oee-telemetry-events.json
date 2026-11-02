@@ -1,0 +1,84 @@
+{
+  "$comment": "Event contracts for the OEE simulator's telemetry (simulator/FabricOEESimulator.Wpf/Telemetry/TelemetryEvent.cs). scripts/1a-publish-event-schemas.py checks each schema against its Eventhouse Bronze table and publishes them to the 'OEE Telemetry Events' Event Schema Set. Bump an event type's version when its schema changes.",
+  "eventTypes": [
+    {
+      "id": "machine_telemetry",
+      "version": "v1",
+      "description": "A station's telemetry sample, about every 10 seconds: machine status, idle reason, last cycle time, buffer levels, and part counters.",
+      "kustoTable": "MachineEvents_Raw",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "MachineTelemetry",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["event_type", "timestamp", "device_id", "machine_type", "machine_status", "line_id", "station_position", "actual_cycle_time", "input_buffer_count", "output_buffer_count", "buffer_capacity", "total_parts_processed", "rejected_parts"],
+        "properties": {
+          "event_type": { "type": "string", "const": "machine_telemetry" },
+          "device_id": { "type": "string", "pattern": "^line-[a-z]-station-[0-9]+$", "description": "Station and machine id, for example line-a-station-1." },
+          "machine_type": { "type": "string", "description": "Machine type at the station, for example CNC-Lathe or Curing-Oven." },
+          "machine_status": { "type": "string", "enum": ["Running", "Idle", "Fault", "Maintenance"] },
+          "idle_reason": { "type": "string", "enum": ["Starved", "Blocked"], "description": "Present only when the machine is Idle: Starved (waiting on the upstream station) or Blocked (the downstream buffer is full)." },
+          "line_id": { "type": "string", "pattern": "^Line-[A-Z]$" },
+          "station_position": { "type": "integer", "minimum": 1, "description": "Position in the line's flow, starting at 1." },
+          "actual_cycle_time": { "type": "number", "minimum": 0, "description": "Seconds the last cycle took." },
+          "input_buffer_count": { "type": "integer", "minimum": 0 },
+          "output_buffer_count": { "type": "integer", "minimum": 0 },
+          "buffer_capacity": { "type": "integer", "minimum": 0 },
+          "total_parts_processed": { "type": "integer", "minimum": 0, "description": "Running count of parts the station has processed." },
+          "rejected_parts": { "type": "integer", "minimum": 0, "description": "Running count of parts the station has rejected." },
+          "current_part_id": { "type": "string", "description": "Part in process; omitted when the station is empty." },
+          "timestamp": { "type": "string", "format": "date-time", "description": "UTC time of the sample." }
+        }
+      }
+    },
+    {
+      "id": "part_event",
+      "version": "v1",
+      "description": "A part entering, completing, or being rejected at a station.",
+      "kustoTable": "PartEvents_Raw",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "PartEvent",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["event_type", "timestamp", "part_id", "line_id", "station_position", "machine_type", "action", "cycle_time", "quality_pass"],
+        "properties": {
+          "event_type": { "type": "string", "const": "part_event" },
+          "part_id": { "type": "string", "description": "Unique part id, assigned when the part enters the line's first station." },
+          "line_id": { "type": "string", "pattern": "^Line-[A-Z]$" },
+          "station_position": { "type": "integer", "minimum": 1 },
+          "machine_type": { "type": "string" },
+          "action": { "type": "string", "enum": ["entered", "completed", "rejected"] },
+          "cycle_time": { "type": "number", "minimum": 0, "description": "Seconds at the station; 0 when the part enters." },
+          "quality_pass": { "type": "boolean", "description": "False only when the part is rejected." },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      }
+    },
+    {
+      "id": "maintenance_event",
+      "version": "v1",
+      "description": "A step in a work order's lifecycle: Created, Acknowledged, InProgress, or Resolved.",
+      "kustoTable": "MaintenanceEvents_Raw",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "MaintenanceEvent",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["event_type", "timestamp", "work_order_id", "device_id", "machine_type", "line_id", "station_position", "issue_type", "action", "technician_id"],
+        "properties": {
+          "event_type": { "type": "string", "const": "maintenance_event" },
+          "work_order_id": { "type": "string" },
+          "device_id": { "type": "string", "pattern": "^line-[a-z]-station-[0-9]+$" },
+          "machine_type": { "type": "string" },
+          "line_id": { "type": "string", "pattern": "^Line-[A-Z]$" },
+          "station_position": { "type": "integer", "minimum": 1 },
+          "issue_type": { "type": "string", "description": "Fault type from the station's SOP, for example Nozzle-Clog." },
+          "action": { "type": "string", "enum": ["Created", "Acknowledged", "InProgress", "Resolved"] },
+          "technician_id": { "type": "string", "description": "Assigned technician, T001 to T008." },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      }
+    }
+  ]
+}

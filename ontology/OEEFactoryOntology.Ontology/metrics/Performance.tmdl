@@ -1,0 +1,10 @@
+/// Ideal cycle time divided by actual cycle time over running samples (ratio of sums), capped at 100%. Same definition as the OEEAnalytics semantic model measure [Performance].
+metric Performance
+	lineageTag: 05e3e5d6-36eb-575f-94a6-c783ac51a0cb
+
+	expression
+		dialect: SQL
+		expression: SELECT CASE WHEN SUM(m.actual_cycle_time) > 0 THEN CASE WHEN SUM(ISNULL(s.ideal_cycle_time, 0)) / SUM(m.actual_cycle_time) > 1 THEN 1.0 ELSE SUM(ISNULL(s.ideal_cycle_time, 0)) / SUM(m.actual_cycle_time) END END FROM dbo.MachineEvents AS m LEFT JOIN dbo.StationMaster AS s ON s.device_id = m.device_id WHERE m.is_running = 1 AND m.actual_cycle_time > 0
+
+	synonym speed
+	synonym rate

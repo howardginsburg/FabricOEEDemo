@@ -1,0 +1,26 @@
+/// A maintenance technician who works work orders.
+entity maintenance#Technician
+	lineageTag: 51299cc2-f9ea-5d61-8379-5997b6325f09
+	backingTable: TechnicianMaster
+	keyProperty: technician_id
+
+	/// Technician identifier, T001..T008.
+	property technician_id
+		dataType: string
+		lineageTag: f5dc7197-36ab-5e88-bc0a-09c4c97ce05a
+
+		backingConfiguration
+			valueColumn: TechnicianMaster.technician_id
+
+	/// Technician's name; report names, not IDs.
+	property name
+		dataType: string
+		lineageTag: 98c0e103-5245-5c6b-ba75-77efe37d0e71
+
+		backingConfiguration
+			valueColumn: TechnicianMaster.name
+
+		synonym 'technician name'
+
+	synonym tech
+	synonym 'maintenance technician'

@@ -1,6 +1,6 @@
 # Translytical OEE target write-back
 
-Component C lets a manager set a per-line OEE target from inside the Power BI report. The button invokes the Fabric User Data Function `set_oee_target`, which upserts a row in `OeeGovernance.dbo.OeeTarget`. Fabric SQL database mirroring exposes that table in OneLake, and `scripts/3-setup-translytical.sh` shortcuts it into `ManufacturingLH/Tables/dbo/OeeTarget` so the existing Direct Lake semantic model can evaluate `Target OEE` and `OEE vs Target`.
+Component C lets a manager set a per-line OEE target from inside the Power BI report. The button invokes the Fabric User Data Function `set_oee_target`, which upserts a row in `OeeGovernance.dbo.OeeTarget`. Fabric SQL database mirroring exposes that table in OneLake, and `scripts/2-setup-translytical.sh` shortcuts it into `ManufacturingLH/Tables/dbo/OeeTarget` so the existing Direct Lake semantic model can evaluate `Target OEE` and `OEE vs Target`.
 
 ## Flow
 
@@ -16,7 +16,7 @@ Component C lets a manager set a per-line OEE target from inside the Power BI re
 Run after the Fabric foundation and Power BI deployment:
 
 ```bash
-bash scripts/3-setup-translytical.sh --workspace-name "<FABRIC_WORKSPACE>"
+bash scripts/2-setup-translytical.sh --workspace-name "<FABRIC_WORKSPACE>"
 ```
 
 The script is safe to re-run. It creates or finds:
@@ -26,13 +26,13 @@ The script is safe to re-run. It creates or finds:
 - User Data Functions item `OeeTargetFunctions` with function `set_oee_target`.
 - OneLake shortcut `ManufacturingLH/Tables/dbo/OeeTarget`.
 
-If REST deployment is blocked by tenant, capacity, or preview availability, the script prints portal fallback steps. Automatic `dbo.OeeTarget` creation uses `sqlcmd` if present and otherwise falls back to `scripts/apply-oee-target-schema.py` (pyodbc + Entra token — needs the *ODBC Driver 18 for SQL Server*); if neither is available, run `powerbi/translytical/OeeTarget.schema.sql` from the Fabric SQL database T-SQL editor, or:
+If REST deployment is blocked by tenant, capacity, or preview availability, the script prints portal fallback steps. Automatic `dbo.OeeTarget` creation uses `sqlcmd` if present and otherwise falls back to `scripts/2a-apply-oee-target-schema.py` (pyodbc + Entra token — needs the *ODBC Driver 18 for SQL Server*); if neither is available, run `powerbi/translytical/OeeTarget.schema.sql` from the Fabric SQL database T-SQL editor, or:
 
 ```bash
-python scripts/apply-oee-target-schema.py --workspace-name "<FABRIC_WORKSPACE>"
+python scripts/2a-apply-oee-target-schema.py --workspace-name "<FABRIC_WORKSPACE>"
 ```
 
-The OneLake shortcut step retries while the Fabric SQL DB mirror materializes (a minute or two after the rows are written) and then refreshes the lakehouse SQL analytics endpoint so Direct Lake sees `dbo.OeeTarget`.
+The OneLake shortcut step retries while the Fabric SQL DB mirror materializes (a minute or two after the rows are written) and then refreshes the lakehouse SQL analytics endpoint so SQL consumers (the ontology and the Data Agent) see `dbo.OeeTarget`. The Direct Lake on OneLake semantic model reads the shortcut's Delta table directly.
 
 ## Report integration (already checked in)
 
@@ -46,33 +46,51 @@ These use the model measures `Target OEE = AVERAGE(OeeTarget[target_oee])` and
 `OEE vs Target = [OEE] - [Target OEE]`. They read the *current* target; the interactive **write‑back
 button** below is what lets a manager change it.
 
-## Power BI Desktop / service wiring (the write‑back button)
+## Power BI wiring (the write‑back button) — now automatic
 
-The data‑function button is the one piece that must be authored interactively (Power BI Desktop **or**
-the Power BI service report editor) — its report‑definition (PBIR) action binding isn't part of the
-checked‑in report. Everything it needs is already provisioned: the `OeeTargetFunctions` UDF, the
-`dbo.OeeTarget` table, the OneLake shortcut, and the target visuals.
+The data‑function button **is checked into the report** and deployed for you. It lives on the
+Executive page as two visuals:
 
+- `powerbi/OEEAnalytics.Report/definition/pages/page-exec/visuals/vis-exec-slicer-target/visual.json`
+  — a `textSlicer` (numeric input) titled **New Target OEE (0-1)**.
+- `powerbi/OEEAnalytics.Report/definition/pages/page-exec/visuals/vis-exec-btn-set-target/visual.json`
+  — an `actionButton` (**Update OEE**) whose `visualLink` is a `DataFunction` action bound to
+  `set_oee_target`.
 
-1. Open `powerbi/OEEAnalytics.pbip` in Power BI Desktop.
-2. Open the Executive page (`page-exec`).
-3. Add or reuse a line selector:
-   - Use the existing line slicer or a small line table visual.
-   - Bind the selected line to the UDF parameter `lineId`.
-4. Add a target input:
-   - Use a numeric what-if parameter or numeric slicer named like **New target OEE**.
-   - Configure values from `0.00` to `1.00`, step `0.01`, formatted as a percentage if desired.
-   - Bind it to `targetOee`.
-5. Add a `setBy` input:
-   - Use a text parameter if available, or a hidden/default value such as the manager UPN for demos.
-   - Bind it to `setBy`.
-6. Insert **Buttons → Data function**.
-7. Choose workspace `<FABRIC_WORKSPACE>`, function set `OeeTargetFunctions`, and data function `set_oee_target`.
-8. Map:
-   - `lineId` → selected line (`DimLine[line_id]` / slicer selection)
-   - `targetOee` → numeric target input
-   - `setBy` → user/default text input
-9. Publish the report and test in the Power BI service. Desktop can configure the button, but execution is service-side after publish.
+The button's parameter bindings are baked in:
+
+- `lineId` → **`ValueParameter`** referencing the `_Measures[Selected Line ID]` measure
+  (`SELECTEDVALUE(DimLine[line_id])`), so it follows the line slicer selection.
+- `targetOee` → **`SlicerParameter`** referencing the `vis-exec-slicer-target` numeric input.
+- `setBy` → **`SlicerParameter`**, `isOptional: true`, `defaultValue: "report"` (left unmapped;
+  the UDF signature default supplies it).
+
+Because a data‑function action stores an explicit **workspace id + UDF item id**, the button JSON
+uses `__WORKSPACE_ID__` / `__UDF_ITEM_ID__` placeholders. `scripts/4-setup-powerbi.sh` resolves the
+`OeeTargetFunctions` UDF by name and injects both at deploy time (exactly like it injects the SQL
+endpoint into the semantic model). If the UDF doesn't exist yet, the script drops the two button
+visuals via `BUILD_EXCLUDE` and warns you to run script 2 first.
+
+**Run order matters: `1 → 2 → 4`.** Script 2 (`2-setup-translytical.sh`) must run *before* script 4
+(`4-setup-powerbi.sh`) so that (a) the `OeeTargetFunctions` UDF exists for the button injection, and
+(b) the `OeeTarget` OneLake shortcut exists for the semantic model's `Target OEE` measure. Re-running
+script 4 after script 2 recreates the fully wired button with no interactive authoring.
+
+> Deploy note: the report definition includes a ~95 KB base64 theme, which pushes the parts array
+> past Linux's ~128 KB `MAX_ARG_STRLEN`. `deploy_item` therefore builds the request body with
+> `jq --slurpfile` from a temp file rather than passing parts as an `--argjson` argument.
+
+### Re-authoring by hand (only if you change the wiring)
+
+If you need to rebuild the button interactively (Power BI Desktop or the service report editor):
+
+1. Open the Executive page (`page-exec`).
+2. Add a **numeric input slicer** for the target (0..1) — this becomes the `targetOee` source.
+3. Insert **Buttons → Data function**, choose workspace → `OeeTargetFunctions` → `set_oee_target`.
+4. Map `lineId` via the **fx** (Field value) to the **`Selected Line ID`** measure, map `targetOee`
+   to the numeric input slicer (dropdown), and leave `setBy` unmapped (optional).
+5. Then re-export the two visual.json files back into the repo and re‑insert the
+   `__WORKSPACE_ID__` / `__UDF_ITEM_ID__` placeholders so redeploys stay portable.
 
 ## Preview and gating caveats
 
@@ -93,7 +111,7 @@ checked‑in report. Everything it needs is already provisioned: the `OeeTargetF
   **column** names (`line_id`, `target_oee`, `set_by`) keep underscores; only the function
   parameters are constrained.
 - `powerbi/translytical/functions/set_oee_target/definition.json` and `resources/functions.json` follow the Fabric User Data Function item definition shape. The setup script injects the resolved workspace and SQL database item IDs before deployment.
-- `scripts/3-setup-translytical.sh` provisions the SQL database, publishes the UDF best-effort, and creates the OneLake shortcut.
+- `scripts/2-setup-translytical.sh` provisions the SQL database, publishes the UDF best-effort, and creates the OneLake shortcut.
 
 ## Microsoft documentation grounding
 

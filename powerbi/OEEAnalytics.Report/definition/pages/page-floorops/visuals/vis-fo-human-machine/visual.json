@@ -1,0 +1,27 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.12.0/schema.json",
+  "name": "vis-fo-human-machine",
+  "position": { "x": 428, "y": 462, "z": 0, "width": 424, "height": 240, "tabOrder": 9 },
+  "visual": {
+    "visualType": "clusteredColumnChart",
+    "query": {
+      "queryState": {
+        "Category": {
+          "projections": [
+            { "field": { "Column": { "Expression": { "SourceRef": { "Entity": "DimLine" } }, "Property": "line_name" } }, "queryRef": "DimLine.line_name", "nativeQueryRef": "line_name" }
+          ]
+        },
+        "Y": {
+          "projections": [
+            { "field": { "Measure": { "Expression": { "SourceRef": { "Entity": "_Measures" } }, "Property": "Human MTTR (min)" } }, "queryRef": "_Measures.Human MTTR (min)", "nativeQueryRef": "Human MTTR (min)" },
+            { "field": { "Measure": { "Expression": { "SourceRef": { "Entity": "_Measures" } }, "Property": "MTTR (min)" } }, "queryRef": "_Measures.MTTR (min)", "nativeQueryRef": "MTTR (min)" }
+          ]
+        }
+      }
+    },
+    "visualContainerObjects": {
+      "title": [ { "properties": { "text": { "expr": { "Literal": { "Value": "'Human vs Machine MTTR by Line'" } } } } } ]
+    },
+    "drillFilterOtherVisuals": true
+  }
+}

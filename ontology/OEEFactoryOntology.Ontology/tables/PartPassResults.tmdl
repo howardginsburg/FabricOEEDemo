@@ -1,0 +1,60 @@
+table PartPassResults
+	lineageTag: 3fcf066d-48d4-5991-9681-2d6152937f17
+
+	column part_id
+		dataType: string
+		lineageTag: 2a6e9ae9-2d7e-5095-9ea9-771ee849cbaf
+		sourceColumn: part_id
+
+	column device_id
+		dataType: string
+		lineageTag: f859e585-16ba-5307-b4c2-dd8814f5bcd8
+		sourceColumn: device_id
+
+	column line_id
+		dataType: string
+		lineageTag: 7fbe4aa2-51d7-5725-8bac-cedef0772697
+		sourceColumn: line_id
+
+	column station_position
+		dataType: int64
+		lineageTag: 21aea9eb-3f00-562e-a58f-4658df03d367
+		sourceColumn: station_position
+
+	column outcome
+		dataType: string
+		lineageTag: b8a9037c-01b0-5eca-884b-74de38e91cdb
+		sourceColumn: outcome
+
+	column cycle_time
+		dataType: double
+		lineageTag: 4561cefe-a236-5da9-b873-dbf8e59de194
+		sourceColumn: cycle_time
+
+	column is_pass
+		dataType: int64
+		lineageTag: fe6059dd-39f4-58cc-aa1d-a73fa1bf2bce
+		sourceColumn: is_pass
+
+	column is_rejected
+		dataType: int64
+		lineageTag: 527f5d62-5217-52fb-bc69-4092f0d702f7
+		sourceColumn: is_rejected
+
+	column shift_id
+		dataType: string
+		lineageTag: 4760098b-ae7d-5855-a616-57bf651dc2bf
+		sourceColumn: shift_id
+
+	column passed_at
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: 7dde2ee7-45c0-5a60-91ef-0bbacdf6ccb8
+		sourceColumn: passed_at
+
+	partition PartPassResults = entity
+		mode: directLake
+		source
+			entityName: PartPasses
+			schemaName: dbo
+			expressionSource: 'DirectLake - ManufacturingLH'

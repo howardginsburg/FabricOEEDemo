@@ -1,29 +1,40 @@
 #!/usr/bin/env python3
-"""Create and configure the OEE Manufacturing Data Agent.
+"""Create, configure, and publish the OEE Data Agent — ontology-first (Fabric IQ).
 
-Provisions a Fabric Data Agent in the target workspace (if missing), then
-applies the OEE-specific configuration: aiInstructions, the ManufacturingEH
-KQL Database data source, and (when already attached) the
-OEEManufacturingOntology element selection.
+Sources (a Data Agent takes up to five):
+  • OEEFactoryOntology (ontology)     — the plant's business model: lines, stations, machines and
+                                        their live telemetry, parts, work orders, SOPs, business
+                                        rules, and the governed metrics
+  • OEEAnalytics (semantic model)     — the governed KPI measures (the DAX twins of the ontology
+                                        metrics), sliced by line, shift, station, or machine type
+  • ManufacturingEH (KQL database)    — raw and live events: latest events, minute-level trends,
+                                        single-record timelines
+  • the ontology's graph (--graph)    — optional separate GQL source once the graph is materialized;
+                                        the ontology source already traverses relationships
 
-Idempotent — re-running updates the existing Data Agent in place. Mirrors
-the structure of scripts/6-publish-ontology.py (workspace resolved by name,
-LRO polling on item create / updateDefinition, az-CLI auth).
-
-The ontology data source has to be attached once via the Fabric portal —
-the public REST schema doesn't enumerate it as a known data-source type, so
-this script only mutates its element selection when it is already present.
+The script writes the draft configuration and publishes it — the published copy is what the
+agent's endpoint, Microsoft Foundry, and Copilot Studio use — through the item definition API.
+New-experience ontologies attach through their own definition part
+(Files/Config/<stage>/ontologies/<name>/ontology.json); a datasource.json of type "ontology" only
+works for old-experience items. Element lists come from the deployed ontology, semantic model,
+and KQL schema, so optional entities that scripts/6-publish-ontology.py left out never appear.
 
 Usage
 -----
-    python scripts/7-setup-data-agent.py --workspace-name <NAME>
-    python scripts/7-setup-data-agent.py --workspace-name <NAME> --recreate
-    python scripts/7-setup-data-agent.py --workspace-name <NAME> --step instructions
+    python scripts/7-setup-data-agent.py --workspace-name "OEE Demo"
+    python scripts/7-setup-data-agent.py --workspace-name "OEE Demo" --smoke
+    python scripts/7-setup-data-agent.py --workspace-name "OEE Demo" --ask "Which machines on Line-C are faulted right now?"
+    python scripts/7-setup-data-agent.py --workspace-name "OEE Demo" --draft-only
+
+Authentication uses the current Azure CLI session ('az login').
 """
+from __future__ import annotations
 
 import argparse
 import base64
+import http.client
 import json
+import re
 import subprocess
 import sys
 import time
@@ -33,577 +44,646 @@ import uuid
 
 FABRIC_API = "https://api.fabric.microsoft.com/v1"
 FABRIC_RESOURCE = "https://api.fabric.microsoft.com"
-DEFAULT_DATA_AGENT_NAME = "OEE Data Agent"
-DEFAULT_KQL_DB_NAME = "ManufacturingEH"
-DEFAULT_ONTOLOGY_NAME = "OEEManufacturingOntology"
+SCHEMA_BASE = "https://developer.microsoft.com/json-schemas/fabric/item/dataAgent/definition"
+ASSISTANT_API_VERSION = "2024-05-01-preview"
+DEFAULTS = {"agent": "OEE Data Agent", "ontology": "OEEFactoryOntology", "model": "OEEAnalytics",
+            "kql": "ManufacturingEH"}
+# Raw landing tables and scratch tables stay out of the agent's view.
+KQL_EXCLUDE = re.compile(r"(_Raw|_stage)$|^StationDim$")
+ID_NAMESPACE = uuid.UUID("6f1d3c52-8a0e-4c47-9a39-0e5d3b7f2a10")
+
+
+def log(msg: str) -> None:
+    print(msg, flush=True)
 
 
 # ─── Auth + HTTP ──────────────────────────────────────────────────────────────
 
-
-def _az_token(resource: str) -> str:
-    r = subprocess.run(
-        f'az account get-access-token --resource "{resource}" -o json',
-        capture_output=True, text=True, shell=True,
-    )
-    if r.returncode != 0:
-        sys.exit(f"az get-access-token failed: {r.stderr}\nRun 'az login' first.")
-    return json.loads(r.stdout)["accessToken"]
+_tokens: dict[str, str] = {}
 
 
-_token_cache: dict[str, str] = {}
+def token(resource: str) -> str:
+    if resource not in _tokens:
+        r = subprocess.run(f'az account get-access-token --resource "{resource}" --query accessToken -o tsv',
+                           capture_output=True, text=True, shell=True)
+        if r.returncode != 0 or not r.stdout.strip():
+            sys.exit(f"az get-access-token failed for {resource}: {r.stderr.strip()}\nRun 'az login' first.")
+        _tokens[resource] = r.stdout.strip()
+    return _tokens[resource]
 
 
-def _token(resource: str = FABRIC_RESOURCE) -> str:
-    if resource not in _token_cache:
-        _token_cache[resource] = _az_token(resource)
-    return _token_cache[resource]
-
-
-def _request(method: str, url: str, body: dict | None = None) -> tuple[int, dict, dict]:
+def request(method: str, url: str, body=None, resource: str = FABRIC_RESOURCE):
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(url, data=data, method=method)
-    req.add_header("Authorization", f"Bearer {_token()}")
+    req.add_header("Authorization", f"Bearer {token(resource)}")
     req.add_header("Accept", "application/json")
-    if body is not None:
+    if data is not None:
         req.add_header("Content-Type", "application/json")
-    try:
-        with urllib.request.urlopen(req) as resp:
-            raw = resp.read().decode() if resp.length != 0 else ""
-            payload = json.loads(raw) if raw else {}
-            return resp.status, dict(resp.headers), payload
-    except urllib.error.HTTPError as e:
-        raw = e.read().decode(errors="replace") if e.fp else ""
+    elif method == "POST":
+        req.add_header("Content-Length", "0")
+    for attempt in range(1, 4):
         try:
-            payload = json.loads(raw)
-        except json.JSONDecodeError:
-            payload = {"_raw": raw}
-        return e.code, dict(e.headers), payload
+            with urllib.request.urlopen(req, timeout=180) as resp:
+                raw = resp.read()
+                return resp.status, {k.lower(): v for k, v in resp.headers.items()}, json.loads(raw) if raw.strip() else {}
+        except urllib.error.HTTPError as e:
+            raw = e.read() if e.fp else b""
+            try:
+                payload = json.loads(raw) if raw.strip() else {}
+            except json.JSONDecodeError:
+                payload = {"message": raw.decode(errors="replace")[:2000]}
+            return e.code, {k.lower(): v for k, v in (e.headers or {}).items()}, payload
+        except (http.client.HTTPException, OSError):
+            # Dropped connections and truncated bodies happen on long polls; only GETs are safe to repeat.
+            if method != "GET" or attempt == 3:
+                raise
+            time.sleep(3 * attempt)
 
 
-def fabric_get(path: str) -> dict:
-    status, _, body = _request("GET", f"{FABRIC_API}/{path}")
-    if status >= 400:
-        sys.exit(f"GET {path} → {status}: {body}")
-    return body
-
-
-def fabric_delete(path: str) -> int:
-    status, _, _ = _request("DELETE", f"{FABRIC_API}/{path}")
-    return status
-
-
-def wait_lro(headers: dict, timeout: int = 600) -> dict:
-    op = headers.get("Location") or headers.get("operation-location") or headers.get("Operation-Location")
-    if not op:
-        return {}
-    elapsed = 0
-    while elapsed < timeout:
-        status, _, body = _request("GET", op)
+def get_all(path: str) -> list[dict]:
+    url, values = f"{FABRIC_API}/{path}", []
+    while url:
+        status, _, body = request("GET", url)
         if status >= 400:
-            sys.exit(f"LRO poll failed: {status} {body}")
-        state = (body.get("status") or "").lower()
-        if state in ("succeeded", "completed"):
-            # Some LROs expose the result at /result; ignore failures here
-            # since the terminal body is already enough for the callers below.
-            return body
-        if state in ("failed", "canceled"):
-            sys.exit(f"LRO failed: {body}")
+            sys.exit(f"GET {path} → HTTP {status}: {json.dumps(body)[:500]}")
+        values.extend(body.get("value", []))
+        url = body.get("continuationUri")
+    return values
+
+
+def post_lro(path: str, body=None, timeout: int = 600) -> dict:
+    """POST that may answer 202; polls /operations/{x-ms-operation-id} and surfaces the real error."""
+    status, headers, payload = request("POST", f"{FABRIC_API}/{path}", body)
+    if status in (200, 201):
+        return payload
+    if status != 202:
+        sys.exit(f"POST {path.split('?')[0]} → HTTP {status}: {payload.get('message') or json.dumps(payload)[:1500]}")
+    op = headers.get("x-ms-operation-id")
+    waited = 0
+    while op and waited < timeout:
         time.sleep(3)
-        elapsed += 3
-    sys.exit(f"LRO timed out after {timeout}s")
+        waited += 3
+        _, _, state = request("GET", f"{FABRIC_API}/operations/{op}")
+        phase = (state.get("status") or "").lower()
+        if phase == "succeeded":
+            st, _, result = request("GET", f"{FABRIC_API}/operations/{op}/result")
+            return result if st < 400 else {}
+        if phase in ("failed", "cancelled", "canceled"):
+            error = state.get("error") or state
+            sys.exit(f"POST {path.split('?')[0]} failed: {error.get('message') or json.dumps(error)[:1500]}")
+    if op:
+        sys.exit(f"operation {op} still running after {timeout}s")
+    return payload
 
 
-def b64(obj) -> str:
-    return base64.b64encode(json.dumps(obj, indent=2).encode("utf-8")).decode("ascii")
+def get_definition(ws: str, item: str, fmt: str | None = None) -> dict[str, str]:
+    result = post_lro(f"workspaces/{ws}/items/{item}/getDefinition" + (f"?format={fmt}" if fmt else ""))
+    return {p["path"]: base64.b64decode(p["payload"]).decode("utf-8-sig")
+            for p in result.get("definition", {}).get("parts", [])}
 
 
-def decode(p) -> dict:
-    return json.loads(base64.b64decode(p["payload"]).decode("utf-8"))
+def find_item(ws: str, item_type: str, name: str) -> str | None:
+    return next((i["id"] for i in get_all(f"workspaces/{ws}/items?type={item_type}") if i["displayName"] == name), None)
 
 
-# ─── Resolvers ────────────────────────────────────────────────────────────────
+def require_item(ws: str, item_type: str, name: str, hint: str) -> str:
+    return find_item(ws, item_type, name) or sys.exit(f"{item_type} {name!r} not found — {hint}")
 
 
-def _looks_like_guid(s: str) -> bool:
-    try:
-        uuid.UUID(s)
-        return True
-    except (ValueError, AttributeError):
-        return False
+def element_id(*parts: str) -> str:
+    return str(uuid.uuid5(ID_NAMESPACE, "/".join(parts)))
 
 
-def resolve_workspace(name_or_id: str) -> str:
-    if _looks_like_guid(name_or_id):
-        return name_or_id
-    body = fabric_get("workspaces")
-    for w in body.get("value", []):
-        if w.get("displayName") == name_or_id:
-            return w["id"]
-    sys.exit(f"Workspace {name_or_id!r} not found.")
+# ─── Data source elements ─────────────────────────────────────────────────────
 
 
-def resolve_kql_db(ws_id: str, name: str) -> str:
-    body = fabric_get(f"workspaces/{ws_id}/kqlDatabases")
-    for it in body.get("value", []):
-        if it.get("displayName") == name:
-            return it["id"]
-    sys.exit(f"KQL Database {name!r} not found in workspace.")
+def ontology_context(ws: str, ontology_id: str) -> tuple[list[dict], list[tuple[str, str]], dict[str, list[str]]]:
+    """Entity elements (described by each entity's doc comment), the business rules' statements, the governed
+    metrics, and each entity's time-series properties.
+
+    The Data Agent's ontology connector exposes entity data but not rules, so the rules are rendered into
+    the agent instructions from the deployed ontology — defined once, derived at publish time.
+    """
+    elements, rules, facts = [], [], {"metrics": [], "timeseries": []}
+    for path, text in sorted(get_definition(ws, ontology_id).items()):
+        if path.startswith("entities/"):
+            match = re.search(r"((?:^///.*\n)*)^entity (\S+)", text, re.M)
+            doc = " ".join(line[3:].strip() for line in match.group(1).splitlines())
+            elements.append({"id": match.group(2), "is_selected": True, "display_name": match.group(2),
+                             "type": "ontology.entity", "description": doc or None, "children": []})
+            series = re.findall(r"^\tproperty (\S+)\n\t\tdataType: TimeSeries<", text, re.M)
+            if series:
+                facts["timeseries"].append(f"{match.group(2).split('#')[-1]}: {', '.join(series)}")
+        elif path.startswith("rules/"):
+            name = re.search(r"^rule (\S+)", text, re.M).group(1)
+            statement = re.search(r"^\tstatement: (.+)$", text, re.M)
+            if statement:
+                rules.append((name, statement.group(1).strip()))
+        elif path.startswith("metrics/"):
+            facts["metrics"].append(re.search(r"^metric (\S+)", text, re.M).group(1))
+    return elements, rules, facts
 
 
-def find_item(ws_id: str, item_type: str, name: str) -> str | None:
-    body = fabric_get(f"workspaces/{ws_id}/items?type={item_type}")
-    for it in body.get("value", []):
-        if it.get("displayName") == name:
-            return it["id"]
-    return None
+def render_instructions(rules: list[tuple[str, str]], facts: dict[str, list[str]], ontology_name: str) -> str:
+    """AI_INSTRUCTIONS with the ontology's metrics, time-series properties, and business rules filled in."""
+    text = (AI_INSTRUCTIONS.replace("__METRICS__", ", ".join(facts["metrics"]) or "none")
+            .replace("__TIMESERIES__", "; ".join(facts["timeseries"]) or "none"))
+    if not rules:
+        return text
+    lines = [f"- {name}: {statement}" for name, statement in rules]
+    return (text + f"\n## Business rules (generated from the {ontology_name} ontology; cite the rule name)\n"
+            + "\n".join(lines) + "\n")
 
 
-# ─── Data Agent create + definition ───────────────────────────────────────────
+def _tmdl_name(raw: str) -> str:
+    raw = raw.strip()
+    return raw[1:-1].replace("''", "'") if raw.startswith("'") and raw.endswith("'") else raw
 
 
-def create_data_agent(ws_id: str, name: str) -> str:
-    """Create an empty Data Agent and return its id."""
-    create_body = {"displayName": name, "type": "DataAgent"}
-    elapsed = 0
-    while True:
-        status, headers, body = _request("POST", f"{FABRIC_API}/workspaces/{ws_id}/items", create_body)
-        if status in (200, 201):
-            return body["id"]
-        if status == 202:
-            wait_lro(headers)
-            aid = find_item(ws_id, "DataAgent", name)
-            if not aid:
-                sys.exit(f"Create LRO completed but item {name!r} not found.")
-            return aid
-        if status == 409 and "NotAvailableYet" in json.dumps(body) and elapsed < 600:
-            print(f"  waiting for display name to free up… ({elapsed}s)")
-            time.sleep(30)
-            elapsed += 30
+def semantic_model_elements(ws: str, model_id: str) -> list[dict]:
+    """Tables with their columns and measures; measure doc comments become descriptions."""
+    elements = []
+    for path, text in sorted(get_definition(ws, model_id, "TMDL").items()):
+        if not path.startswith("definition/tables/"):
             continue
-        sys.exit(f"Create Data Agent failed: {status} {body}")
+        lines = text.splitlines()
+        table = _tmdl_name(re.search(r"^table (.+)$", text, re.M).group(1))
+        children, doc = [], []
+        for n, line in enumerate(lines):
+            if line.startswith("\t///"):
+                doc.append(line[4:].strip())
+                continue
+            column = re.match(r"^\tcolumn ('[^']+'|\S+)", line)
+            measure = re.match(r"^\tmeasure ('(?:[^']|'')+'|\S+)\s*=", line)
+            if column:
+                name = _tmdl_name(column.group(1))
+                dtype = next((m.group(1) for m in (re.match(r"^\t\tdataType: (\S+)", x) for x in lines[n + 1:n + 6]) if m),
+                             None)
+                if name != "Value" or table != "_Measures":
+                    children.append({"id": element_id(model_id, table, name), "is_selected": True, "display_name": name,
+                                     "type": "semantic_model.column", "data_type": dtype,
+                                     "description": " ".join(doc) or None})
+            elif measure:
+                name = _tmdl_name(measure.group(1))
+                children.append({"id": element_id(model_id, table, name), "is_selected": True, "display_name": name,
+                                 "type": "semantic_model.measure", "description": " ".join(doc) or None})
+            if not line.startswith("\t///"):
+                doc = []
+        elements.append({"id": element_id(model_id, table), "is_selected": True, "display_name": table,
+                         "type": "semantic_model.table", "description": None, "children": children})
+    return elements
 
 
-def get_definition(ws_id: str, aid: str) -> dict:
-    status, headers, _ = _request(
-        "POST", f"{FABRIC_API}/workspaces/{ws_id}/dataAgents/{aid}/getDefinition"
-    )
-    if status not in (200, 202):
-        sys.exit(f"getDefinition failed: {status}")
-    op = headers.get("Location")
-    if not op:
-        sys.exit("getDefinition did not return an LRO Location header.")
-    elapsed = 0
-    while elapsed < 120:
-        s, _, b = _request("GET", op)
-        if s >= 400:
-            sys.exit(f"getDefinition poll failed: {s} {b}")
-        state = (b.get("status") or "").lower()
-        if state in ("succeeded", "completed"):
-            break
-        if state in ("failed", "canceled"):
-            sys.exit(f"getDefinition LRO failed: {b}")
-        time.sleep(2)
-        elapsed += 2
-    s, _, res = _request("GET", op + "/result")
-    if s >= 400:
-        sys.exit(f"getDefinition result failed: {s} {res}")
-    return res["definition"]
+def kql_elements(cluster: str, db: str, db_id: str) -> list[dict]:
+    """The portal's shape: a 'Tables' grouping of kusto.table elements with their columns.
+
+    The agent's query generator validates against these tables only — stored functions are invisible to it —
+    so the OEE functions reach it as let statements inside the example queries (see kql_fewshots)."""
+    status, _, body = request("POST", f"{cluster}/v1/rest/mgmt",
+                              {"db": db, "csl": f".show database ['{db}'] schema as json"}, resource=cluster)
+    if status >= 400:
+        sys.exit(f"KQL schema query failed: HTTP {status}: {json.dumps(body)[:500]}")
+    # The schema keys databases by internal name; the response holds just this one.
+    schema = next(iter(json.loads(body["Tables"][0]["Rows"][0][0])["Databases"].values()))["Tables"]
+    tables = []
+    for name in sorted(schema):
+        if KQL_EXCLUDE.search(name):
+            continue
+        columns = [{"id": c["Name"], "is_selected": True, "display_name": c["Name"], "type": "kusto.column",
+                    "data_type": c["Type"], "description": None} for c in schema[name]["OrderedColumns"]]
+        tables.append({"id": element_id(db_id, name), "is_selected": True, "display_name": name, "type": "kusto.table",
+                       "description": None, "children": columns})
+    return [{"id": element_id(db_id, "Tables"), "is_selected": True, "display_name": "Tables",
+             "type": "table_grouping", "description": None, "children": tables}]
 
 
-def update_definition(ws_id: str, aid: str, definition: dict) -> None:
-    status, headers, body = _request(
-        "POST",
-        f"{FABRIC_API}/workspaces/{ws_id}/dataAgents/{aid}/updateDefinition",
-        {"definition": definition},
-    )
-    if status not in (200, 202):
-        sys.exit(f"updateDefinition failed: {status} {body}")
-    if status == 202:
-        op = headers.get("Location")
-        if not op:
-            return
-        elapsed = 0
-        while elapsed < 300:
-            s, _, b = _request("GET", op)
-            if s >= 400:
-                sys.exit(f"updateDefinition poll failed: {s} {b}")
-            state = (b.get("status") or "").lower()
-            print(f"  status={state}")
-            if state in ("succeeded", "completed"):
-                return
-            if state in ("failed", "canceled"):
-                sys.exit(f"updateDefinition LRO failed: {b}")
-            time.sleep(3)
-            elapsed += 3
-        sys.exit("updateDefinition timed out")
+def kql_fewshots(cluster: str, db: str) -> list[tuple[str, str]]:
+    """KQL_FEWSHOTS with each referenced OEE function inlined as a let statement read from the database,
+    so the examples always carry the deployed definition (scripts/1-setup-fabric.sh owns it)."""
+    status, _, body = request("POST", f"{cluster}/v1/rest/mgmt", resource=cluster, body={
+        "db": db, "csl": ".show functions | where Name in ('OeeFacts', 'OeeKpis') | project Name, Parameters, Body"})
+    if status >= 400:
+        sys.exit(f"Reading the OEE functions failed: HTTP {status}: {json.dumps(body)[:500]}")
+    lets = {name: f"let {name} = {params} {fn_body.strip()};" for name, params, fn_body in body["Tables"][0]["Rows"]}
+    shots = []
+    for question, query in KQL_FEWSHOTS:
+        used = [name for name in ("OeeFacts", "OeeKpis") if re.search(rf"\b{name}\(", query)]
+        missing = [name for name in used if name not in lets]
+        if missing:
+            sys.exit(f"KQL function(s) {', '.join(missing)} not found in {db} — re-run scripts/1-setup-fabric.sh.")
+        shots.append((question, "\n".join([lets[name] for name in used] + [query])))
+    return shots
 
 
-# ─── Configuration payloads ───────────────────────────────────────────────────
+# ─── Instructions ─────────────────────────────────────────────────────────────
 
+AI_INSTRUCTIONS = """You are the plant-floor analyst for a five-line discrete manufacturing plant (Line-A to Line-E, 30 stations). You answer operators, maintenance technicians, quality engineers, line managers, and executives.
 
-AI_INSTRUCTIONS = """You are a manufacturing operations analyst for a 5-line factory OEE system. You answer questions from corp execs, plant managers, line managers, maintenance techs, and quality workers using two complementary data sources.
+## Sources and routing
+Pick the source before you query. Start with the ontology; use the others for what it can't answer.
 
-## ROUTING (decide FIRST, before anything else)
+1. OEEFactoryOntology (ontology) — START HERE. The plant's business model: entity types in five namespaces (equipment, production, maintenance, knowledge, floorops), relationships, rules, and governed metrics (__METRICS__). Use it for:
+   - what/which/who questions about lines, stations, machines, machine types, shifts, schedules, OEE targets, parts, work orders, technicians, fault types, SOPs, policies, and floor issues;
+   - relationships: a line's stations, a station's machine and SOPs, a work order's technician, the stations a part passed through (genealogy);
+   - current machine state from the time-series properties (__TIMESERIES__): the latest value per machine;
+   - rules and thresholds (Station.target_reject_rate, OeeTarget.target_oee): quote rules by name from "Business rules" below;
+   - plant-wide values of the governed metrics.
+2. OEEAnalytics (semantic model) — governed KPI measures over the full history, sliced by line, shift, station, or machine type: OEE, Availability, Performance, Quality, Rejection Rate, Throughput, Parts Finished, Schedule Adherence, MTTR (min), MTBF (min), Target OEE, OEE vs Target, OEE — Day, OEE — Night, and the floor-ops measures (Open Issues, Critical Open, Resolution Rate, Human MTTA (min), Human MTTR (min), Scrap Qty). Use its measures instead of recomputing a KPI. It has no time dimension: never use it for a time window, the latest data, or how long a condition lasted.
+3. ManufacturingEH (KQL database) — raw and live events: the latest N events, minute-level trends, KPIs for a time window (with the OeeFacts/OeeKpis definitions from its example queries), part and work-order timelines, starved/blocked cascades, and rule checks over a window.
 
-The ontology contains 6 entities: 3 operational dimensions with live telemetry (ProductionLine, Station, ProductionSchedule) and 3 static reference dimensions (Shift, MachineType, SOP). It does NOT contain MachineEvent, PartEvent, or MaintenanceEvent as entities - those are KQL tables. IssueType, Technician, and Policy are NOT ontology entities either (they would be edgeless nodes) - they live only in the KQL source as IssueTypeMaster, TechnicianMaster, and PolicyMaster.
+Split mixed questions. Example: "Which Line-B machines are down, and do they have open work orders?" → machine state from the ontology, then open work orders (latest step isn't Resolved) from the ontology or ManufacturingEH.
 
-Route to OEEManufacturingOntology when the question asks for current/recent state that can be answered as a simple Avg/Sum/Count/Max of one numeric proxy column grouped by ProductionLine, Station, or ProductionSchedule. This includes natural prompts like:
-- "Which Line-B stations are currently in Fault or Maintenance?" -> Station TimeSeries Avg(is_fault), Avg(is_maintenance), grouped by (line_id, station_position), recent window.
-- "What are current input and output buffers on Line-D?" -> Station TimeSeries Max(input_buffer_count), Max(output_buffer_count), grouped by Station.
-- "How many parts has each line completed this shift?" -> ProductionSchedule or ProductionLine Sum(is_completed), grouped by line/shift.
+Rule checks: whether a rule with a duration or a rolling window fired (OEE below 60% for more than 15 minutes or an hour, a rolling-hour reject rate, work orders within an hour) is always checked in ManufacturingEH, never inferred from a full-history KPI. If the question also asks for KPIs or targets, get those from OEEAnalytics. Pass ManufacturingEH the user's wording and the rule's threshold without prescribing a method (a window length, consecutive buckets): its example queries define each check.
 
-Route to ManufacturingEH (KQL Database) when the question needs ANY of:
-- "machine event", "part event", "maintenance event", "event", "events"
-- "latest", "most recent", "last", "newest", "newest record", "max timestamp", "min timestamp", "first", "earliest"
-- a specific part_id, work_order_id, machine_id, technician_id, ticket_id, or shift
-- downtime, MTTR, MTBF, reject reason, idle reason, machine_status text
-- "trend", "over time", "by hour", "by minute", "histogram", "distribution"
-- OEE Performance (needs MachineEventsEnriched())
-- a join across two event types, or a join between events and master data
-- arg_max, countif, bin(), or explicit time-window logic that is not the default recent window for an ontology TimeSeries aggregate
+If a source can't answer (no query, an error, a missing column), ask the next source that has the data before saying you can't. ManufacturingEH has every telemetry, part, and work-order column.
 
-Do not route to ManufacturingEH just because the question says "current", "right now", "Fault", "Maintenance", or uses the default recent window for station/line/shift state. Those simple current-state aggregates are ontology questions unless the user also asks for raw events, work orders, trends, joins, or OEE Performance.
+## KPI definitions (the same in every source)
+- Availability = avg(is_running) over machine samples; Idle (starved or blocked), Fault, and Maintenance count as not running.
+- Performance = sum(ideal_cycle_time) ÷ sum(actual_cycle_time) over Running samples with actual_cycle_time > 0, capped at 1: a ratio of sums, never an average of ratios.
+- Quality (first-pass yield) = completed ÷ (completed + rejected) station passes. Reject rate = rejected ÷ (completed + rejected), compared with the station's own target_reject_rate, not with the line's target OEE.
+- OEE = Availability × Performance × Quality.
+- Parts finished (throughput) = parts completed at the line's last station (station_count). "Parts Completed" counts every station pass; don't report it as output.
+- Schedule adherence = parts finished ÷ expected parts; expected = planned parts per 12-hour shift × minutes the line's first station reported telemetry ÷ 720.
+- MTTR = average minutes from Created to Resolved per work order. MTBF = running minutes (samples ÷ 6) ÷ work orders.
+- Time in a state = samples × 10 seconds (minutes = samples ÷ 6). Never subtract timestamps: telemetry has gaps when the plant isn't running.
 
-Mixed questions should not require the user to name a source. For example, "Which Line-B stations are currently in Fault or Maintenance, and do any of them have open work orders?" MUST be decomposed into two source calls:
-1. OEEManufacturingOntology for current Station state: filter `Station.line_id == "Line-B"`, use a recent time window, aggregate `Avg(is_fault)` and `Avg(is_maintenance)` by `(line_id, station_position)`.
-2. ManufacturingEH for MaintenanceEvents only: find open work orders whose latest `action` is not `Resolved`.
+## Identifiers
+- line_id: Line-A … Line-E. device_id: line-a-station-1 (lowercase line, then position). station_position runs 1..N in flow order; upstream = position − 1, downstream = position + 1.
+- shift: "Day" (06:00–18:00) or "Night" (18:00–06:00); event tables call it shift_id.
+- technician_id: T001–T008 (names on Technician). Fault codes (issue_type) roll up to six IssueType.category values; machine types roll up to six process families (MachineType.category).
+- Work orders move Created → Acknowledged → InProgress → Resolved. Open = the latest step isn't Resolved.
 
-Do NOT collapse that mixed prompt into one KQL query over MachineEvents. MachineEvents can technically answer current station state, but the ontology is the intended source for simple current-state station aggregates.
+## Answering
+1. Lead with the answer, then the evidence: source, filters, and time window (KPIs without a window cover all available data).
+2. For OEE, show Availability, Performance, and Quality, and name the biggest loss.
+3. A fault starves downstream stations and blocks upstream ones. Starved or blocked time counts against root_cause_device_id (rule StarvedBlockedRootCause): to find the station that caused the most, group by root_cause_device_id, never by the idle station's device_id.
+4. Current state is each machine's latest sample.
+5. Name only the sources you queried; there's no precomputed OEE table. Don't overstate empty results: say what was checked.
+6. For an SOP or policy, give its title and file_name; the full text is in the Foundry agent's search index.
+7. Label every line with its line_id, then its name as stored (Line-A — Precision Machining, from DimLine / ProductionLine line_name). Never infer either from position or order.
+8. For a duration rule, give each line's or station's minutes in breach, since when, and which tier of the rule applies.
 
-## The two sources
-
-1. OEEManufacturingOntology (ontology source) - 6 entities (3 operational + 3 reference dimensions):
-   - ProductionLine (id: line_id) - 5 lines. TimeSeries bindings to MachineEvents (cols ts_machine, is_running, is_fault, is_idle, is_maintenance, actual_cycle_time) and PartEvents (cols ts_part, is_pass, is_completed, is_rejected, cycle_time).
-   - Station (composite id: line_id + station_position) - 30 stations. Same two TS bindings, plus input_buffer_count + output_buffer_count on machine.
-   - ProductionSchedule (composite id: line_id + shift) - planned_parts per shift. TS binding to PartEvents.
-   - Reference dimensions (lakehouse-only static lookups, no live telemetry): Shift (shift, start_hour, end_hour), MachineType (machine_type, category - 6 process families), SOP (sop_id, station scope, title, file_name).
-   - Relationships (5): Station_BelongsTo_ProductionLine, ProductionSchedule_For_ProductionLine, ProductionSchedule_For_Shift, Station_Is_Of_MachineType, SOP_AppliesTo_Station. IssueType, Technician, and Policy are deliberately NOT ontology entities - they have no graph edge (their keys live only in event data), so join IssueTypeMaster / TechnicianMaster / PolicyMaster in the KQL source via NL2KQL instead.
-
-2. ManufacturingEH (KQL Database source):
-    - MachineEvents: per-machine state samples. Numeric proxies is_running, is_fault, is_idle, is_maintenance. Has actual_cycle_time. Joined to StationMaster on (line_id, station_position).
-    - MachineEventsEnriched(): view function over MachineEvents joined to StationMaster. Use whenever Performance, ideal_cycle_time, or performance_ratio is needed.
-    - PartEvents: per-part lifecycle. Numeric proxies is_pass, is_completed, is_rejected. Has cycle_time.
-    - MaintenanceEvents: per-ticket lifecycle. Use for MTTR/MTBF.
-    - StationMaster (dim): line_id, station_position, machine_type, ideal_cycle_time, manufacturer, install_year, buffer_capacity.
-    - LineMaster (dim): line_id, line_name, purpose, station_count.
-    - ProductionSchedule (dim): line_id, shift, planned_parts.
-    - ShiftMaster (dim): shift, start_hour, end_hour. Day = hours 6–18, Night = 18–6.
-    - MachineTypeMaster (dim): machine_type, category. Rolls the 30 machine types into 6 process families: Machining, Forming, Joining, Surface, Electronics, Inspection. Join on machine_type (present on MachineEvents, PartEvents, MaintenanceEvents, StationMaster).
-    - IssueTypeMaster (dim): issue_type, category. Rolls ~77 fault codes into 6 fault families: Mechanical-Wear, Jam-Feed, Fluid-Pressure, Thermal, Sensor-Vision-Calibration, Electrical-Other. Join MaintenanceEvents.issue_type. Use the category for theme/family rollups instead of the raw code.
-    - TechnicianMaster (dim): technician_id, name. T001–T008. Join MaintenanceEvents.technician_id to report a person's name instead of an ID.
-    - SopMaster (dim): sop_id, line_id, station_position, machine_type, doc_type, title, file_name. One row per station-scoped SOP/calibration doc; file_name is the PDF indexed by Azure AI Search for full-text retrieval.
-    - PolicyMaster (dim): policy_id, scope, doc_type, title, file_name. Plant-wide policy/procedure/checklist docs (e.g. OEE_Targets_and_Escalation, Safety_Lockout_Tagout_Procedure).
-    - All three event tables (MachineEvents, PartEvents, MaintenanceEvents) carry a shift_id string column ("Day"/"Night"); filter shift_id directly instead of deriving the shift from timestamp.
-    - NO precomputed OEE table is available. To compute Performance, query MachineEventsEnriched():
-    ```
-    MachineEventsEnriched()
-    | where is_running == 1
-    | summarize Performance = avg(performance_ratio) by line_id
-    ```
-
-## Hard rules
-
-- IDENTIFIER GLOSSARY (the user usually types the ID, not the descriptive name):
-  - line_id: "Line-A", "Line-B", "Line-C", "Line-D", "Line-E". When the user says "Line-C" they mean line_id == "Line-C". line_name is the descriptive label like "Welding/Assembly" - do NOT filter on line_name unless the user explicitly uses that descriptive phrase.
-  - station_position: integer 1..N within a line. When the user says "station 6" or "Leak-Test", filter on station_position (or machine_type for the named form). Do NOT filter on display names against station_position.
-  - machine_type: short string like "Leak-Test", "Curing-Oven", "CNC-Lathe". Roll up to a process family via MachineTypeMaster.category.
-  - issue_type: short fault code like "Bearing-Wear", "Coolant-Leak". Roll up to a fault family via IssueTypeMaster.category.
-  - technician_id: "T001".."T008". Join TechnicianMaster to show the technician name.
-  - shift: "Day" or "Night" ONLY (Day = hours 6–18). Event tables expose this as the shift_id column — filter shift_id == "Day"/"Night" directly. ShiftMaster holds the hour windows. There is no "Evening" shift.
-- For descriptive info about a line, station, or shift (name, purpose, station count, ideal cycle time, planned parts, manufacturer, etc.), query the dimension table DIRECTLY with a simple filter on the ID. Do NOT derive these from event tables.
-  ```
-  LineMaster | where line_id == "Line-C"
-  StationMaster | where line_id == "Line-C" and station_position == 6
-  ProductionSchedule | where line_id == "Line-A" and shift == "Day"
-  ```
-- For the ontology source, the same rule applies: filter ProductionLine on `line_id`, Station on `(line_id, station_position)`, ProductionSchedule on `(line_id, shift)`.
-- Never aggregate string columns. machine_status, idle_reason, action, event_type are strings - use is_running, is_fault, is_idle, is_maintenance, is_pass, is_completed, is_rejected. KQL DB may countif on strings.
-- OEE = Availability * Performance * Quality, composed at query time. Availability=avg(is_running) on MachineEvents. Performance=avg(performance_ratio) on MachineEventsEnriched() where is_running==1. Quality=avg(is_pass) on PartEvents where is_completed==1. Performance MUST come from the KQL DB source via MachineEventsEnriched().
-- No precomputed OEE table or view exists. There is NO `OEE_5min` view, no `OEE` table, and no materialized view of any kind - they were removed by design. NEVER cite, name, or claim a source called "OEE_5min", "OEE view", "OEE table", or any precomputed/materialized OEE artifact. When you report OEE, the source IS the live tables you actually queried (MachineEvents / MachineEventsEnriched() / PartEvents, or the ontology TimeSeries proxies). Cite only the table or view you really used; do not invent a friendlier-sounding source name.
-- Ontology TS groups on the entity id; KQL DB can group on any column.
-- For latest work-order state, keep action as a string column. Use `summarize arg_max(timestamp, *) by work_order_id`, then filter the returned `action` column. Do NOT write `last_action=arg_max(timestamp, action, ...)` and then filter `last_action`; that aliases the datetime timestamp, not the action string. Maintenance action values are Created, Acknowledged, InProgress, and Resolved. Open work orders have latest action != "Resolved".
-
-## Safe KQL patterns
-
-Open work orders for a line. Use this only for the work-order portion of a mixed prompt after the ontology has identified current station state. It returns a summary row even when no work orders are open, so an empty result is not treated as a query failure:
-```
-let open_work_orders =
-    MaintenanceEvents
-    | where line_id == "Line-B" and timestamp > ago(24h)
-    | summarize arg_max(timestamp, *) by work_order_id
-    | where action != "Resolved"
-    | project line_id, station_position, work_order_id, issue_type, work_order_action = action, technician_id, work_order_timestamp = timestamp;
-open_work_orders
-| union (
-    open_work_orders
-    | summarize open_work_order_count = count()
-    | where open_work_order_count == 0
-    | project line_id = "Line-B", station_position = int(null), work_order_id = "", issue_type = "", work_order_action = "None", technician_id = "", work_order_timestamp = datetime(null)
-)
-| order by station_position asc
-```
-
-Fault counts rolled up to the 6 engineering fault families (last 24h):
-```
-MaintenanceEvents
-| where timestamp > ago(24h) and action == "Created"
-| lookup kind=leftouter IssueTypeMaster on issue_type
-| extend category = coalesce(category, "Uncategorized")
-| summarize fault_count = count() by category
-| order by fault_count desc
-```
-
-Technician workload with names (open + resolved, last 24h):
-```
-MaintenanceEvents
-| where timestamp > ago(24h)
-| summarize create_time = minif(timestamp, action == "Created"), resolve_time = minif(timestamp, action == "Resolved"), technician_id = any(technician_id) by work_order_id
-| where isnotempty(technician_id)
-| lookup kind=leftouter TechnicianMaster on technician_id
-| extend technician = coalesce(name, technician_id)
-| summarize total = count(), open = countif(isnull(resolve_time)) by technician
-| order by total desc
-```
-
-## Domain
-
-- Line-A Precision Machining: 5 stations, bottleneck CMM-Inspection (60s ideal).
-- Line-B Sheet Metal: 4 stations, weak link Hydraulic-Press.
-- Line-C Welding/Assembly: 6 stations.
-- Line-D Surface Treatment: 7 stations, bottleneck Curing-Oven (90s ideal).
-- Line-E Electronics: 8 stations.
-
-States: Running, Idle, Fault, Blocked, Starved. Faults cascade upstream as Blocked, downstream as Starved. Maintenance: Created -> Acknowledged -> InProgress -> Resolved. Technicians T001-T008 (names in TechnicianMaster). When the user asks about fault themes or equipment families rather than individual codes, roll up via IssueTypeMaster.category and MachineTypeMaster.category. For full SOP / policy document text, map stations through SopMaster and plant-wide docs through PolicyMaster to the file_name indexed by Azure AI Search.
-
-## Response guidelines
-
-1. Always break OEE into A/P/Q so the user sees the loss component.
-2. Consider cascade effects on adjacent stations.
-3. Normalize cycle time differences across lines.
-4. Use MaintenanceEvents (KQL DB) for MTTR/MTBF.
-5. Default to most recent data when no time range is given.
-6. Do not overstate empty results. If no stations match Fault/Maintenance and no open work orders are found, say exactly that for the queried line/window. Do not infer the line is "fully operational" unless running/idle/throughput data was also checked.
+## Ontology notes
+- Entity names are namespaced (equipment#Station). Station is the process position (key device_id, the same as its machine's).
+- PartPass and MaintenanceEvent are keyless events: one row per station pass and per work-order step. SOP and Policy derive from Document; query SOP or Policy directly, because querying Document returns neither.
+- Support group by in GQL.
 """
+MODEL_INSTRUCTIONS = (
+    "Governed KPI measures in a Direct Lake model. Use the measures (OEE, Availability, Performance, Quality, "
+    "Rejection Rate, Throughput, Parts Finished, Schedule Adherence, MTTR (min), MTBF (min), Target OEE, "
+    "OEE vs Target), sliced by DimLine, DimShift, DimMachineType, and StationDim; never recompute a measure from "
+    "fact columns. Group lines by DimLine[line_id] and show DimLine[line_name] next to it. The model has no date "
+    "dimension, so measures cover the full history. Time windows, the latest data, and how long a condition "
+    "lasted (such as OEE below 60% for more than 15 minutes) belong to ManufacturingEH: don't approximate them "
+    "with timestamp filters or report from these measures whether a duration rule fired."
+)
+KQL_INSTRUCTIONS = (
+    "Raw and live events: MachineEvents (a sample per station about every 10 seconds), PartEvents, "
+    "MaintenanceEvents (work-order steps), the derived WorkOrders, Parts, and PartPasses, and master tables. "
+    "For OEE, Availability, Performance, or Quality over a window, follow the OEE example queries exactly: start "
+    "from their 'let OeeFacts = ...;' and 'let OeeKpis = ...;' definitions, copied unchanged, then "
+    "OeeFacts(start, end[, bucket]) | summarize samples = sum(samples), running = sum(running), ideal = sum(ideal), "
+    "actual = sum(actual), completed = sum(completed), rejected = sum(rejected) by <grain> | invoke OeeKpis(). "
+    "'The latest hour of data' ends at the latest event: toscalar(MachineEvents | summarize max(timestamp)), or "
+    "max(passed_at) for PartPasses. ago() windows end now and are empty when nothing is streaming; if one returns "
+    "nothing, say when the latest event was. "
+    "Duration rules (OEE below 60% for more than 15 minutes) use OEE in 5-minute buckets as in the example "
+    "queries: below 60% since the bucket after the last one at or above 60%, measured to the latest event, not by "
+    "numbering consecutive rows. A bucket with Availability 0 counts as OEE 0. "
+    "Open work orders: summarize arg_max(timestamp, *) by work_order_id, then action != 'Resolved'. "
+    "Starved and Blocked time belongs to root_cause_device_id (rule StarvedBlockedRootCause), not to the idle "
+    "device_id; group by it as in its example query. "
+    "Fault codes roll up with IssueTypeMaster.category and machine types with MachineTypeMaster.category; "
+    "TechnicianMaster.name has technician names; StationMaster has each station's ideal_cycle_time and "
+    "target_reject_rate."
+)
+
+_OEE_SUMS = ("samples = sum(samples), running = sum(running), ideal = sum(ideal), actual = sum(actual), "
+             "completed = sum(completed), rejected = sum(rejected)")
 
 
-NEW_ONTOLOGY_ELEMENTS = [
-    {
-        "id": "ProductionLine",
-        "is_selected": True,
-        "display_name": "ProductionLine",
-        "type": "ontology.entity",
-        "description": "line_id,line_name,purpose,station_count,ts_machine,is_running,is_fault,is_idle,is_maintenance,actual_cycle_time,ts_part,is_pass,is_completed,is_rejected,cycle_time",
-        "children": [],
-    },
-    {
-        "id": "Station",
-        "is_selected": True,
-        "display_name": "Station",
-        "type": "ontology.entity",
-        "description": "line_id,station_position,machine_type,ideal_cycle_time,manufacturer,install_year,buffer_capacity,ts_machine,is_running,is_fault,is_idle,is_maintenance,actual_cycle_time,input_buffer_count,output_buffer_count,ts_part,is_pass,is_completed,is_rejected,cycle_time",
-        "children": [],
-    },
-    {
-        "id": "ProductionSchedule",
-        "is_selected": True,
-        "display_name": "ProductionSchedule",
-        "type": "ontology.entity",
-        "description": "line_id,shift,planned_parts,timestamp,is_pass,is_completed,is_rejected",
-        "children": [],
-    },
-    {
-        "id": "Shift",
-        "is_selected": True,
-        "display_name": "Shift",
-        "type": "ontology.entity",
-        "description": "shift,start_hour,end_hour",
-        "children": [],
-    },
-    {
-        "id": "MachineType",
-        "is_selected": True,
-        "display_name": "MachineType",
-        "type": "ontology.entity",
-        "description": "machine_type,category",
-        "children": [],
-    },
-    {
-        "id": "SOP",
-        "is_selected": True,
-        "display_name": "SOP",
-        "type": "ontology.entity",
-        "description": "sop_id,line_id,station_position,machine_type,doc_type,title,file_name",
-        "children": [],
-    },
+def _below_60_query(keys: str) -> str:
+    """How long each line or station has stayed below 60% OEE, from the last 5-minute bucket at or above it."""
+    return ("let LatestEvent = toscalar(MachineEvents | summarize max(timestamp));\n"
+            f"OeeFacts(LatestEvent - 3h, LatestEvent, 5m)\n| summarize {_OEE_SUMS} by bucket_start, {keys}\n"
+            "| invoke OeeKpis()\n| extend OEE = iff(Availability == 0, 0.0, OEE)\n"
+            "| summarize last_at_or_above_60 = maxif(bucket_start, OEE >= 0.6), first_bucket = min(bucket_start), "
+            f"arg_max(bucket_start, OEE) by {keys}\n"
+            "| extend below_60_since = iff(OEE >= 0.6, datetime(null), "
+            "iff(isnull(last_at_or_above_60), first_bucket, last_at_or_above_60 + 5m))\n"
+            "| extend minutes_below_60 = iff(isnull(below_60_since), 0, "
+            "datetime_diff('minute', LatestEvent, below_60_since))\n"
+            "| lookup kind=leftouter (LineMaster | project line_id, line_name) on line_id\n"
+            f"| project {keys}, line_name, latest_5m_oee = round(OEE, 3), below_60_since, minutes_below_60, "
+            "over_15_minutes = minutes_below_60 > 15, over_1_hour = minutes_below_60 > 60, "
+            "window_start = LatestEvent - 3h, window_end = LatestEvent\n"
+            "| order by minutes_below_60 desc")
+
+
+KQL_FEWSHOTS = [
+    ("What is Performance by line over the last hour?",
+     f"OeeFacts(ago(1h), now())\n| summarize {_OEE_SUMS} by line_id\n| invoke OeeKpis()\n"
+     "| project line_id, Performance\n| order by line_id asc"),
+    ("What is OEE by line for the last 8 hours, broken into availability, performance, and quality?",
+     f"OeeFacts(ago(8h), now())\n| summarize {_OEE_SUMS} by line_id\n| invoke OeeKpis()\n"
+     "| project line_id, Availability, Performance, Quality, OEE\n| order by OEE asc"),
+    ("What is OEE by line over the latest hour of data, with its biggest loss, flagging any line under 60%?",
+     "let LatestEvent = toscalar(MachineEvents | summarize max(timestamp));\n"
+     f"OeeFacts(LatestEvent - 1h, LatestEvent)\n| summarize {_OEE_SUMS} by line_id\n| invoke OeeKpis()\n"
+     "| extend biggest_loss = case(Availability <= Performance and Availability <= Quality, \"Availability\", "
+     "Performance <= Quality, \"Performance\", \"Quality\"), below_60 = OEE < 0.6\n"
+     "| lookup kind=leftouter (LineMaster | project line_id, line_name) on line_id\n"
+     "| project line_id, line_name, Availability, Performance, Quality, OEE, biggest_loss, below_60, "
+     "window_start = LatestEvent - 1h, window_end = LatestEvent\n| order by OEE asc"),
+    ("Show OEE by line in 15-minute intervals for the last 4 hours.",
+     f"OeeFacts(ago(4h), now(), 15m)\n| summarize {_OEE_SUMS} by bucket_start, line_id\n| invoke OeeKpis()\n"
+     "| project bucket_start, line_id, OEE\n| order by bucket_start asc, line_id asc"),
+    ("Which lines' OEE has stayed below 60% for more than 15 minutes, or more than an hour, in the latest data, "
+     "and since when?",
+     _below_60_query("line_id")),
+    ("Which stations' OEE has stayed below 60% for more than 15 minutes in the latest data, and since when?",
+     _below_60_query("line_id, device_id")),
+    ("What is schedule adherence by line and shift for the last 8 hours?",
+     "let Window = 8h;\nlet LastStation = LineMaster | project line_id, last_station = station_count;\n"
+     "let Finished = PartEvents\n| where timestamp > ago(Window) and action == \"completed\"\n"
+     "| join kind=inner LastStation on line_id\n| where station_position == last_station\n"
+     "| summarize finished_parts = count() by line_id, shift = shift_id;\n"
+     "let RunMinutes = MachineEvents\n| where timestamp > ago(Window) and station_position == 1\n"
+     "| summarize minutes_run = count_distinct(bin(timestamp, 1m)) by line_id, shift = shift_id;\n"
+     "RunMinutes\n| join kind=leftouter Finished on line_id, shift\n| join kind=inner ProductionSchedule on line_id, shift\n"
+     "| extend finished_parts = coalesce(finished_parts, 0), expected_parts = planned_parts * minutes_run / 720.0\n"
+     "| project line_id, shift, finished_parts, expected_parts = round(expected_parts, 0), "
+     "adherence_pct = round(100.0 * finished_parts / expected_parts, 1)\n| order by line_id asc, shift asc"),
+    ("Show open work orders on Line-B.",
+     "MaintenanceEvents\n| where line_id == \"Line-B\"\n| summarize arg_max(timestamp, *) by work_order_id\n"
+     "| where action != \"Resolved\"\n| lookup kind=leftouter TechnicianMaster on technician_id\n"
+     "| project work_order_id, device_id, issue_type, current_step = action, technician = coalesce(name, technician_id), "
+     "since = timestamp\n| order by since asc"),
+    ("Which stations were starved or blocked in the last 15 minutes, and which station caused it?",
+     "MachineEvents\n| where timestamp > ago(15m) and idle_reason in (\"Starved\", \"Blocked\")\n"
+     "| summarize samples = count(), last_seen = max(timestamp) by line_id, device_id, idle_reason, root_cause_device_id\n"
+     "| order by samples desc"),
+    ("Which station caused the most starved or blocked idle time on Line-B, and on which stations?",
+     "MachineEvents\n| where line_id == \"Line-B\" and idle_reason in (\"Starved\", \"Blocked\") "
+     "and isnotempty(root_cause_device_id)\n"
+     "| summarize samples = count() by root_cause_device_id, device_id, idle_reason\n"
+     "| summarize idle_minutes_caused = round(sum(samples) / 6.0, 1), "
+     "affected = make_list(strcat(device_id, \" \", idle_reason, \" \", round(samples / 6.0, 1), \" min\")) "
+     "by root_cause_device_id\n"
+     "| order by idle_minutes_caused desc"),
+    ("Which stations' reject rate over the last hour is more than twice their target reject rate?",
+     "PartPasses\n| where passed_at > ago(1h)\n"
+     "| summarize completed = sum(is_completed), rejected = sum(is_rejected) by line_id, device_id\n"
+     "| lookup kind=inner (StationMaster | project device_id, target_reject_rate) on device_id\n"
+     "| extend reject_rate = todouble(rejected) / (completed + rejected)\n"
+     "| where rejected > 0 and reject_rate > 2 * target_reject_rate\n"
+     "| project line_id, device_id, completed, rejected, reject_rate = round(reject_rate, 3), target_reject_rate, "
+     "quarantine_threshold = 2 * target_reject_rate\n| order by reject_rate desc"),
+    ("Show the hourly reject-rate trend of line-e-station-4 over the latest 12 hours of data, with its target.",
+     "let LatestPass = toscalar(PartPasses | summarize max(passed_at));\n"
+     "PartPasses\n| where device_id == \"line-e-station-4\" and passed_at > LatestPass - 12h\n"
+     "| summarize completed = sum(is_completed), rejected = sum(is_rejected) by hour = bin(passed_at, 1h)\n"
+     "| extend reject_rate = round(todouble(rejected) / (completed + rejected), 3)\n"
+     "| extend target_reject_rate = toscalar(StationMaster | where device_id == \"line-e-station-4\" "
+     "| project target_reject_rate)\n| order by hour asc"),
+    ("How many faults happened today by fault family?",
+     "MaintenanceEvents\n| where timestamp > startofday(now()) and action == \"Created\"\n"
+     "| lookup kind=leftouter IssueTypeMaster on issue_type\n| summarize faults = count() by category = coalesce(category, \"Uncategorized\")\n"
+     "| order by faults desc"),
+]
+
+SMOKE_QUESTIONS = [
+    "Which stations are on Line-C, and what machine type runs at each?",
+    "What is the current status of each machine on Line-B?",
+    "What is OEE by line, with availability, performance, and quality?",
+    "Show the five most recent maintenance events on Line-B.",
+    "What should happen when a line's OEE falls below its target?",
 ]
 
 
-KUSTO_DS_TEMPLATE = {
-    "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/dataAgent/definition/dataSource/1.0.0/schema.json",
-    "artifactId": "",   # filled in at runtime from resolve_kql_db
-    "workspaceId": "",  # filled in at runtime from resolve_workspace
-    "dataSourceInstructions": (
-        "Live OEE event store. Use NL2KQL for: single-record lookups (specific "
-        "part_id, specific work_order_id), joins across tables, countif on string "
-        "columns (machine_status, idle_reason, action), arg_max for "
-        "latest-state-per-key, bin() time series, and OEE Performance "
-        "(MachineEventsEnriched() view function gives performance_ratio + "
-        "ideal_cycle_time). Silver tables already have numeric proxy columns. "
-        "Do not use this KQL source for simple current station/line/shift "
-        "state that the ontology can answer with numeric proxy aggregates; "
-        "for mixed prompts, use KQL only for the event-detail or work-order "
-        "portion after ontology current-state lookup. "
-        "For open work orders, use summarize arg_max(timestamp, *) by "
-        "work_order_id, then filter action != 'Resolved'; never alias "
-        "arg_max as last_action because that names the datetime. "
-        "Join dimension tables for rollups and friendly labels: "
-        "MaintenanceEvents.issue_type -> IssueTypeMaster.category (6 fault "
-        "families), .technician_id -> TechnicianMaster.name; machine_type -> "
-        "MachineTypeMaster.category (6 process families); shift_id ('Day'/'Night') "
-        "is already a column on every event table. SopMaster and PolicyMaster "
-        "map a station or plant-wide policy to the knowledge-doc file_name. "
-        "Compose OEE on the fly: Availability=avg(is_running), "
-        "Performance=avg(performance_ratio) where is_running==1, "
-        "Quality=avg(is_pass) where is_completed==1."
-    ),
-    "displayName": "ManufacturingEH",
-    "type": "kusto",
-    "userDescription": None,
-    "metadata": {},
-    "elements": [
-        {"id": "MachineEvents", "is_selected": True, "display_name": "MachineEvents", "type": "kusto.table"},
-        {"id": "PartEvents", "is_selected": True, "display_name": "PartEvents", "type": "kusto.table"},
-        {"id": "MaintenanceEvents", "is_selected": True, "display_name": "MaintenanceEvents", "type": "kusto.table"},
-        {"id": "StationMaster", "is_selected": True, "display_name": "StationMaster", "type": "kusto.table"},
-        {"id": "LineMaster", "is_selected": True, "display_name": "LineMaster", "type": "kusto.table"},
-        {"id": "ProductionSchedule", "is_selected": True, "display_name": "ProductionSchedule", "type": "kusto.table"},
-        {"id": "ShiftMaster", "is_selected": True, "display_name": "ShiftMaster", "type": "kusto.table"},
-        {"id": "MachineTypeMaster", "is_selected": True, "display_name": "MachineTypeMaster", "type": "kusto.table"},
-        {"id": "IssueTypeMaster", "is_selected": True, "display_name": "IssueTypeMaster", "type": "kusto.table"},
-        {"id": "TechnicianMaster", "is_selected": True, "display_name": "TechnicianMaster", "type": "kusto.table"},
-        {"id": "SopMaster", "is_selected": True, "display_name": "SopMaster", "type": "kusto.table"},
-        {"id": "PolicyMaster", "is_selected": True, "display_name": "PolicyMaster", "type": "kusto.table"},
-    ],
-}
+# ─── Definition ───────────────────────────────────────────────────────────────
+
+
+def datasource(ds_type: str, artifact: str, ws: str, name: str, instructions: str, elements: list[dict]) -> dict:
+    return {"$schema": f"{SCHEMA_BASE}/dataSource/1.0.0/schema.json", "artifactId": artifact, "workspaceId": ws,
+            "dataSourceInstructions": instructions, "displayName": name, "type": ds_type, "userDescription": None,
+            "metadata": {}, "elements": elements}
+
+
+def ontology_source(artifact: str, ws: str, name: str, elements: list[dict]) -> dict:
+    """New-experience ontologies use their own part (ontologies/<name>/ontology.json), not a datasource.json."""
+    return {"$schema": f"{SCHEMA_BASE}/ontology/1.0.0/schema.json", "artifactId": artifact, "workspaceId": ws,
+            "displayName": name, "elements": elements, "entitiesWithUserAuthoredDescriptions": []}
+
+
+def build_definition(sources: list[tuple[str, dict, list | None]], publish: bool, description: str,
+                     instructions: str) -> list[dict]:
+    """sources: (path within the stage folder, body, fewshots or None). Draft always; published when publishing."""
+    files = {"Files/Config/data_agent.json": {"$schema": f"{SCHEMA_BASE}/dataAgent/2.1.0/schema.json"}}
+    stages = ["draft", "published"] if publish else ["draft"]
+    for stage in stages:
+        files[f"Files/Config/{stage}/stage_config.json"] = {
+            "$schema": f"{SCHEMA_BASE}/stageConfiguration/1.0.0/schema.json", "aiInstructions": instructions}
+        for relpath, body, fewshots in sources:
+            files[f"Files/Config/{stage}/{relpath}"] = body
+            if fewshots:
+                files[f"Files/Config/{stage}/{relpath.rsplit('/', 1)[0]}/fewshots.json"] = {
+                    "$schema": f"{SCHEMA_BASE}/fewShots/1.0.0/schema.json",
+                    "fewShots": [{"id": element_id("fewshot", q), "question": q, "query": k} for q, k in fewshots]}
+    if publish:
+        files["Files/Config/publish_info.json"] = {"$schema": f"{SCHEMA_BASE}/publishInfo/1.0.0/schema.json",
+                                                   "description": description}
+    return [{"path": path, "payloadType": "InlineBase64",
+             "payload": base64.b64encode(json.dumps(body, indent=2, ensure_ascii=False).encode("utf-8")).decode()}
+            for path, body in files.items()]
+
+
+def create_agent(ws: str, name: str) -> str:
+    waited = 0
+    while True:
+        status, headers, body = request("POST", f"{FABRIC_API}/workspaces/{ws}/items", {"displayName": name, "type": "DataAgent"})
+        if status in (200, 201):
+            return body["id"]
+        if status == 202:
+            post_lro_wait(headers)
+            return require_item(ws, "DataAgent", name, "the create operation finished but the item isn't listed yet")
+        if "NotAvailableYet" in json.dumps(body) and waited < 600:
+            log(f"  waiting for the display name to free up… ({waited}s)")
+            time.sleep(30)
+            waited += 30
+            continue
+        sys.exit(f"Create Data Agent failed: HTTP {status}: {body.get('message') or body}")
+
+
+def post_lro_wait(headers: dict, timeout: int = 300) -> None:
+    op, waited = headers.get("x-ms-operation-id"), 0
+    while op and waited < timeout:
+        time.sleep(3)
+        waited += 3
+        _, _, state = request("GET", f"{FABRIC_API}/operations/{op}")
+        if (state.get("status") or "").lower() in ("succeeded", "failed", "cancelled", "canceled"):
+            return
+
+
+# ─── Smoke test (the published agent's OpenAI-Assistants-compatible endpoint) ──
+
+
+def ask(ws: str, agent: str, question: str, timeout: int = 300) -> bool:
+    base = f"{FABRIC_API}/workspaces/{ws}/dataagents/{agent}/aiassistant/openai"
+
+    def call(method: str, path: str, body=None) -> dict:
+        sep = "&" if "?" in path else "?"
+        status, _, out = request(method, f"{base}/{path}{sep}api-version={ASSISTANT_API_VERSION}", body)
+        if status >= 400:
+            raise RuntimeError(f"{method} {path} → HTTP {status}: {json.dumps(out)[:600]}")
+        return out
+
+    log(f"\n? {question}")
+    try:
+        assistant = call("POST", "assistants", {"model": "not used"})
+        thread = call("POST", "threads", {})
+        call("POST", f"threads/{thread['id']}/messages", {"role": "user", "content": question})
+        run = call("POST", f"threads/{thread['id']}/runs", {"assistant_id": assistant["id"]})
+        started = time.time()
+        while run.get("status") in ("queued", "in_progress", "requires_action") and time.time() - started < timeout:
+            time.sleep(3)
+            run = call("GET", f"threads/{thread['id']}/runs/{run['id']}")
+        routes = []
+        for step in call("GET", f"threads/{thread['id']}/runs/{run['id']}/steps?order=asc").get("data", []):
+            for tc in (step.get("step_details") or {}).get("tool_calls") or []:
+                fn = tc.get("function") or {}
+                try:
+                    args = json.loads(fn.get("arguments") or "{}")
+                except json.JSONDecodeError:
+                    args = {}
+                if "datasource_type" in args and "fewshots" not in fn.get("name", ""):
+                    route = f"{args.get('datasource_type', '?')}:{args.get('datasource_name', '?')}"
+                    if route not in routes:
+                        routes.append(route)
+        answer = ""
+        for message in call("GET", f"threads/{thread['id']}/messages?order=asc").get("data", []):
+            if message.get("role") == "assistant":
+                answer = " ".join(c["text"]["value"] for c in message.get("content", []) if c.get("type") == "text")
+        call("DELETE", f"threads/{thread['id']}")
+    except (RuntimeError, OSError, http.client.HTTPException) as err:
+        log(f"  ✗ {err}")
+        return False
+    log(f"  sources: {', '.join(routes) or 'none'}   ({run.get('status')}, {time.time() - started:.0f}s)")
+    log("  " + answer.strip().replace("\n", "\n  ")[:1500])
+    return run.get("status") == "completed" and bool(answer.strip())
 
 
 # ─── CLI ──────────────────────────────────────────────────────────────────────
 
 
-def _ontology_part_path(ontology_name: str) -> str:
-    return f"Files/Config/draft/ontology-{ontology_name}/datasource.json"
-
-
-def _kusto_part_path(kql_db_name: str) -> str:
-    return f"Files/Config/draft/kusto-{kql_db_name}/datasource.json"
-
-
-def build_kusto_ds(ws_id: str, kql_db_id: str, kql_db_name: str) -> dict:
-    ds = json.loads(json.dumps(KUSTO_DS_TEMPLATE))
-    ds["artifactId"] = kql_db_id
-    ds["workspaceId"] = ws_id
-    ds["displayName"] = kql_db_name
-    return ds
-
-
 def main() -> int:
-    ap = argparse.ArgumentParser(
-        description=__doc__,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    ap.add_argument("--workspace-name", required=True,
-                    help="Fabric workspace display name or GUID")
-    ap.add_argument("--data-agent-name", default=DEFAULT_DATA_AGENT_NAME,
-                    help=f"Data Agent display name (default: {DEFAULT_DATA_AGENT_NAME})")
-    ap.add_argument("--kql-db-name", default=DEFAULT_KQL_DB_NAME,
-                    help=f"KQL Database display name to attach (default: {DEFAULT_KQL_DB_NAME})")
-    ap.add_argument("--ontology-name", default=DEFAULT_ONTOLOGY_NAME,
-                    help=f"Ontology display name whose element selection to refresh (default: {DEFAULT_ONTOLOGY_NAME})")
-    ap.add_argument("--recreate", action="store_true",
-                    help="Delete the existing Data Agent and recreate from scratch")
-    ap.add_argument("--step", choices=["elements", "instructions", "kusto", "all"],
-                    default="all",
-                    help="Limit which part of the definition to mutate (default: all)")
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="replace")
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--workspace-name", required=True, help="Fabric workspace display name or GUID")
+    ap.add_argument("--data-agent-name", default=DEFAULTS["agent"])
+    ap.add_argument("--ontology-name", default=DEFAULTS["ontology"])
+    ap.add_argument("--semantic-model-name", default=DEFAULTS["model"])
+    ap.add_argument("--kql-db-name", default=DEFAULTS["kql"])
+    ap.add_argument("--graph", action="store_true",
+                    help="Also add the ontology's materialized graph as a separate GQL source")
+    ap.add_argument("--graph-name", help="GraphModel to add as a GQL source (implies --graph)")
+    ap.add_argument("--draft-only", action="store_true", help="Update the draft without publishing")
+    ap.add_argument("--recreate", action="store_true", help="Delete the existing Data Agent and create it again")
+    ap.add_argument("--smoke", action="store_true", help="Ask the published agent one question per source")
+    ap.add_argument("--ask", action="append", default=[], help="Ask the published agent a question (repeatable)")
     args = ap.parse_args()
 
-    ws_id = resolve_workspace(args.workspace_name)
-    print(f"✓ Workspace:      {args.workspace_name} ({ws_id})")
+    ws = next((w["id"] for w in get_all("workspaces") if args.workspace_name in (w["displayName"], w["id"])), None) \
+        or sys.exit(f"Workspace {args.workspace_name!r} not found.")
+    log(f"✓ Workspace:       {args.workspace_name} ({ws})")
 
-    kql_db_id = resolve_kql_db(ws_id, args.kql_db_name)
-    print(f"✓ KQL Database:   {args.kql_db_name} ({kql_db_id})")
+    sources: list[tuple[str, dict, list | None]] = []
+    ontology_id = require_item(ws, "Ontology", args.ontology_name, "run scripts/6-publish-ontology.py first")
+    entities, rules, facts = ontology_context(ws, ontology_id)
+    sources.append((f"ontologies/{args.ontology_name}/ontology.json",
+                    ontology_source(ontology_id, ws, args.ontology_name, entities), None))
+    log(f"✓ Ontology:        {args.ontology_name} ({len(entities)} entity types, {len(rules)} rules)")
 
-    aid = find_item(ws_id, "DataAgent", args.data_agent_name)
-    if aid and args.recreate:
-        print(f"… Deleting existing Data Agent {aid}")
-        rc = fabric_delete(f"workspaces/{ws_id}/items/{aid}")
-        if rc >= 400:
-            sys.exit(f"DELETE failed: HTTP {rc}")
-        aid = None
-
-    if not aid:
-        print(f"… Creating Data Agent {args.data_agent_name!r}")
-        aid = create_data_agent(ws_id, args.data_agent_name)
-        print(f"✓ Data Agent created ({aid})")
-        # Allow a moment for the draft layout to materialise before fetching.
-        time.sleep(5)
+    model_id = find_item(ws, "SemanticModel", args.semantic_model_name)
+    if model_id:
+        tables = semantic_model_elements(ws, model_id)
+        sources.append((f"semantic-model-{args.semantic_model_name}/datasource.json",
+                        datasource("semantic_model", model_id, ws, args.semantic_model_name, MODEL_INSTRUCTIONS, tables),
+                        None))
+        log(f"✓ Semantic model:  {args.semantic_model_name} ({len(tables)} tables, "
+            f"{sum(1 for t in tables for c in t['children'] if c['type'] == 'semantic_model.measure')} measures)")
     else:
-        print(f"✓ Data Agent:     {args.data_agent_name} ({aid})")
+        log(f"! Semantic model {args.semantic_model_name!r} not found — run scripts/4-setup-powerbi.sh, then re-run this script")
 
-    print("… GET current definition")
-    d = get_definition(ws_id, aid)
-    parts_by_path = {p["path"]: p for p in d["parts"]}
-    print(f"  {len(d['parts'])} parts: {sorted(parts_by_path.keys())}")
+    db = next((d for d in get_all(f"workspaces/{ws}/kqlDatabases") if d["displayName"] == args.kql_db_name), None) \
+        or sys.exit(f"KQL database {args.kql_db_name!r} not found — run scripts/1-setup-fabric.sh first.")
+    cluster = db["properties"]["queryServiceUri"]
+    kql = kql_elements(cluster, args.kql_db_name, db["id"])
+    fewshots = kql_fewshots(cluster, args.kql_db_name)
+    sources.append((f"kusto-{args.kql_db_name}/datasource.json",
+                    datasource("kusto", db["id"], ws, args.kql_db_name, KQL_INSTRUCTIONS, kql), fewshots))
+    log(f"✓ KQL database:    {args.kql_db_name} ({len(kql[0]['children'])} tables, {len(fewshots)} example queries)")
 
-    if args.step in ("elements", "all"):
-        ont_path = _ontology_part_path(args.ontology_name)
-        if ont_path in parts_by_path:
-            print(f"… Replace ontology elements ({args.ontology_name})")
-            p = parts_by_path[ont_path]
-            j = decode(p)
-            j["elements"] = NEW_ONTOLOGY_ELEMENTS
-            p["payload"] = b64(j)
-        else:
-            print(f"! Ontology source {args.ontology_name!r} is not attached — "
-                  f"attach it once via the Fabric portal (OneLake catalog) and re-run.")
+    if args.graph or args.graph_name:
+        graphs = get_all(f"workspaces/{ws}/items?type=GraphModel")
+        graph = next((g for g in graphs if g["displayName"] == args.graph_name), None) if args.graph_name else \
+            next((g for g in graphs if g["displayName"].startswith(f"{args.ontology_name}_graph")), None)
+        if not graph:
+            sys.exit(f"GraphModel {args.graph_name or args.ontology_name + '_graph*'!r} not found — materialize the "
+                     "ontology's graph first (ontology → Manage graph).")
+        sources.append((f"graph-{graph['displayName']}/datasource.json",
+                        datasource("graph", graph["id"], ws, graph["displayName"],
+                                   "The ontology's materialized graph. Use GQL for multi-hop traversals: part genealogy "
+                                   "across stations, a fault's upstream and downstream reach, SOPs along a path.", []),
+                        None))
+        log(f"✓ Graph:           {graph['displayName']}")
 
-    if args.step in ("instructions", "all"):
-        stage_path = "Files/Config/draft/stage_config.json"
-        if stage_path in parts_by_path:
-            print("… Replace aiInstructions")
-            p = parts_by_path[stage_path]
-            j = decode(p)
-            j["aiInstructions"] = AI_INSTRUCTIONS
-            p["payload"] = b64(j)
-        else:
-            print("… Create stage_config.json with aiInstructions")
-            d["parts"].append({
-                "path": stage_path,
-                "payloadType": "InlineBase64",
-                "payload": b64({"aiInstructions": AI_INSTRUCTIONS}),
-            })
+    agent = find_item(ws, "DataAgent", args.data_agent_name)
+    if agent and args.recreate:
+        log(f"… Deleting Data Agent {agent}")
+        status, _, _ = request("DELETE", f"{FABRIC_API}/workspaces/{ws}/items/{agent}")
+        if status >= 400:
+            sys.exit(f"DELETE failed: HTTP {status}")
+        agent = None
+    if not agent:
+        log(f"… Creating Data Agent {args.data_agent_name!r}")
+        agent = create_agent(ws, args.data_agent_name)
 
-    if args.step in ("kusto", "all"):
-        kusto_path = _kusto_part_path(args.kql_db_name)
-        kusto_ds = build_kusto_ds(ws_id, kql_db_id, args.kql_db_name)
-        if kusto_path in parts_by_path:
-            print(f"… Replace kusto-{args.kql_db_name}")
-            parts_by_path[kusto_path]["payload"] = b64(kusto_ds)
-        else:
-            print(f"… Add kusto-{args.kql_db_name}")
-            d["parts"].append({
-                "path": kusto_path,
-                "payloadType": "InlineBase64",
-                "payload": b64(kusto_ds),
-            })
+    publish = not args.draft_only
+    description = (f"OEE plant-floor analyst: {args.ontology_name} ontology first, governed KPIs from "
+                   f"{args.semantic_model_name}, live events from {args.kql_db_name}.")
+    parts = build_definition(sources, publish, description, render_instructions(rules, facts, args.ontology_name))
+    if not publish:
+        # updateDefinition replaces every part, so carry the published copy over untouched.
+        current = get_definition(ws, agent)
+        parts += [{"path": path, "payloadType": "InlineBase64",
+                   "payload": base64.b64encode(text.encode("utf-8")).decode()}
+                  for path, text in current.items()
+                  if path.startswith("Files/Config/published/") or path == "Files/Config/publish_info.json"]
+    post_lro(f"workspaces/{ws}/items/{agent}/updateDefinition", {"definition": {"parts": parts}})
+    # Folder names get normalized by the service, so compare what each stored source points at.
+    def kind(path: str, body: dict) -> str | None:
+        return "ontology" if path.endswith("/ontology.json") else body.get("type")
 
-    print(f"… Pushing {len(d['parts'])} parts")
-    update_definition(ws_id, aid, d)
-    print(f"✓ Data Agent configured ({args.data_agent_name})")
-    print()
-    print("Next step: open the Data Agent in the Fabric portal and click **Publish**.")
-    print("The Foundry agent can only connect to a published Fabric Data Agent endpoint.")
-    return 0
+    stored = {(path.split("/")[2], kind(path, body), body.get("artifactId"))
+              for path, text in get_definition(ws, agent).items()
+              if path.endswith(("/datasource.json", "/ontology.json")) for body in [json.loads(text)]}
+    expected = {(stage, kind(relpath, body), body["artifactId"])
+                for stage in (["draft", "published"] if publish else ["draft"]) for relpath, body, _ in sources}
+    if expected - stored:
+        sys.exit(f"✗ The service didn't keep these sources: {sorted(expected - stored)}")
+    log(f"✓ Data Agent {'published' if publish else 'draft updated'}: {args.data_agent_name} ({agent}) — "
+        f"{len(sources)} sources")
+
+    questions = (SMOKE_QUESTIONS if args.smoke else []) + args.ask
+    if questions and not publish:
+        log("! --smoke/--ask query the published agent; publishing was skipped (--draft-only)")
+    ok = all([ask(ws, agent, q) for q in questions])
+    if questions:
+        log("\n✓ Smoke test passed" if ok else "\n✗ Smoke test: some questions failed")
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":

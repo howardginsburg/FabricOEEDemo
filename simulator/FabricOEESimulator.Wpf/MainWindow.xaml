@@ -218,6 +218,36 @@
                                    Converter={StaticResource BoolToVisibility},
                                    ConverterParameter=Invert}"/>
 
+                        <!-- Demo Scenarios (act on the selected station while running) -->
+                        <StackPanel Visibility="{Binding SelectedStation, Converter={StaticResource BoolToVisibility}}">
+                            <TextBlock Text="Demo Scenarios" Style="{StaticResource SubHeaderText}" Margin="0,16,0,2"/>
+                            <TextBlock Text="Drive events on this station (simulation must be running)."
+                                       Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                            <UniformGrid Columns="2">
+                                <Button Content="Fault now" Command="{Binding FaultNowCommand}"
+                                        Style="{StaticResource FactoryButton}" Margin="0,0,4,4"
+                                        ToolTip="Fault immediately, then a normal work-order lifecycle"/>
+                                <Button Content="Repeat faults" Command="{Binding RepeatFaultsCommand}"
+                                        Style="{StaticResource FactoryButton}" Margin="4,0,0,4"
+                                        ToolTip="Back-to-back faults with quick repairs (repeat-fault escalation)"/>
+                                <Button Content="Long outage" Command="{Binding LongOutageCommand}"
+                                        Style="{StaticResource FactoryButton}" Margin="0,0,4,4"
+                                        ToolTip="Fault held down past 5 minutes (bottleneck-downtime escalation)"/>
+                                <Button Content="Reject spike" Command="{Binding RejectSpikeCommand}"
+                                        Style="{StaticResource FactoryButton}" Margin="4,0,0,4"
+                                        ToolTip="Raise the reject rate for a while (quality quarantine rule)"/>
+                                <Button Content="Slow cycles" Command="{Binding SlowCyclesCommand}"
+                                        Style="{StaticResource FactoryButton}" Margin="0,0,4,4"
+                                        ToolTip="Stretch cycle times for a while (Performance and OEE drop)"/>
+                                <Button Content="Clear" Command="{Binding ClearScenariosCommand}"
+                                        Style="{StaticResource FactoryButton}" Margin="4,0,0,4"
+                                        ToolTip="Drop queued faults and end timed scenarios"/>
+                            </UniformGrid>
+                            <TextBlock Text="{Binding SelectedStation.ScenarioStatus}" Style="{StaticResource BodyText}"
+                                       Foreground="#FFF39C12" TextWrapping="Wrap" Margin="0,4,0,0"
+                                       Visibility="{Binding SelectedStation.HasScenario, Converter={StaticResource BoolToVisibility}}"/>
+                        </StackPanel>
+
                         <!-- Maintenance Board -->
                         <TextBlock Text="Maintenance" Style="{StaticResource SubHeaderText}" Margin="0,16,0,8"/>
                         <controls:MaintenanceBoardControl DataContext="{Binding DataContext.Maintenance,

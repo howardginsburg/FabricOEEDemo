@@ -23,9 +23,15 @@
 #              • Custom endpoint source (oee-simulator)
 #              • 3 SQL Query routing operators (filter by event_type)
 #              • 3 Eventhouse destinations (one per table)
+#   Step 3c — Event Schema Set (OEE Telemetry Events): the simulator's event contracts
+#            from eventschemas/oee-telemetry-events.json, checked against the Bronze
+#            tables first (scripts/1a-publish-event-schemas.py; preview, warns on failure)
 #   Step 4 — Dashboard JSON generated from dashboard/oee-dashboard.template.json
-#   Step 5 — Real-Time Dashboard imported (OEE Manufacturing Dashboard)
-#   Step 6 — Simulator configuration guidance (simulator.local.yaml)
+#   Step 5 — Real-Time Dashboard imported, or updated from the template when it exists
+#            (OEE Manufacturing Dashboard)
+#   Step 6 — Fabric IQ: ontology published from ontology/OEEFactoryOntology.Ontology
+#            (TMDL) and the OEE Data Agent created + published (unless --skip-fabric-iq)
+#   Step 7 — Simulator configuration guidance (simulator.local.yaml)
 #
 # The script is idempotent — re-running it skips resources that already exist.
 #
@@ -43,15 +49,15 @@
 # Arguments:
 #   --workspace-name <NAME>   (required) Fabric workspace display name
 #   --use-device-code         Use device-code auth flow (for headless/SSH sessions)
-#   --skip-fabric-iq          Do NOT create the Fabric IQ ontology + Data Agent
-#                              (by default both are created automatically)
+#   --skip-fabric-iq          Do NOT publish the Fabric IQ ontology + Data Agent
+#                              (by default both are created and published)
 #
 # After completion:
 #   1. Verify the Eventstream is running in the Fabric UI (it may need a manual
 #      Publish click to activate)
-#   2. Attach the ontology to the Data Agent and Publish it (portal-only — the
-#      Fabric public REST API has no endpoint for these two actions; see the
-#      end-of-run output and README.md)
+#   2. After scripts 2–4, re-run scripts/6-publish-ontology.py and
+#      scripts/7-setup-data-agent.py so the optional entities and the semantic-model
+#      source are added; optionally materialize the ontology graph (portal-only)
 #   3. Configure and start the simulator (see the final step output)
 #   4. Optionally set up Activator alerts (see README.md)
 # =============================================================================
@@ -99,17 +105,14 @@ if ! command -v jq &>/dev/null; then
   ok "jq installed"
 fi
 
-# Fabric IQ (ontology + Data Agent) needs python3 + PyYAML. If they are missing
-# we don't fail the whole run — we just skip that optional step with a warning.
+# Fabric IQ (ontology + Data Agent) needs python3 (standard library only). If it is
+# missing we don't fail the whole run — we just skip that optional step with a warning.
 PY=""
 if ! $SKIP_FABRIC_IQ; then
   if command -v python3 &>/dev/null; then PY=python3
   elif command -v python &>/dev/null; then PY=python; fi
   if [[ -z "$PY" ]]; then
     warn "python3 not found — skipping Fabric IQ creation (run scripts/0-check-prereqs.sh)."
-    SKIP_FABRIC_IQ=true
-  elif ! "$PY" -c 'import yaml' &>/dev/null; then
-    warn "PyYAML not installed ('$PY -m pip install pyyaml') — skipping Fabric IQ creation."
     SKIP_FABRIC_IQ=true
   fi
 fi
@@ -191,27 +194,40 @@ fabric_post_status() {
   return 1
 }
 
-fabric_post_lro() {
-  local tmp win max elapsed
-  tmp=$(_win_tmpfile "$2")
-  win=$(_winpath "$tmp")
-  max="${3:-120}"
-
-  local response
-  response=$(az rest --method POST \
-    --uri "${FABRIC_API}/$1" \
-    --resource "$FABRIC_RESOURCE" \
-    --headers "Content-Type=application/json" \
-    --body "@${win}" \
-    --output json 2>/dev/null || echo '')
-  rm -f "$tmp"
-
-  if [[ -n "$response" ]]; then
-    echo "$response"
-    return 0
+# POST a JSON body and, when Fabric returns 202 (async), poll the long-running
+# operation to completion. Surfaces the real error message on failure — a
+# fire-and-forget POST reports success for a definition the service then rejects.
+# Body is streamed over stdin to avoid Windows/Linux temp-path conversion issues.
+# Returns 0 on Succeeded/200/201, 1 otherwise (LRO_ERROR describes why).
+LRO_ERROR=""
+fabric_lro_post() {
+  local uri="$1" body="$2" token hdr out code op st r
+  LRO_ERROR=""
+  token=$(az account get-access-token --resource "$FABRIC_RESOURCE" --query accessToken -o tsv 2>/dev/null)
+  [[ -z "$token" ]] && { LRO_ERROR="could not acquire access token"; return 1; }
+  hdr=$(mktemp); out=$(mktemp)
+  code=$(printf '%s' "$body" | curl -s -o "$out" -D "$hdr" -w '%{http_code}' -X POST \
+    -H "Authorization: Bearer $token" -H "Content-Type: application/json" \
+    --data-binary @- "${FABRIC_API}/${uri}" 2>/dev/null || echo "000")
+  if [[ "$code" == "200" || "$code" == "201" ]]; then rm -f "$hdr" "$out"; return 0; fi
+  if [[ "$code" != "202" ]]; then
+    LRO_ERROR="HTTP $code: $(jq -r '.message // .errorCode // empty' "$out" 2>/dev/null | head -c 600)"
+    rm -f "$hdr" "$out"; return 1
   fi
-
-  return 0
+  op=$(tr -d '\r' < "$hdr" | awk -F': ' 'tolower($1)=="x-ms-operation-id"{print $2}' | head -1)
+  rm -f "$hdr" "$out"
+  [[ -z "$op" ]] && { LRO_ERROR="202 without an operation id"; return 1; }
+  for _ in $(seq 1 60); do
+    r=$(az rest --method GET --uri "${FABRIC_API}/operations/${op}" --resource "$FABRIC_RESOURCE" --output json 2>/dev/null || echo '{}')
+    st=$(jq -r '.status // empty' <<<"$r")
+    [[ "$st" == "Succeeded" ]] && return 0
+    if [[ "$st" == "Failed" ]]; then
+      LRO_ERROR=$(jq -r '.error.message // .error.errorCode // "unknown error"' <<<"$r")
+      return 1
+    fi
+    sleep 5
+  done
+  LRO_ERROR="operation $op did not complete in time"; return 1
 }
 
 wait_for_item() {
@@ -334,13 +350,32 @@ LH_ID=$(echo "$LH_LIST" | jq -r --arg n "$LH_NAME" \
   '.value[] | select(.displayName == $n) | .id' | head -1 || true)
 
 if [[ -n "$LH_ID" ]]; then
-  ok "Lakehouse already exists (id=$LH_ID)"
+  # The lakehouse MUST be schema-enabled. Its Silver/reference tables are exposed as
+  # OneLake shortcuts at Tables/dbo/<Table> and the Power BI model binds Direct Lake to
+  # schema [dbo]. A non-schema lakehouse treats "dbo" as a stray subfolder, so the
+  # shortcuts land under Tables/Unidentified/dbo and Direct Lake framing fails with
+  # "cannot access the source Delta table" (queries silently fall back to DirectQuery).
+  # Schema-enabled lakehouses report properties.defaultSchema; non-schema ones don't.
+  LH_DEFAULT_SCHEMA=$(fabric_get "workspaces/$WS_ID/lakehouses/$LH_ID" \
+    | jq -r '.properties.defaultSchema // empty')
+  if [[ -z "$LH_DEFAULT_SCHEMA" ]]; then
+    warn "Lakehouse '$LH_NAME' exists but is NOT schema-enabled — Direct Lake over its"
+    warn "  Tables/dbo/<Table> shortcuts cannot frame (tables show as 'Unidentified')."
+    warn "  Delete '$LH_NAME' in the workspace and re-run this script to recreate it as"
+    warn "  a schema-enabled lakehouse, then re-run scripts 2/3 to rewire the model."
+  else
+    ok "Lakehouse already exists and is schema-enabled (id=$LH_ID)"
+  fi
 else
-  LH_PAYLOAD=$(jq -n --arg name "$LH_NAME" '{displayName:$name}')
+  # enableSchemas=true is REQUIRED: it makes Tables/dbo/<Table> shortcuts resolve as
+  # schema [dbo] tables so Direct Lake can frame them from OneLake (VertiPaq), rather
+  # than falling back to DirectQuery. Without it the tables are "Unidentified".
+  LH_PAYLOAD=$(jq -n --arg name "$LH_NAME" \
+    '{displayName:$name, creationPayload:{enableSchemas:true}}')
   fabric_post "workspaces/$WS_ID/lakehouses" "$LH_PAYLOAD" >/dev/null
   LH_JSON=$(wait_for_item "workspaces/$WS_ID/lakehouses" "$LH_NAME")
   LH_ID=$(echo "$LH_JSON" | jq -r '.id')
-  ok "Lakehouse created (id=$LH_ID)"
+  ok "Lakehouse created (schema-enabled, id=$LH_ID)"
 fi
 
 # ── Step 2b: Apply KQL schema ─────────────────────────────────────────────────
@@ -430,64 +465,78 @@ KQLEOF
 kusto_run "$CLUSTER_URI" "$DB_NAME" "$_LINE_MASTER" "LineMaster reference data"
 
 # --- Reference data: StationMaster ---
+# ideal_cycle_time and target_reject_rate are each station's idealCycleTimeSeconds and
+# rejectProbability in simulator.yaml; the Quality Reject Disposition Policy lists the same
+# targets. The ontology's RejectRateQuarantine rule compares a station's rolling-hour reject
+# rate with twice target_reject_rate.
 read -r -d '' _STATION_MASTER <<'KQLEOF' || true
 .set-or-replace StationMaster with (extend_schema=true) <|
     datatable(
         line_id:string, station_position:int, machine_type:string,
         ideal_cycle_time:real, manufacturer:string, install_year:int,
-        buffer_capacity:int, device_id:string
+        buffer_capacity:int, device_id:string, target_reject_rate:real
     )
     [
-        "Line-A", 1, "CNC-Lathe",            40.0, "Haas",          2018, 5, "line-a-station-1",
-        "Line-A", 2, "CNC-Mill",             45.0, "Haas",          2019, 5, "line-a-station-2",
-        "Line-A", 3, "Surface-Grinder",      35.0, "Okamoto",       2020, 5, "line-a-station-3",
-        "Line-A", 4, "Deburring-Station",    15.0, "Rösler",        2021, 5, "line-a-station-4",
-        "Line-A", 5, "CMM-Inspection",       60.0, "Zeiss",         2022, 5, "line-a-station-5",
-        "Line-B", 1, "Blanking-Press",        8.0, "Schuler",       2015, 5, "line-b-station-1",
-        "Line-B", 2, "Hydraulic-Press",      12.0, "Schuler",       2016, 5, "line-b-station-2",
-        "Line-B", 3, "Trimming-Station",     10.0, "Trumpf",        2017, 5, "line-b-station-3",
-        "Line-B", 4, "Quality-Inspection",   20.0, "Keyence",       2020, 5, "line-b-station-4",
-        "Line-C", 1, "Component-Loader",     10.0, "FANUC",         2019, 5, "line-c-station-1",
-        "Line-C", 2, "Welding-Robot",        25.0, "ABB",           2019, 5, "line-c-station-2",
-        "Line-C", 3, "Weld-Inspection",      30.0, "Yaskawa",       2020, 5, "line-c-station-3",
-        "Line-C", 4, "Fastening-Station",    15.0, "Atlas Copco",   2021, 5, "line-c-station-4",
-        "Line-C", 5, "Assembly-Robot",       20.0, "FANUC",         2021, 5, "line-c-station-5",
-        "Line-C", 6, "Leak-Test",            25.0, "ATEQ",          2022, 5, "line-c-station-6",
-        "Line-D", 1, "Surface-Prep",         20.0, "Wheelabrator",  2017, 5, "line-d-station-1",
-        "Line-D", 2, "Chemical-Wash",        30.0, "Dürr",          2017, 5, "line-d-station-2",
-        "Line-D", 3, "Primer-Application",   25.0, "Graco",         2018, 5, "line-d-station-3",
-        "Line-D", 4, "Paint-Booth",          40.0, "Dürr",          2018, 5, "line-d-station-4",
-        "Line-D", 5, "Curing-Oven",          90.0, "Ipsen",         2016, 5, "line-d-station-5",
-        "Line-D", 6, "Coating-Inspection",   15.0, "Keyence",       2021, 5, "line-d-station-6",
-        "Line-D", 7, "Final-Packaging",      10.0, "Bosch-Rexroth", 2020, 5, "line-d-station-7",
-        "Line-E", 1, "PCB-Loader",            5.0, "JUKI",          2021, 5, "line-e-station-1",
-        "Line-E", 2, "SMT-Placement",        15.0, "JUKI",          2021, 5, "line-e-station-2",
-        "Line-E", 3, "Reflow-Oven",          45.0, "Heller",        2020, 5, "line-e-station-3",
-        "Line-E", 4, "AOI-Inspection",       10.0, "Koh Young",     2022, 5, "line-e-station-4",
-        "Line-E", 5, "Through-Hole-Insert",  20.0, "Universal",     2019, 5, "line-e-station-5",
-        "Line-E", 6, "Wave-Solder",          35.0, "ERSA",          2019, 5, "line-e-station-6",
-        "Line-E", 7, "Functional-Test",      30.0, "National Instruments", 2020, 5, "line-e-station-7",
-        "Line-E", 8, "Conformal-Coat",       25.0, "Nordson",       2022, 5, "line-e-station-8",
+        "Line-A", 1, "CNC-Lathe",            40.0, "Haas",          2018, 5, "line-a-station-1", 0.02,
+        "Line-A", 2, "CNC-Mill",             45.0, "Haas",          2019, 5, "line-a-station-2", 0.03,
+        "Line-A", 3, "Surface-Grinder",      35.0, "Okamoto",       2020, 5, "line-a-station-3", 0.02,
+        "Line-A", 4, "Deburring-Station",    15.0, "Rösler",        2021, 5, "line-a-station-4", 0.01,
+        "Line-A", 5, "CMM-Inspection",       60.0, "Zeiss",         2022, 5, "line-a-station-5", 0.05,
+        "Line-B", 1, "Blanking-Press",        8.0, "Schuler",       2015, 5, "line-b-station-1", 0.02,
+        "Line-B", 2, "Hydraulic-Press",      12.0, "Schuler",       2016, 5, "line-b-station-2", 0.04,
+        "Line-B", 3, "Trimming-Station",     10.0, "Trumpf",        2017, 5, "line-b-station-3", 0.02,
+        "Line-B", 4, "Quality-Inspection",   20.0, "Keyence",       2020, 5, "line-b-station-4", 0.03,
+        "Line-C", 1, "Component-Loader",     10.0, "FANUC",         2019, 5, "line-c-station-1", 0.00,
+        "Line-C", 2, "Welding-Robot",        25.0, "ABB",           2019, 5, "line-c-station-2", 0.03,
+        "Line-C", 3, "Weld-Inspection",      30.0, "Yaskawa",       2020, 5, "line-c-station-3", 0.04,
+        "Line-C", 4, "Fastening-Station",    15.0, "Atlas Copco",   2021, 5, "line-c-station-4", 0.01,
+        "Line-C", 5, "Assembly-Robot",       20.0, "FANUC",         2021, 5, "line-c-station-5", 0.02,
+        "Line-C", 6, "Leak-Test",            25.0, "ATEQ",          2022, 5, "line-c-station-6", 0.03,
+        "Line-D", 1, "Surface-Prep",         20.0, "Wheelabrator",  2017, 5, "line-d-station-1", 0.01,
+        "Line-D", 2, "Chemical-Wash",        30.0, "Dürr",          2017, 5, "line-d-station-2", 0.01,
+        "Line-D", 3, "Primer-Application",   25.0, "Graco",         2018, 5, "line-d-station-3", 0.03,
+        "Line-D", 4, "Paint-Booth",          40.0, "Dürr",          2018, 5, "line-d-station-4", 0.04,
+        "Line-D", 5, "Curing-Oven",          90.0, "Ipsen",         2016, 5, "line-d-station-5", 0.02,
+        "Line-D", 6, "Coating-Inspection",   15.0, "Keyence",       2021, 5, "line-d-station-6", 0.03,
+        "Line-D", 7, "Final-Packaging",      10.0, "Bosch-Rexroth", 2020, 5, "line-d-station-7", 0.00,
+        "Line-E", 1, "PCB-Loader",            5.0, "JUKI",          2021, 5, "line-e-station-1", 0.00,
+        "Line-E", 2, "SMT-Placement",        15.0, "JUKI",          2021, 5, "line-e-station-2", 0.03,
+        "Line-E", 3, "Reflow-Oven",          45.0, "Heller",        2020, 5, "line-e-station-3", 0.02,
+        "Line-E", 4, "AOI-Inspection",       10.0, "Koh Young",     2022, 5, "line-e-station-4", 0.04,
+        "Line-E", 5, "Through-Hole-Insert",  20.0, "Universal",     2019, 5, "line-e-station-5", 0.02,
+        "Line-E", 6, "Wave-Solder",          35.0, "ERSA",          2019, 5, "line-e-station-6", 0.03,
+        "Line-E", 7, "Functional-Test",      30.0, "National Instruments", 2020, 5, "line-e-station-7", 0.05,
+        "Line-E", 8, "Conformal-Coat",       25.0, "Nordson",       2022, 5, "line-e-station-8", 0.02,
     ]
 KQLEOF
 kusto_run "$CLUSTER_URI" "$DB_NAME" "$_STATION_MASTER" "StationMaster reference data"
 
 # --- Reference data: ProductionSchedule ---
+# schedule_id is the single-column key the ontology needs (one schedule per line + shift).
+# Adding a column is supported while OneLake availability is on; the seed below
+# computes it, so the key is never maintained by hand.
+# planned_parts per 12-hour shift = the line's bottleneck rate (its slowest station's
+# idealCycleTimeSeconds in simulator.yaml) x 12 h x 75% target OEE; night shift plans
+# 90% of day. Schedule Adherence pro-rates this plan to the minutes each line ran.
+kusto_run "$CLUSTER_URI" "$DB_NAME" \
+  '.create-merge table ProductionSchedule (line_id:string, shift:string, planned_parts:long, schedule_id:string)' \
+  "ProductionSchedule table (+schedule_id)"
 read -r -d '' _PROD_SCHED <<'KQLEOF' || true
 .set-or-replace ProductionSchedule <|
     datatable(line_id: string, shift: string, planned_parts: long)
     [
-        "Line-A", "Day",    120,
-        "Line-A", "Night",  100,
-        "Line-B", "Day",    500,
-        "Line-B", "Night",  450,
-        "Line-C", "Day",    200,
-        "Line-C", "Night",  180,
-        "Line-D", "Day",    150,
-        "Line-D", "Night",  130,
-        "Line-E", "Day",    180,
-        "Line-E", "Night",  150,
+        "Line-A", "Day",    540,
+        "Line-A", "Night",  490,
+        "Line-B", "Day",   1620,
+        "Line-B", "Night", 1460,
+        "Line-C", "Day",   1080,
+        "Line-C", "Night",  970,
+        "Line-D", "Day",    360,
+        "Line-D", "Night",  320,
+        "Line-E", "Day",    720,
+        "Line-E", "Night",  650,
     ]
+    | extend schedule_id = strcat(line_id, "-", shift)
 KQLEOF
 kusto_run "$CLUSTER_URI" "$DB_NAME" "$_PROD_SCHED" "ProductionSchedule reference data"
 
@@ -652,8 +701,13 @@ kusto_run "$CLUSTER_URI" "$DB_NAME" "$_TECHNICIAN_MASTER" "TechnicianMaster refe
 
 # --- Reference data: SopMaster (SOP dimension) ---
 # One row per station-scoped knowledge doc under knowledge/source/Line-X_NN_*.md.
-# file_name is the PDF blob indexed by Azure AI Search (scripts/5-setup-aisearch.sh),
+# file_name is the PDF blob indexed by Azure AI Search (scripts/9-setup-aisearch.sh),
 # giving the agent a stable key to retrieve full SOP text after a graph lookup.
+# device_id (computed, same formula as StationMaster) is the single-column join the
+# ontology uses for SOP → Station.
+kusto_run "$CLUSTER_URI" "$DB_NAME" \
+  '.create-merge table SopMaster (sop_id:string, line_id:string, station_position:int, machine_type:string, doc_type:string, title:string, file_name:string, device_id:string)' \
+  "SopMaster table (+device_id)"
 read -r -d '' _SOP_MASTER <<'KQLEOF' || true
 .set-or-replace SopMaster <|
     datatable(sop_id:string, line_id:string, station_position:int, machine_type:string, doc_type:string, title:string, file_name:string)
@@ -689,6 +743,7 @@ read -r -d '' _SOP_MASTER <<'KQLEOF' || true
         "Line-E_07_Functional-Test_SOP",      "Line-E", 7, "Functional-Test",     "SOP",             "Functional-Test SOP",            "Line-E_07_Functional-Test_SOP.pdf",
         "Line-E_08_Conformal-Coat_SOP",       "Line-E", 8, "Conformal-Coat",      "SOP",             "Conformal-Coat SOP",             "Line-E_08_Conformal-Coat_SOP.pdf",
     ]
+    | extend device_id = strcat(tolower(line_id), "-station-", tostring(station_position))
 KQLEOF
 kusto_run "$CLUSTER_URI" "$DB_NAME" "$_SOP_MASTER" "SopMaster reference data"
 
@@ -739,9 +794,12 @@ kusto_run "$CLUSTER_URI" "$DB_NAME" \
 
 # --- Enrichment functions (Bronze _Raw → Silver shape) ---
 
-# NOTE: Fabric Eventhouse update policies reject queries that use `lookup`/`join`
-# against other tables. So enrichment that depends on StationMaster
-# (ideal_cycle_time, performance_ratio) is deferred to query time via the
+# NOTE: Eventhouse rejects update policies that reference other tables (lookup/join)
+# while streaming ingestion is on for the source table — verified: "Referencing
+# additional tables from update policy is not allowed when streaming ingestion is
+# enabled". Turning streaming off would add the queued-ingestion batching window
+# (~20 s) to live telemetry, so enrichment that depends on StationMaster
+# (ideal_cycle_time, performance_ratio) stays at query time in the
 # MachineEventsEnriched() view function below. To avoid an ambiguous join
 # (KQL would keep the left-side null column and rename the right), these
 # fields are NOT stored on the Silver MachineEvents table.
@@ -770,13 +828,16 @@ read -r -d '' _ENRICH_ME <<'KQLEOF' || true
 KQLEOF
 kusto_run "$CLUSTER_URI" "$DB_NAME" "$_ENRICH_ME" "EnrichMachineEvents function"
 
-# Query-time view: backfills ideal_cycle_time and performance_ratio from
-# StationMaster reference data. Use this in dashboards / Data Agent prompts
-# whenever performance_ratio or ideal_cycle_time is needed.
+# Query-time view: backfills ideal_cycle_time (and the station's manufacturer and
+# install year) from StationMaster reference data. It joins on device_id, the station
+# key the semantic model and the ontology use, so Performance agrees across KQL, DAX,
+# and SQL. Performance is a ratio of sums over running samples — sum(ideal_cycle_time)
+# / sum(actual_cycle_time), capped at 1 — not the average of per-row performance_ratio.
 read -r -d '' _ME_VIEW <<'KQLEOF' || true
-.create-or-alter function MachineEventsEnriched() {
+.create-or-alter function with (docstring = "MachineEvents plus the station's ideal_cycle_time, manufacturer, and install_year (joined on device_id) and a per-sample performance_ratio. For KPIs use OeeFacts()/OeeKpis().")
+MachineEventsEnriched() {
     MachineEvents
-    | lookup kind=leftouter StationMaster on line_id, station_position
+    | lookup kind=leftouter (StationMaster | project device_id, ideal_cycle_time, manufacturer, install_year) on device_id
     | extend performance_ratio = iff(machine_status == "Running" and actual_cycle_time > 0,
                                      min_of(1.0, ideal_cycle_time / actual_cycle_time),
                                      real(null))
@@ -827,6 +888,208 @@ read -r -d '' _MAI_UPD <<'KQLEOF' || true
 KQLEOF
 kusto_run "$CLUSTER_URI" "$DB_NAME" "$_MAI_UPD" "MaintenanceEvents update policy"
 
+# --- Silver: derived entity tables (one row per business key) ---
+# The ontology needs unique-per-key tables for work orders, parts, and part passes
+# (the Part ↔ Station genealogy junction). Each is cascaded from a Silver table by a
+# filter-and-project update policy — no joins, so streaming ingestion stays on —
+# and backfilled from history with an anti-join, so re-runs append only what's
+# missing. Non-transactional, so a derived-table failure never blocks Silver.
+_derive_table() {
+  local table="$1" schema="$2" fn="$3" body="$4" source="$5" key="$6"
+  kusto_run "$CLUSTER_URI" "$DB_NAME" ".create-merge table ${table} (${schema})" "${table} (Silver, derived) table"
+  kusto_run "$CLUSTER_URI" "$DB_NAME" ".create-or-alter function ${fn}() { ${body} }" "${fn} function"
+  kusto_run "$CLUSTER_URI" "$DB_NAME" \
+    ".alter table ${table} policy update @'[{\"IsEnabled\":true,\"Source\":\"${source}\",\"Query\":\"${fn}()\",\"IsTransactional\":false,\"PropagateIngestionProperties\":true}]'" \
+    "${table} update policy (from ${source})"
+  kusto_run "$CLUSTER_URI" "$DB_NAME" \
+    ".set-or-append ${table} <| ${fn}() | join kind=leftanti (${table} | project ${key}) on ${key}" \
+    "${table} backfill (missing rows only)"
+}
+
+_derive_table WorkOrders \
+  'work_order_id:string, device_id:string, line_id:string, station_position:int, machine_type:string, issue_type:string, technician_id:string, shift_id:string, created_at:datetime' \
+  DeriveWorkOrders \
+  'MaintenanceEvents | where action == "Created" | project work_order_id, device_id, line_id, station_position, machine_type, issue_type, technician_id, shift_id, created_at = timestamp' \
+  MaintenanceEvents 'work_order_id'
+
+_derive_table Parts \
+  'part_id:string, line_id:string, shift_id:string, started_at:datetime' \
+  DeriveParts \
+  'PartEvents | where action == "entered" and station_position == 1 | project part_id, line_id, shift_id, started_at = timestamp' \
+  PartEvents 'part_id'
+
+_derive_table PartPasses \
+  'part_id:string, device_id:string, line_id:string, station_position:int, machine_type:string, outcome:string, cycle_time:real, is_pass:long, is_completed:long, is_rejected:long, shift_id:string, passed_at:datetime' \
+  DerivePartPasses \
+  'PartEvents | where action in ("completed", "rejected") | project part_id, device_id = strcat(tolower(line_id), "-station-", tostring(station_position)), line_id, station_position, machine_type, outcome = action, cycle_time, is_pass, is_completed, is_rejected, shift_id, passed_at = timestamp' \
+  PartEvents 'part_id, device_id'
+
+# --- Canonical OEE in KQL (dashboard tiles, Data Agent, Activator) ---
+# One definition per KPI, the same as the ontology metrics and the OEEAnalytics
+# measures. OeeFacts() returns additive counts per time bucket and station; callers
+# sum them to any grain and pipe the result through OeeKpis(), which applies the
+# ratios: Availability = running / samples, Performance = min(1, ideal / actual) over
+# running samples, Quality = completed / (completed + rejected), OEE = A x P x Q.
+# Both read tables only: the Data Agent's query generator can't see stored functions,
+# so scripts/7-setup-data-agent.py inlines these bodies as let statements in its
+# example queries.
+read -r -d '' _OEE_FACTS <<'KQLEOF' || true
+.create-or-alter function with (folder = "OEE", docstring = "Additive OEE facts per time bucket and station, the inputs to OeeKpis(). Same definitions as the ontology metrics and the OEEAnalytics measures.")
+OeeFacts(windowStart: datetime, windowEnd: datetime, bucket: timespan = 1d) {
+    let Machine = MachineEvents
+        | where timestamp between (windowStart .. windowEnd)
+        | lookup kind=leftouter (StationMaster | project device_id, ideal_cycle_time) on device_id
+        | summarize samples = count(), running = sum(is_running),
+                    ideal = sumif(ideal_cycle_time, is_running == 1 and actual_cycle_time > 0),
+                    actual = sumif(actual_cycle_time, is_running == 1 and actual_cycle_time > 0)
+          by bucket_start = bin(timestamp, bucket), line_id, device_id, station_position, machine_type, shift_id;
+    let Passes = PartPasses
+        | where passed_at between (windowStart .. windowEnd)
+        | summarize completed = sum(is_completed), rejected = sum(is_rejected)
+          by bucket_start = bin(passed_at, bucket), line_id, device_id, station_position, machine_type, shift_id;
+    union Machine, Passes
+    | summarize samples = sum(samples), running = sum(running), ideal = sum(ideal), actual = sum(actual),
+                completed = sum(completed), rejected = sum(rejected)
+      by bucket_start, line_id, device_id, station_position, machine_type, shift_id
+}
+KQLEOF
+kusto_run "$CLUSTER_URI" "$DB_NAME" "$_OEE_FACTS" "OeeFacts function (canonical OEE inputs)"
+
+read -r -d '' _OEE_KPIS <<'KQLEOF' || true
+.create-or-alter function with (folder = "OEE", docstring = "Canonical OEE ratios over OeeFacts() sums at any grain: Availability = running / samples; Performance = min(1, ideal / actual); Quality = completed / (completed + rejected); OEE = A x P x Q.")
+OeeKpis(T:(samples:long, running:long, ideal:real, actual:real, completed:long, rejected:long)) {
+    T
+    | extend Availability = iff(samples > 0, todouble(running) / samples, real(null)),
+             Performance  = iff(actual > 0, min_of(1.0, ideal / actual), real(null)),
+             Quality      = iff(completed + rejected > 0, todouble(completed) / (completed + rejected), real(null))
+    | extend OEE = Availability * Performance * Quality
+}
+KQLEOF
+kusto_run "$CLUSTER_URI" "$DB_NAME" "$_OEE_KPIS" "OeeKpis function (canonical OEE ratios)"
+
+# --- Rule checks for the operations agent (scripts/11-setup-operations-agent.py) ---
+# One function per alert rule, named Rule<RuleName> after the ontology rule it implements
+# (ontology/OEEFactoryOntology.Ontology/rules/). Each returns one row per station or line
+# where the rule fires at asOf (default now()), with the fields the alert message needs.
+# The rule's statement stays in the ontology; these are its executable checks, the way each
+# ontology metric has a SQL and a DAX form. A station or line counts only while it's
+# reporting telemetry, so stale data never raises an alert.
+read -r -d '' _RULE_BOTTLENECK <<'KQLEOF' || true
+.create-or-alter function with (folder = "Rules", docstring = "Ontology rule BottleneckDowntime: a bottleneck station (Line-A CMM-Inspection, Line-D Curing-Oven, Line-E Wave-Solder) down (Fault or Maintenance) for more than 5 minutes. One row per firing station.")
+RuleBottleneckDowntime(asOf: datetime = datetime(null)) {
+    let at = iff(isnull(asOf), now(), asOf);
+    let Bottlenecks = datatable(line_id: string, machine_type: string)
+        ["Line-A", "CMM-Inspection", "Line-D", "Curing-Oven", "Line-E", "Wave-Solder"];
+    let Samples = MachineEvents
+        | where timestamp between ((at - 2h) .. at)
+        | join kind=inner Bottlenecks on line_id, machine_type;
+    Samples
+    | summarize last_up = maxif(timestamp, machine_status !in ("Fault", "Maintenance")),
+                arg_max(timestamp, machine_status, station_position) by line_id, device_id, machine_type
+    | where timestamp > at - 5m and machine_status in ("Fault", "Maintenance")
+    | join kind=inner (Samples | where machine_status in ("Fault", "Maintenance") | project device_id, down_at = timestamp)
+        on device_id
+    | where isnull(last_up) or down_at > last_up
+    | summarize down_since = min(down_at) by line_id, device_id, station_position, machine_type, machine_status
+    | extend downtime_minutes = round((at - down_since) / 1m, 1)
+    | where downtime_minutes > 5
+    | project rule = "BottleneckDowntime", line_id, device_id, station_position, machine_type, machine_status,
+              down_since, downtime_minutes, threshold_minutes = 5, checked_at = at
+}
+KQLEOF
+read -r -d '' _RULE_REPEAT_FAULTS <<'KQLEOF' || true
+.create-or-alter function with (folder = "Rules", docstring = "Ontology rule RepeatFaultsPreventiveMaintenance: three or more work orders on one station within the last hour. One row per firing station.")
+RuleRepeatFaultsPreventiveMaintenance(asOf: datetime = datetime(null)) {
+    let at = iff(isnull(asOf), now(), asOf);
+    WorkOrders
+    | where created_at between ((at - 1h) .. at)
+    | summarize work_orders = count(), work_order_ids = make_list(work_order_id), issue_types = make_set(issue_type)
+      by line_id, device_id, station_position, machine_type
+    | where work_orders >= 3
+    | project rule = "RepeatFaultsPreventiveMaintenance", line_id, device_id, station_position, machine_type,
+              work_orders, threshold = 3, work_order_ids, issue_types, window_start = at - 1h, window_end = at,
+              checked_at = at
+}
+KQLEOF
+read -r -d '' _RULE_REJECT_RATE <<'KQLEOF' || true
+.create-or-alter function with (folder = "Rules", docstring = "Ontology rule RejectRateQuarantine: a station's reject rate over the last hour above twice its target_reject_rate (StationMaster). One row per firing station.")
+RuleRejectRateQuarantine(asOf: datetime = datetime(null)) {
+    let at = iff(isnull(asOf), now(), asOf);
+    PartPasses
+    | where passed_at between ((at - 1h) .. at)
+    | summarize completed = sum(is_completed), rejected = sum(is_rejected)
+      by line_id, device_id, station_position, machine_type
+    | lookup kind=inner (StationMaster | project device_id, target_reject_rate) on device_id
+    | extend reject_rate = todouble(rejected) / (completed + rejected), quarantine_threshold = 2 * target_reject_rate
+    | where rejected > 0 and reject_rate > quarantine_threshold
+    | project rule = "RejectRateQuarantine", line_id, device_id, station_position, machine_type, completed, rejected,
+              reject_rate = round(reject_rate, 4), target_reject_rate, quarantine_threshold,
+              window_start = at - 1h, window_end = at, checked_at = at
+}
+KQLEOF
+read -r -d '' _RULE_STATION_OEE <<'KQLEOF' || true
+.create-or-alter function with (folder = "Rules", docstring = "Ontology rule StationOeeEscalation: a station's OEE (OeeFacts/OeeKpis in 5-minute intervals; an interval with Availability 0 counts as 0) below 60% for more than 15 minutes. One row per firing station.")
+RuleStationOeeEscalation(asOf: datetime = datetime(null)) {
+    let at = iff(isnull(asOf), now(), asOf);
+    OeeFacts(at - 3h, at, 5m)
+    | summarize samples = sum(samples), running = sum(running), ideal = sum(ideal), actual = sum(actual),
+                completed = sum(completed), rejected = sum(rejected)
+      by bucket_start, line_id, device_id, station_position, machine_type
+    | invoke OeeKpis()
+    | extend OEE = iff(Availability == 0, 0.0, OEE)
+    | summarize last_at_or_above_60 = maxif(bucket_start, OEE >= 0.6), first_interval = min(bucket_start),
+                arg_max(bucket_start, OEE) by line_id, device_id, station_position, machine_type
+    | where bucket_start >= at - 10m and OEE < 0.6
+    | extend below_60_since = iff(isnull(last_at_or_above_60), first_interval, last_at_or_above_60 + 5m)
+    | extend minutes_below_60 = round((at - below_60_since) / 1m, 0)
+    | where minutes_below_60 > 15
+    | project rule = "StationOeeEscalation", line_id, device_id, station_position, machine_type,
+              latest_5m_oee = round(OEE, 3), below_60_since, minutes_below_60, threshold_minutes = 15, checked_at = at
+}
+KQLEOF
+read -r -d '' _RULE_LINE_OEE <<'KQLEOF' || true
+.create-or-alter function with (folder = "Rules", docstring = "Ontology rule LineOeeEscalation: a line's OEE (OeeFacts/OeeKpis in 5-minute intervals; an interval with Availability 0 counts as 0) below 60% for more than 15 minutes, or more than 1 hour. One row per firing line.")
+RuleLineOeeEscalation(asOf: datetime = datetime(null)) {
+    let at = iff(isnull(asOf), now(), asOf);
+    OeeFacts(at - 3h, at, 5m)
+    | summarize samples = sum(samples), running = sum(running), ideal = sum(ideal), actual = sum(actual),
+                completed = sum(completed), rejected = sum(rejected)
+      by bucket_start, line_id
+    | invoke OeeKpis()
+    | extend OEE = iff(Availability == 0, 0.0, OEE)
+    | summarize last_at_or_above_60 = maxif(bucket_start, OEE >= 0.6), first_interval = min(bucket_start),
+                arg_max(bucket_start, OEE) by line_id
+    | where bucket_start >= at - 10m and OEE < 0.6
+    | extend below_60_since = iff(isnull(last_at_or_above_60), first_interval, last_at_or_above_60 + 5m)
+    | extend minutes_below_60 = round((at - below_60_since) / 1m, 0)
+    | where minutes_below_60 > 15
+    | project rule = "LineOeeEscalation", line_id, latest_5m_oee = round(OEE, 3), below_60_since, minutes_below_60,
+              escalation_tier = iff(minutes_below_60 > 60, "more than 1 hour", "more than 15 minutes"), checked_at = at
+}
+KQLEOF
+read -r -d '' _RULE_OPEN_WORK_ORDERS <<'KQLEOF' || true
+.create-or-alter function with (folder = "Rules", docstring = "Ontology rule ConcurrentOpenWorkOrders: two or more work orders open at once on a line that's reporting telemetry. A work order is open while its latest MaintenanceEvents step isn't Resolved. One row per firing line.")
+RuleConcurrentOpenWorkOrders(asOf: datetime = datetime(null)) {
+    let at = iff(isnull(asOf), now(), asOf);
+    let Reporting = MachineEvents | where timestamp between ((at - 5m) .. at) | distinct line_id;
+    MaintenanceEvents
+    | where timestamp <= at
+    | summarize arg_max(timestamp, action, line_id, device_id, issue_type) by work_order_id
+    | where action != "Resolved" and line_id in (Reporting)
+    | summarize open_work_orders = count(), work_order_ids = make_list(work_order_id), stations = make_set(device_id),
+                issue_types = make_set(issue_type)
+      by line_id
+    | where open_work_orders >= 2
+    | project rule = "ConcurrentOpenWorkOrders", line_id, open_work_orders, threshold = 2, work_order_ids, stations,
+              issue_types, checked_at = at
+}
+KQLEOF
+for _rule in "$_RULE_BOTTLENECK" "$_RULE_REPEAT_FAULTS" "$_RULE_REJECT_RATE" "$_RULE_STATION_OEE" \
+             "$_RULE_LINE_OEE" "$_RULE_OPEN_WORK_ORDERS"; do
+  _name=$(printf '%s\n' "$_rule" | sed -n '2s/(.*//p')
+  kusto_run "$CLUSTER_URI" "$DB_NAME" "$_rule" "${_name} function (operations agent rule check)"
+done
+
 # --- OneLake availability on Silver (so the ontology binds to Delta) ---
 # Bronze tables stay in-engine only — no need to mirror raw landing data.
 
@@ -858,11 +1121,13 @@ kusto_run "$CLUSTER_URI" "$DB_NAME" \
 # would mirror an EMPTY delta and the lakehouse/ontology would show no rows.
 # Backfill=true forces a one-time export of all existing rows. (The streaming
 # event tables above don't need it: new telemetry arrives continuously after
-# the policy is set.)
+# the policy is set.) The derived entity tables are backfilled from history
+# before mirroring, so they need it too.
 REF_TABLES=(
   LineMaster StationMaster ProductionSchedule
   ShiftMaster MachineTypeMaster IssueTypeMaster
   TechnicianMaster SopMaster PolicyMaster
+  WorkOrders Parts PartPasses
 )
 for _t in "${REF_TABLES[@]}"; do
   kusto_run "$CLUSTER_URI" "$DB_NAME" \
@@ -881,6 +1146,7 @@ SHORTCUT_TABLES=(
   LineMaster StationMaster ProductionSchedule
   ShiftMaster MachineTypeMaster IssueTypeMaster
   TechnicianMaster SopMaster PolicyMaster
+  WorkOrders Parts PartPasses
 )
 for _t in "${SHORTCUT_TABLES[@]}"; do
   _body=$(jq -n --arg name "$_t" --arg ws "$WS_ID" --arg db "$DB_ID" \
@@ -1127,6 +1393,20 @@ SQLEOF
   warn "If it is stopped, click 'Publish' to activate it."
 fi
 
+# ── Step 3c: Event Schema Set ─────────────────────────────────────────────────
+# The simulator's three event contracts (eventschemas/oee-telemetry-events.json), checked
+# against the Bronze tables and published to the Fabric schema registry (preview).
+step "Step 3c — Publishing event schemas (Event Schema Set)"
+ES_PY="${PY:-$(command -v python3 || command -v python || true)}"
+if [[ -z "$ES_PY" ]]; then
+  warn "python3 not found — skipping the Event Schema Set (run scripts/0-check-prereqs.sh)."
+elif "$ES_PY" "$SCRIPT_DIR/1a-publish-event-schemas.py" --workspace-name "$WORKSPACE_NAME"; then
+  ok "Event Schema Set published"
+else
+  warn "Event Schema Set publish failed — see output above. You can re-run:"
+  manual "   python3 scripts/1a-publish-event-schemas.py --workspace-name \"$WORKSPACE_NAME\""
+fi
+
 # ── Step 4: Generate dashboard ────────────────────────────────────────────────
 step "Step 4 — Generating oee-dashboard.json"
 REPO_ROOT="${SCRIPT_DIR}/.."
@@ -1155,7 +1435,15 @@ else
     '.value[] | select(.displayName == $n and .type == "KQLDashboard") | .id' 2>/dev/null | head -1 || true)
 
   if [[ -n "$EXISTING_DASH" ]]; then
-    warn "Dashboard already exists — skipping import."
+    # The template is the source of truth: re-runs push its tiles to the existing
+    # dashboard (portal edits to it are overwritten).
+    DASH_UPDATE=$(jq -n --arg payload "$(base64 -w0 "$DASH_OUT")" \
+      '{definition:{parts:[{path:"RealTimeDashboard.json",payload:$payload,payloadType:"InlineBase64"}]}}')
+    if fabric_lro_post "workspaces/$WS_ID/items/$EXISTING_DASH/updateDefinition" "$DASH_UPDATE"; then
+      ok "Dashboard updated from the template (id=$EXISTING_DASH)"
+    else
+      warn "Dashboard update failed: ${LRO_ERROR:-unknown error}"
+    fi
   else
     DASH_B64=$(base64 -w0 "$DASH_OUT")
     DASH_PAYLOAD=$(jq -n \
@@ -1163,41 +1451,40 @@ else
       --arg payload "$DASH_B64" \
       '{displayName:$name,type:"KQLDashboard",definition:{parts:[{path:"RealTimeDashboard.json",payload:$payload,payloadType:"InlineBase64"}]}}')
 
-    DASH_RESULT=$(fabric_post "workspaces/$WS_ID/items" "$DASH_PAYLOAD")
-    DASH_ID=$(echo "$DASH_RESULT" | jq -r '.id // .itemId // empty' 2>/dev/null | head -1 || true)
-    if [[ -n "$DASH_ID" ]]; then
-      ok "Dashboard imported (id=$DASH_ID)"
+    if fabric_lro_post "workspaces/$WS_ID/items" "$DASH_PAYLOAD"; then
+      ok "Dashboard imported"
     else
-      ok "Dashboard import submitted — verify in Fabric UI."
+      warn "Dashboard import failed: ${LRO_ERROR:-unknown error}"
     fi
   fi
 fi
 
 # ── Step 6: Fabric IQ — ontology + Data Agent ─────────────────────────────────
-# Creates the Fabric IQ ontology and the "OEE Data Agent" (draft) via the public
-# Fabric REST API. Attaching the ontology datasource and clicking Publish remain
-# manual portal steps (the public API has no endpoint for either) — they are
-# printed in the final summary below.
+# Publishes the Fabric IQ ontology from its TMDL definition and creates + publishes
+# the "OEE Data Agent" (ontology, KQL database, and — once scripts/4 has deployed
+# it — the OEEAnalytics semantic model) through the public Fabric REST API.
+# Re-run both after scripts 2–4 so the optional entities (OeeTarget, FloorIssue),
+# the resource links, and the semantic-model source are added.
 FABRIC_IQ_DONE=false
 if $SKIP_FABRIC_IQ; then
   step "Step 6 — Fabric IQ (skipped)"
-  warn "Skipping ontology + Data Agent creation (--skip-fabric-iq or missing python/PyYAML)."
+  warn "Skipping ontology + Data Agent creation (--skip-fabric-iq or python3 missing)."
 else
-  step "Step 6 — Creating Fabric IQ ontology"
+  step "Step 6 — Publishing Fabric IQ ontology"
   if "$PY" "$SCRIPT_DIR/6-publish-ontology.py" --workspace-name "$WORKSPACE_NAME"; then
-    ok "Ontology created"
-    step "Step 6 — Creating Data Agent (draft)"
+    ok "Ontology published"
+    step "Step 6 — Creating and publishing the Data Agent"
     if "$PY" "$SCRIPT_DIR/7-setup-data-agent.py" \
          --workspace-name "$WORKSPACE_NAME" \
          --data-agent-name "OEE Data Agent"; then
-      ok "Data Agent draft created"
+      ok "Data Agent published"
       FABRIC_IQ_DONE=true
     else
-      warn "Data Agent creation failed — see output above. You can re-run:"
+      warn "Data Agent setup failed — see output above. You can re-run:"
       manual "   $PY scripts/7-setup-data-agent.py --workspace-name \"$WORKSPACE_NAME\""
     fi
   else
-    warn "Ontology creation failed — see output above. You can re-run:"
+    warn "Ontology publish failed — see output above. You can re-run:"
     manual "   $PY scripts/6-publish-ontology.py --workspace-name \"$WORKSPACE_NAME\""
   fi
 fi
@@ -1245,34 +1532,26 @@ manual "   The Eventstream sometimes does not start automatically after provisio
 printf "\n"
 printf "\033[93m  REMAINING MANUAL STEPS:\033[0m\n\n"
 if $FABRIC_IQ_DONE; then
-  printf "\033[93m  A) ATTACH ONTOLOGY + PUBLISH THE DATA AGENT  (portal-only)\033[0m\n"
-  manual "   The ontology and the 'OEE Data Agent' (draft) were created for you,"
-  manual "   but the Fabric public REST API has NO endpoint to attach an ontology"
-  manual "   datasource or to Publish — these two steps must be done in the portal:"
-  manual "   1. Open the 'OEE Data Agent' in the Fabric workspace."
-  manual "   2. Add data source → Ontology → select 'OEEManufacturingOntology'."
-  manual "   3. (KQL source 'ManufacturingEH' + instructions are already configured.)"
-  manual "   4. Click 'Publish' to make the agent queryable."
+  printf "\033[93m  A) FABRIC IQ FOLLOW-UPS\033[0m\n"
+  manual "   The ontology 'OEEFactoryOntology' and the 'OEE Data Agent' are published."
+  manual "   1. After scripts 2–4, re-run both to add the optional entities, resource"
+  manual "      links, and the OEEAnalytics semantic-model source:"
+  manual "        python3 scripts/6-publish-ontology.py  --workspace-name \"$WORKSPACE_NAME\""
+  manual "        python3 scripts/7-setup-data-agent.py --workspace-name \"$WORKSPACE_NAME\" --smoke"
+  manual "   2. Optional, portal-only: materialize the ontology graph for GQL traversals —"
+  manual "      open OEEFactoryOntology → Manage graph → select eligible entities → Materialize."
   printf "\n"
   manual "B) OPTIONAL ACTIVATOR ALERTS"
 else
   printf "\033[93m  A) OPTIONAL FABRIC IQ (ontology + Data Agent)\033[0m\n"
-  manual "   Not created this run. To add it later:"
+  manual "   Not created this run. To add it later (after scripts 2–4 for the full set):"
   manual "     python3 scripts/6-publish-ontology.py  --workspace-name \"$WORKSPACE_NAME\""
-  manual "     python3 scripts/7-setup-data-agent.py --workspace-name \"$WORKSPACE_NAME\" \\"
-  manual "             --data-agent-name \"OEE Data Agent\""
-  manual "   Then in the portal: attach the ontology datasource + click Publish"
-  manual "   (the public REST API has no endpoint for those two actions)."
+  manual "     python3 scripts/7-setup-data-agent.py --workspace-name \"$WORKSPACE_NAME\" --smoke"
   printf "\n"
   manual "B) OPTIONAL ACTIVATOR ALERTS"
 fi
-manual "   Eventstream canvas: + Add destination → Activator → name 'MachineAlerts'"
-manual "   Add fault rule: machine_status = 'Fault', group by device_id"
-manual "   Add low-OEE KQL rule against MachineEvents (composed on the fly):"
-manual "     MachineEvents | where timestamp > ago(5m)"
-manual "     | summarize avail = avg(toreal(is_running)),"
-manual "                 perf  = avgif(performance_ratio, is_running == 1) by line_id"
-manual "     | where avail * perf < 0.60"
+manual "   bash scripts/5-setup-activator-alerts.sh --workspace-name \"$WORKSPACE_NAME\" --alert-email <you@contoso.com>"
+manual "   deploys the Floor Ops Alerts Activator (machine_status becomes Fault → email)."
 printf "\n"
 manual "C) START THE SIMULATOR"
 manual "   cd simulator/FabricOEESimulator.Wpf && dotnet run"

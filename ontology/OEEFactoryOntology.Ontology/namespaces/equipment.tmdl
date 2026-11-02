@@ -1,0 +1,3 @@
+/// Physical plant: production lines, stations, machines, and machine types.
+namespace equipment
+	lineageTag: 3dea1aa3-02a8-585e-b27a-cf65975aded0

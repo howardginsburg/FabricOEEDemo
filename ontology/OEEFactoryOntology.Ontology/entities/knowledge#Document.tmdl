@@ -1,0 +1,21 @@
+/// A controlled plant document. The file_name is the PDF indexed in Azure AI Search for full-text answers.
+entity knowledge#Document
+	lineageTag: 89618843-3368-5513-ae2d-edc6211e8fc5
+
+	/// Document title.
+	property title
+		dataType: string
+		lineageTag: 424cca99-cd3a-58c5-9162-4b7d0ee50629
+
+	/// Document type, for example SOP, Calibration, Policy, or Checklist.
+	property doc_type
+		dataType: string
+		lineageTag: 8f91d92b-4367-5437-b731-39e9b174fff7
+
+	/// PDF file name in the Azure AI Search index.
+	property file_name
+		dataType: string
+		lineageTag: 8083f0dc-2b28-5203-8b64-2b9cc7579a33
+
+		synonym pdf
+		synonym file

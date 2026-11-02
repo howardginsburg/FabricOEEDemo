@@ -1,0 +1,49 @@
+table SopMaster
+	lineageTag: 47b54698-c063-5fde-b610-418f57735520
+
+	column sop_id
+		dataType: string
+		lineageTag: 33a2c35e-af1b-5498-a822-5b3c158db71b
+		sourceColumn: sop_id
+
+	column device_id
+		dataType: string
+		lineageTag: 69fe3cec-cc2d-5fa7-8042-b879a9c1794c
+		sourceColumn: device_id
+
+	column line_id
+		dataType: string
+		lineageTag: 0fee5fc8-263b-5ac3-acf7-5f58852f8456
+		sourceColumn: line_id
+
+	column station_position
+		dataType: int64
+		lineageTag: 1c4a0cdc-7d03-529a-9317-37cbbdfea188
+		sourceColumn: station_position
+
+	column machine_type
+		dataType: string
+		lineageTag: 898a221e-2545-5f1c-b259-d26692546267
+		sourceColumn: machine_type
+
+	column doc_type
+		dataType: string
+		lineageTag: e2fdb4a6-d9a2-5b0e-914e-28766fff6010
+		sourceColumn: doc_type
+
+	column title
+		dataType: string
+		lineageTag: fa4305ba-b9da-58a5-8d37-0253288f06f7
+		sourceColumn: title
+
+	column file_name
+		dataType: string
+		lineageTag: a59051b3-64c1-5cf6-aacb-495dec5363e8
+		sourceColumn: file_name
+
+	partition SopMaster = entity
+		mode: directLake
+		source
+			entityName: SopMaster
+			schemaName: dbo
+			expressionSource: 'DirectLake - ManufacturingLH'

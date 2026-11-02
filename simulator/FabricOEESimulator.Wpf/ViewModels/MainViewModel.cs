@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Windows.Input;
 using System.Windows.Threading;
+using FabricOEESimulator.Wpf.Configuration;
 using FabricOEESimulator.Wpf.Models;
 using FabricOEESimulator.Wpf.Simulation;
 
@@ -58,7 +59,27 @@ public sealed class MainViewModel : ViewModelBase
             else
                 _engine.StartSimulation();
             IsRunning = _engine.IsRunning;
+            CommandManager.InvalidateRequerySuggested();
         });
+
+        FaultNowCommand = ScenarioCommand("Demo scenario: Fault now", (station, _) =>
+            station.InjectFaults([new FaultRequest("Fault now", null)]));
+
+        RepeatFaultsCommand = ScenarioCommand("Demo scenario: Repeat faults", (station, config) =>
+            station.InjectFaults(Enumerable.Range(0, config.RepeatFaultCount)
+                .Select(_ => new FaultRequest("Repeat faults", config.QuickFixTiming(_random)))
+                .ToList()));
+
+        LongOutageCommand = ScenarioCommand("Demo scenario: Long outage", (station, config) =>
+            station.InjectFaults([new FaultRequest("Long outage", config.LongOutageTiming(station.FaultPhase))]));
+
+        RejectSpikeCommand = ScenarioCommand("Demo scenario: Reject spike", (station, config) =>
+            station.StartRejectSpike(TimeSpan.FromMinutes(config.RejectSpikeMinutes), config.RejectSpikeProbability));
+
+        SlowCyclesCommand = ScenarioCommand("Demo scenario: Slow cycles", (station, config) =>
+            station.StartSlowCycles(TimeSpan.FromMinutes(config.SlowCycleMinutes), config.SlowCycleMultiplier));
+
+        ClearScenariosCommand = ScenarioCommand("Demo scenarios cleared", (station, _) => station.ClearScenarios());
     }
 
     public ObservableCollection<ProductionLineViewModel> Lines { get; } = [];
@@ -141,6 +162,24 @@ public sealed class MainViewModel : ViewModelBase
     public ICommand ToggleOverviewCommand { get; }
     public ICommand DismissToastCommand { get; }
     public ICommand ToggleSimulationCommand { get; }
+
+    // Demo scenarios act on the selected station while the simulation runs.
+    public ICommand FaultNowCommand { get; }
+    public ICommand RepeatFaultsCommand { get; }
+    public ICommand LongOutageCommand { get; }
+    public ICommand RejectSpikeCommand { get; }
+    public ICommand SlowCyclesCommand { get; }
+    public ICommand ClearScenariosCommand { get; }
+
+    private readonly Random _random = new();
+
+    private RelayCommand ScenarioCommand(string toast, Action<Station, ScenarioConfig> apply) =>
+        new(_ =>
+        {
+            if (_engine is null || SelectedStation is not { } station) return;
+            apply(station.Model, _engine.Scenarios);
+            AddToast($"{toast} on {station.MachineType} ({station.LineId})", "Info", station.DeviceId);
+        }, _ => IsRunning && SelectedStation is not null);
 
     public void Initialize(SimulationEngine engine)
     {

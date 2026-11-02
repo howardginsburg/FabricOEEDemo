@@ -1,0 +1,30 @@
+table PartPasses
+	lineageTag: d5664d20-96ce-5c3b-a637-421cca3504bb
+
+	column part_id
+		dataType: string
+		lineageTag: 631904fd-e545-5046-a9b5-ec718746c726
+		sourceColumn: part_id
+
+	column device_id
+		dataType: string
+		lineageTag: 9cd54d97-b5d2-5768-9a3d-7be282b560e5
+		sourceColumn: device_id
+
+	column outcome
+		dataType: string
+		lineageTag: d5b5184a-46fc-54cf-92ab-ad23fe014466
+		sourceColumn: outcome
+
+	column passed_at
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: f2c8f092-7f47-5af9-8eea-a77779123efd
+		sourceColumn: passed_at
+
+	partition PartPasses = entity
+		mode: directLake
+		source
+			entityName: PartPasses
+			schemaName: dbo
+			expressionSource: 'DirectLake - ManufacturingLH'

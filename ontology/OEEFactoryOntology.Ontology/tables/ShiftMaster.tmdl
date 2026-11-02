@@ -1,0 +1,24 @@
+table ShiftMaster
+	lineageTag: 30da6162-11e5-5d95-bc05-e77a722ac869
+
+	column shift
+		dataType: string
+		lineageTag: 67898fed-d96d-55d0-a179-0667054c0b9a
+		sourceColumn: shift
+
+	column start_hour
+		dataType: int64
+		lineageTag: c1cf2f12-d77c-546a-befd-8937c8c2bd9a
+		sourceColumn: start_hour
+
+	column end_hour
+		dataType: int64
+		lineageTag: 8e5002c8-e1c9-5d4a-8703-267c745a10cb
+		sourceColumn: end_hour
+
+	partition ShiftMaster = entity
+		mode: directLake
+		source
+			entityName: ShiftMaster
+			schemaName: dbo
+			expressionSource: 'DirectLake - ManufacturingLH'

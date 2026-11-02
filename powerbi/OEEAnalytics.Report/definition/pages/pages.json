@@ -4,7 +4,8 @@
     "page-exec",
     "page-availability",
     "page-performance",
-    "page-quality"
+    "page-quality",
+    "page-floorops"
   ],
   "activePageName": "page-exec"
 }

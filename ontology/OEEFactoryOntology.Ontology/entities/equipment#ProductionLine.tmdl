@@ -1,0 +1,66 @@
+/// One of the plant's five production lines (Line-A to Line-E). Each line is an ordered chain of stations.
+entity equipment#ProductionLine
+	lineageTag: 19a13912-999c-50bc-a150-90268c3e306b
+	backingTable: LineMaster
+	keyProperty: line_id
+
+	/// Line identifier as users type it: Line-A, Line-B, Line-C, Line-D, or Line-E.
+	property line_id
+		dataType: string
+		lineageTag: 5cfeb1c1-d9e8-5cff-ab91-18e95dd807d1
+
+		backingConfiguration
+			valueColumn: LineMaster.line_id
+
+		synonym 'line id'
+		synonym line
+
+	/// Descriptive line name, for example Precision Machining or Welding & Assembly. Filter on line_id unless the user uses this phrase.
+	property line_name
+		dataType: string
+		lineageTag: 6ed0f6b2-b999-5edd-94fe-8e85e1456f02
+
+		backingConfiguration
+			valueColumn: LineMaster.line_name
+
+		synonym 'line description'
+
+	/// What the line produces, from input to output.
+	property purpose
+		dataType: string
+		lineageTag: d7df217a-9b34-508c-8237-798278867ca5
+
+		backingConfiguration
+			valueColumn: LineMaster.purpose
+
+	/// Number of stations on the line.
+	property station_count
+		dataType: int64
+		lineageTag: 286da8dc-c3f7-54c6-ac21-11e8de3ffa85
+
+		backingConfiguration
+			valueColumn: LineMaster.station_count
+
+	synonym 'production line'
+	synonym line
+	synonym 'assembly line'
+
+	/// OEEAnalytics Power BI report: OEE, availability, performance, quality, and targets by line.
+	resourceLink
+
+		item
+			workspaceId: __WORKSPACE_ID__
+			itemId: __REPORT_ID__
+
+		synonym 'oee report'
+		synonym 'power bi report'
+
+	/// Real-Time Dashboard with live line and station status.
+	resourceLink
+
+		item
+			workspaceId: __WORKSPACE_ID__
+			itemId: __DASHBOARD_ID__
+
+		synonym 'live dashboard'
+		synonym 'real-time dashboard'

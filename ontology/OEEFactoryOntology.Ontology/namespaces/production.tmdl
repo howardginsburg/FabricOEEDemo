@@ -1,0 +1,3 @@
+/// Production planning and flow: shifts, schedules, OEE targets, parts, and their station passes.
+namespace production
+	lineageTag: 6487b1f3-cde0-5efd-9a78-0f3d0d252ec4

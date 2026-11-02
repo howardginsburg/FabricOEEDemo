@@ -1,0 +1,30 @@
+table Parts
+	lineageTag: b6012e30-2d52-5cc0-be81-cc30691879f5
+
+	column part_id
+		dataType: string
+		lineageTag: b9d55291-769e-58e8-96b9-b6c74113fd41
+		sourceColumn: part_id
+
+	column line_id
+		dataType: string
+		lineageTag: 3d2bcf42-e3e2-5a85-9109-6bc3c620ce0a
+		sourceColumn: line_id
+
+	column shift_id
+		dataType: string
+		lineageTag: bd91e88f-2b54-5544-8ddc-49c5f69eb94c
+		sourceColumn: shift_id
+
+	column started_at
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: 2a1fc395-095e-5d9b-b8ff-e10a240d9df0
+		sourceColumn: started_at
+
+	partition Parts = entity
+		mode: directLake
+		source
+			entityName: Parts
+			schemaName: dbo
+			expressionSource: 'DirectLake - ManufacturingLH'

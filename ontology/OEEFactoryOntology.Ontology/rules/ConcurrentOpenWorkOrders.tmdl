@@ -1,0 +1,14 @@
+rule ConcurrentOpenWorkOrders
+	lineageTag: 510a3179-b548-5909-a571-99c301457af6
+	statement: Two or more work orders open at the same time on one production line require the Line Manager and Maintenance Lead to rebalance technicians.
+
+	ruleReferencedEntity maintenance#WorkOrder
+
+	ruleReferencedEntity maintenance#MaintenanceEvent
+		propertyScope: specific
+		ruleReferencedProperty action
+
+	ruleReferencedEntity equipment#ProductionLine
+
+	ruleReferencedRelationship maintenance#WorkOrderOnStation
+	ruleReferencedRelationship equipment#StationOnLine

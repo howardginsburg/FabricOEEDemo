@@ -1,0 +1,14 @@
+rule StarvedBlockedRootCause
+	lineageTag: 9a462c24-e69c-5f7d-858c-ee4990637aca
+	statement: When a station is Idle because it is Starved, the root cause is the upstream station (position - 1); when it is Blocked, the root cause is the downstream station (position + 1). Telemetry records that station as root_cause_device_id, and the idle time counts against it, not against the idle station.
+
+	ruleReferencedEntity equipment#Machine
+		propertyScope: specific
+		ruleReferencedProperty idle_reason
+		ruleReferencedProperty root_cause_device_id
+
+	ruleReferencedEntity equipment#Station
+		propertyScope: specific
+		ruleReferencedProperty station_position
+
+	ruleReferencedRelationship equipment#MachineAtStation

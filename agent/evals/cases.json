@@ -1,0 +1,329 @@
+{
+  "description": "Persona question set for the OEE Factory IQ agent. It's the single source for scripts/12-evaluate-agent.py and for agent/samples/queries.md (generated with --write-samples). 'sources' lists the knowledge an answer needs: sop = the SOP and policy documents, ontology = the Fabric IQ ontology, data = the OEE data agent; 'a|b' accepts either. Every entry in 'facts' must appear in the answer: matching ignores case, dash style, and markdown emphasis; a list accepts any of its alternatives; a fact that starts with 're:' is a regular expression over the lowercased answer. Facts restate the SOPs and policies. Values that exist only in the reference data come from 'facts_kql' at run time (one required fact per row; the columns must appear on the same line of the answer; match 'any' needs just one row), so this file never copies the seed data.",
+  "cases": [
+    {
+      "id": "exec-site-oee",
+      "persona": "Corp Exec",
+      "question": "What's the site-wide OEE, and how does it compare to our 75% commitment?",
+      "exercises": "Governed OEE measure from the Direct Lake semantic model, through the data agent",
+      "sources": ["data"],
+      "facts": ["availability", "performance", "quality", "75%"],
+      "ground_truth": "Site-wide OEE is the governed OEE measure (Availability × Performance × Quality) across all five lines. The answer gives the OEE value with its Availability, Performance, and Quality, names the biggest loss, and states the gap to the site's 75% OEE commitment."
+    },
+    {
+      "id": "exec-escalation-policy",
+      "persona": "Corp Exec",
+      "question": "What's our escalation policy when a line's OEE drops below 60%?",
+      "exercises": "Escalation matrix from the OEE targets policy and the ontology rule LineOeeEscalation",
+      "sources": ["sop|ontology"],
+      "facts": [
+        "60%",
+        ["15 min", "15-min", "fifteen min"],
+        "plant manager",
+        "incident review",
+        ["corp exec", "corporate exec"],
+        ["1 hour", "one hour", "1 hr", "an hour", "60 min"],
+        ["oee_targets_and_escalation", "oee targets and escalation", "lineoeeescalation"]
+      ],
+      "ground_truth": "If a line's OEE stays below 60% for more than 15 minutes, notify the Plant Manager, open an incident review, and suspend non-urgent changes. If it stays below 60% for more than one hour, escalate to the Corp Exec in the daily-flash report. Sources: OEE_Targets_and_Escalation.pdf and the ontology rule LineOeeEscalation."
+    },
+    {
+      "id": "exec-lines-below-target",
+      "persona": "Corp Exec",
+      "question": "Which lines are below their OEE target, and what does our escalation policy require for them?",
+      "exercises": "OEE against each line's write-back target (OeeTarget) from the data agent, plus the escalation rule",
+      "sources": ["data", "sop|ontology"],
+      "facts": ["target", "plant manager", ["15 min", "15-min", "fifteen min"]],
+      "ground_truth": "The answer compares each line's governed OEE with that line's own target from OeeTarget (set from the Power BI report), lists every line below its target by line_id, and applies the escalation policy: below 60% for more than 15 minutes notifies the Plant Manager and opens an incident review; more than one hour escalates to the Corp Exec."
+    },
+    {
+      "id": "pm-oee-latest-hour",
+      "persona": "Plant Manager",
+      "question": "Show me OEE for all five lines over the latest hour of data, and flag any line under 60%.",
+      "exercises": "KPIs for a time window from the Eventhouse (the OeeFacts and OeeKpis definitions), through the data agent",
+      "sources": ["data"],
+      "facts": ["line-a", "line-b", "line-c", "line-d", "line-e", "60%"],
+      "ground_truth": "The answer gives OEE with Availability, Performance, and Quality for Line-A through Line-E over the most recent hour that has telemetry, states that time window, and flags every line below 60%."
+    },
+    {
+      "id": "pm-bottlenecks",
+      "persona": "Plant Manager",
+      "question": "What are the bottleneck stations on each line, and why are they the bottleneck?",
+      "exercises": "Line topology and bottlenecks from the production lines reference",
+      "sources": ["sop"],
+      "facts": [
+        "cmm-inspection",
+        "hydraulic-press",
+        "welding-robot",
+        "leak-test",
+        "curing-oven",
+        "wave-solder",
+        ["90 s", "90s", "90 sec", "90-s", "90.0 s", "90.0s"],
+        ["production_lines_reference", "production lines reference", "production lines - reference"]
+      ],
+      "ground_truth": "Line-A: CMM-Inspection (station 5), the slowest station on the line at a 60 s ideal cycle. Line-B: Hydraulic-Press (station 2), by fault rate (1.5%, the highest on the line). Line-C: Welding-Robot (station 2) for performance and Leak-Test (station 6) for quality (3% reject target). Line-D: Curing-Oven (station 5), the slowest station in the plant at a 90 s ideal cycle; an outage cascades within one cycle. Line-E: Wave-Solder (station 6), by fault rate (0.7%). Source: Production_Lines_Reference.pdf."
+    },
+    {
+      "id": "pm-line-d-curing-oven",
+      "persona": "Plant Manager",
+      "question": "Line-D's OEE dropped. What's its bottleneck, and what's the current state of the Curing-Oven?",
+      "exercises": "Current machine state from the ontology (Machine time series) with the line topology",
+      "sources": ["ontology|data"],
+      "facts": [
+        "curing-oven",
+        ["line-d-station-5", "station 5", "position 5", "station_position 5"],
+        ["90 s", "90s", "90 sec", "90-s", "90.0 s", "90.0s"]
+      ],
+      "ground_truth": "Line-D's bottleneck is the Curing-Oven (line-d-station-5) with a 90 s ideal cycle, the slowest station in the plant. The answer reports the Curing-Oven's latest machine_status (and its idle_reason or fault when it isn't Running) with the sample time."
+    },
+    {
+      "id": "pm-schedule-adherence",
+      "persona": "Plant Manager",
+      "question": "How is each line tracking against its production plan, by Day and Night shift?",
+      "exercises": "Governed Schedule Adherence measure from the Direct Lake semantic model, by line and shift",
+      "sources": ["data"],
+      "facts": ["re:\\bday\\b", "night", "line-a", "line-b", "line-c", "line-d", "line-e"],
+      "ground_truth": "The answer gives schedule adherence (parts finished divided by expected parts, where the plan is pro-rated to the minutes each line ran) for each line in the Day and Night shifts from the governed Schedule Adherence measure, with parts finished and expected parts, and flags the lines furthest behind plan."
+    },
+    {
+      "id": "pm-night-plan",
+      "persona": "Plant Manager",
+      "question": "List the planned parts for each line on the Night shift.",
+      "exercises": "The ProductionSchedule entity and its Shift relationship in the ontology",
+      "sources": ["ontology|data"],
+      "facts": [],
+      "facts_kql": {
+        "query": "ProductionSchedule | where shift == 'Night' | project line_id, planned_parts",
+        "columns": ["line_id", "planned_parts"],
+        "label": "Night-shift planned parts"
+      },
+      "ground_truth": "The answer lists the Night-shift planned parts for each line from the production schedule."
+    },
+    {
+      "id": "lm-line-b-down",
+      "persona": "Line Manager",
+      "question": "On Line-B, list any stations currently in Fault or Maintenance.",
+      "exercises": "Current machine state from the ontology's Machine time series",
+      "sources": ["ontology|data"],
+      "facts": ["line-b"],
+      "ground_truth": "The answer checks the latest machine_status of each Line-B station (line-b-station-1 to line-b-station-4) and lists any in Fault or Maintenance with the fault type and open work order; if there are none, it says so and gives each station's status at the latest sample time."
+    },
+    {
+      "id": "lm-welding-robot-threshold",
+      "persona": "Line Manager",
+      "question": "What's the pause threshold for the Welding-Robot on Line-C, and what should I do when it's crossed?",
+      "exercises": "Reject thresholds from the quality policy, with the station SOP",
+      "sources": ["sop"],
+      "facts": ["5%", "pause", ["quality_reject_disposition_policy", "reject disposition policy"]],
+      "ground_truth": "The Line-C Welding-Robot (line-c-station-2) has a 3% target reject rate and a pause threshold of more than 5% rejects over a rolling hour. When it's crossed, the Line Manager pauses the station for triage and uses section 4 of the Welding-Robot SOP (Wire-Feed-Jam, Tip-Wear, Gas-Flow-Low) to find the likely fault even if machine_status is still Running; rejected parts follow the policy's disposition decision tree. Sources: Quality_Reject_Disposition_Policy.pdf, Line-C_02_Welding-Robot_SOP.pdf."
+    },
+    {
+      "id": "lm-aoi-trend",
+      "persona": "Line Manager",
+      "question": "The Line-E AOI-Inspection reject rate has been creeping up. Show me the trend and tell me what to do next.",
+      "exercises": "A reject-rate trend from the Eventhouse, plus the station SOP and the quality policy",
+      "sources": ["data", "sop"],
+      "facts": ["4%", "7%", "calibration"],
+      "ground_truth": "The answer shows the AOI-Inspection (line-e-station-4) reject rate over time from the event data and compares it with its 4% target and the more-than-7% one-hour pause threshold. Next steps: pause the station for triage when it's over the threshold; rising false rejects point to Calibration-Drift, so run the calibration set (known-good and known-defect PCBs), tune the thresholds, and sign off the recipe; also check the lens and the lighting (Camera-Fault, Light-Fail); hold each rejected board per the Quality Reject Disposition Policy. Sources: Line-E_04_AOI-Inspection_SOP.pdf, Quality_Reject_Disposition_Policy.pdf."
+    },
+    {
+      "id": "lm-line-d-starved-blocked",
+      "persona": "Line Manager",
+      "question": "Which station caused the most starved or blocked time on Line-D, and why?",
+      "exercises": "Starved and blocked root-cause attribution (rule StarvedBlockedRootCause) from the Eventhouse",
+      "sources": ["data"],
+      "facts": [["starved", "blocked"]],
+      "facts_kql": {
+        "query": "MachineEvents | where line_id == 'Line-D' and isnotempty(root_cause_device_id) | summarize samples = count() by root_cause_device_id | top 1 by samples | project root_cause_device_id",
+        "columns": ["root_cause_device_id"],
+        "label": "Root cause of the most starved or blocked time"
+      },
+      "ground_truth": "The answer attributes Line-D's Starved and Blocked idle time to root-cause stations (Starved points to the upstream station, Blocked to the downstream station, per the StarvedBlockedRootCause rule), names the station that caused the most by its device id (line_id and station_position), and quantifies the idle time it caused."
+    },
+    {
+      "id": "mt-thermocouple-drift",
+      "persona": "Maintenance Tech",
+      "question": "The Line-D Curing-Oven just raised a Thermocouple-Drift fault. What's the corrective procedure, and is there an open work order?",
+      "exercises": "SOP corrective action, plus open work orders from the data agent",
+      "sources": ["sop", "data"],
+      "facts": [
+        "master probe",
+        "replace",
+        ["±5", "5°c"],
+        "work order",
+        ["line-d_05_curing-oven_sop", "curing-oven sop", "curing-oven - standard operating procedure"]
+      ],
+      "ground_truth": "Thermocouple-Drift (section 4.1 of Line-D_05_Curing-Oven_SOP.pdf): the cure profile is out of spec because a thermocouple junction degraded. Verify the thermocouple against a master probe, then replace it and re-validate the cure profile; restart when the profile is within ±5 °C across the zones. Apply lockout/tagout first; the oven stays above 60 °C for about 60 minutes after power-off. The answer also says whether a Thermocouple-Drift work order on line-d-station-5 is open (its latest step isn't Resolved), with its ID, or that none is open."
+    },
+    {
+      "id": "mt-loto-hydraulic-press",
+      "persona": "Maintenance Tech",
+      "question": "Walk me through the LOTO procedure for the Line-B Hydraulic-Press.",
+      "exercises": "The safety procedure plus the station's notes, from two documents",
+      "sources": ["sop"],
+      "facts": [
+        "notify",
+        "isolate",
+        "padlock",
+        "verify",
+        ["3,000 psi", "3000 psi"],
+        "bleed",
+        ["safety_lockout_tagout_procedure", "lockout / tagout", "lockout/tagout"]
+      ],
+      "ground_truth": "Follow the 7-step LOTO sequence: prepare (identify every energy source from the station energy chart), notify the affected operators and capture the work order ID, shut down with the operator controls, isolate every energy source and close the hydraulic and air valves, apply your personal padlock and tag (technician ID, date, time, work order ID), release stored energy, and verify that the press won't start. For the Hydraulic-Press, the main accumulator can hold about 3,000 psi after the electrical disconnect, so always bleed it before opening the ram enclosure (Hydraulic-Press SOP section 4.2); the press ram is also a stored mechanical hazard. Sources: Safety_Lockout_Tagout_Procedure.pdf, Line-B_02_Hydraulic-Press_Maintenance_SOP.pdf."
+    },
+    {
+      "id": "mt-cnc-lathe-faults",
+      "persona": "Maintenance Tech",
+      "question": "What were the five most recent faults on the Line-A CNC-Lathe, and who acknowledged each work order?",
+      "exercises": "Work-order timelines (the MaintenanceEvent lifecycle) through the data agent",
+      "sources": ["data"],
+      "facts": [["cnc-lathe", "line-a-station-1"]],
+      "facts_kql": {
+        "query": "TechnicianMaster | project value = name | union (TechnicianMaster | project value = technician_id)",
+        "columns": ["value"],
+        "match": "any"
+      },
+      "ground_truth": "The answer lists the five most recent faults on the Line-A CNC-Lathe (line-a-station-1) with the time, fault type, and work order ID, and the technician who acknowledged each work order (the Acknowledged step of the work-order lifecycle), or says that a work order hasn't been acknowledged."
+    },
+    {
+      "id": "qw-cmm-rejects",
+      "persona": "Quality Worker",
+      "question": "If Line-A CMM-Inspection rejects exceed 8% in an hour, what do I do?",
+      "exercises": "Quality policy thresholds and dispositions, with the CMM calibration procedure",
+      "sources": ["sop"],
+      "facts": [
+        "8%",
+        "pause",
+        ["prior 5 parts", "previous 5 parts", "last 5 parts", "prior five parts", "previous five parts", "last five parts"],
+        "quarantine",
+        ["quality_reject_disposition_policy", "reject disposition policy"]
+      ],
+      "ground_truth": "More than 8% rejects over a rolling hour exceeds the CMM-Inspection (line-a-station-5) pause threshold (its target is 5%): the Line Manager pauses the station for triage and checks section 4 of the CMM SOP even if it's still Running. Rejects often jump just before a Probe-Calibration fault, so run the probe qualification cycle against the master sphere and replace the stylus if the error is over 2 μm. Dimensional rejects are quarantined until a Quality Engineer reviews them, and for CMM rejects the prior 5 parts are checked. Sources: Quality_Reject_Disposition_Policy.pdf, Line-A_05_CMM-Inspection_Calibration.pdf."
+    },
+    {
+      "id": "qw-leak-test-disposition",
+      "persona": "Quality Worker",
+      "question": "I have a part that failed the Line-C Leak-Test. What's the disposition decision tree, and how many parts are in the Leak-Test input buffer right now?",
+      "exercises": "The quality policy's decision tree, plus current buffer state from the ontology",
+      "sources": ["sop", "ontology|data"],
+      "facts": [
+        "quarantine",
+        ["last good cycle", "entire buffer", "whole buffer"],
+        ["safety-critical", "safety critical"],
+        ["3-piece", "three-piece", "3 piece", "prior 3 parts", "prior three parts"],
+        "buffer",
+        ["quality_reject_disposition_policy", "reject disposition policy"]
+      ],
+      "ground_truth": "Decision tree (Quality_Reject_Disposition_Policy.pdf): capture the context (part ID, line, station, reject reason, the fault_type of any open work order), classify the defect, and route it. A leak is a dimensional or functional defect: quarantine the part until a Quality Engineer reviews it and, for Line-C Leak-Test rejects, hold the entire buffer of parts produced after the last good cycle. A leak on a pressure boundary is safety-critical: immediate red-tag quarantine, notify the Line Manager and the Quality Engineer, apply the 3-piece holdback (the prior 3 parts), and open a work order on the station. Cosmetic defects are reworked or scrapped (COS-SCRAP). The answer also gives the latest input_buffer_count of the Leak-Test station (line-c-station-6) with its sample time."
+    },
+    {
+      "id": "qw-handover-quality-holds",
+      "persona": "Quality Worker",
+      "question": "What does the shift-handover checklist say about open quality holds?",
+      "exercises": "Checklist retrieval from a cross-cutting document",
+      "sources": ["sop"],
+      "facts": [
+        "quarantine",
+        ["3-piece", "three-piece", "3 piece"],
+        "segregat",
+        "re:\\brma\\b",
+        ["shift_handover_checklist", "shift handover checklist", "shift-handover checklist"]
+      ],
+      "ground_truth": "Section D (Quality holds) of the Shift Handover Checklist: list any parts quarantined under the Quality Reject Disposition Policy, confirm that 3-piece holdback parts have been physically segregated, and note any unresolved RMA investigations from the previous shift. Section A also asks whether any line is paused for triage. Source: Shift_Handover_Checklist.pdf."
+    },
+    {
+      "id": "qw-reject-quarantine-rule",
+      "persona": "Quality Worker",
+      "question": "What does our business rule say when a station's reject rate climbs above twice its target, and what's the target reject rate for the Line-D Curing-Oven?",
+      "exercises": "The ontology rule RejectRateQuarantine with the Station target_reject_rate property",
+      "sources": ["ontology"],
+      "facts": [
+        "quarantine",
+        "quality engineer",
+        "hour",
+        ["2%", "0.02"]
+      ],
+      "ground_truth": "Rule RejectRateQuarantine: if a station's reject rate over a rolling hour exceeds twice its target reject rate, the Quality Engineer quarantines all buffered parts at that station per the Quality Reject Disposition Policy. The Line-D Curing-Oven (line-d-station-5) has a 2% target reject rate, so the rule applies above 4% in an hour."
+    },
+    {
+      "id": "qw-part-genealogy",
+      "persona": "Quality Worker",
+      "question": "Take the most recently rejected part on Line-C and trace every station it passed through, with the outcome at each.",
+      "exercises": "Part genealogy across the ontology's Part, PartPass, and Station",
+      "sources": ["ontology|data"],
+      "facts": ["rejected", ["re:line-c-station-[1-6]", "re:line-c,? station(_position)? ?[1-6]"]],
+      "facts_kql": {
+        "query": "PartPasses | where line_id == 'Line-C' and outcome == 'rejected' | top 1 by passed_at desc | project part_id",
+        "columns": ["part_id"],
+        "label": "Most recently rejected Line-C part"
+      },
+      "ground_truth": "The answer identifies the most recently rejected Line-C part by part_id and lists its station passes in flow order with the outcome (completed or rejected) and the time at each, ending at the station that rejected it."
+    },
+    {
+      "id": "rel-process-families",
+      "persona": "Reliability Engineer",
+      "question": "Group the machine types by process family and tell me how many stations are in each.",
+      "exercises": "Ontology relationships (Station to MachineType) and a category rollup",
+      "sources": ["ontology|data"],
+      "facts": [],
+      "facts_kql": {
+        "query": "StationMaster | lookup kind=inner MachineTypeMaster on machine_type | summarize stations = count() by category",
+        "columns": ["category", "stations"],
+        "label": "Stations per process family"
+      },
+      "ground_truth": "Six process families cover the plant's 30 stations; the answer gives each family with its number of stations and may list the machine types in each."
+    },
+    {
+      "id": "rel-top-fault-category",
+      "persona": "Reliability Engineer",
+      "question": "Which fault category has caused the most work orders overall?",
+      "exercises": "Work orders rolled up by the IssueType category",
+      "sources": ["data"],
+      "facts": [],
+      "facts_kql": {
+        "query": "WorkOrders | lookup kind=inner IssueTypeMaster on issue_type | summarize work_orders = count() by category | top 1 by work_orders | project category",
+        "columns": ["category"],
+        "label": "Fault category with the most work orders"
+      },
+      "ground_truth": "The answer counts work orders by fault category (IssueType.category, six categories) over all available data, names the category with the most, and gives the counts."
+    },
+    {
+      "id": "rel-technician-resolved",
+      "persona": "Reliability Engineer",
+      "question": "How many work orders has each technician resolved, by name?",
+      "exercises": "Work orders joined to the Technician entity",
+      "sources": ["data"],
+      "facts": [],
+      "facts_kql": {
+        "query": "TechnicianMaster | project name",
+        "columns": ["name"],
+        "label": "Technicians"
+      },
+      "ground_truth": "The answer lists each technician by name, with technician_id, and the number of work orders each resolved (the latest step is Resolved) over all available data."
+    },
+    {
+      "id": "rel-lowest-availability-family",
+      "persona": "Reliability Engineer",
+      "question": "Which process family has the lowest availability, and what's the SOP for its worst station?",
+      "exercises": "Governed Availability by machine-type category, then the SOP linked to the station",
+      "sources": ["data", "sop|ontology"],
+      "facts": ["availability", "re:line-[a-e]_0\\d_"],
+      "facts_kql": {
+        "query": "MachineEvents | lookup kind=inner MachineTypeMaster on machine_type | summarize availability = avg(todouble(is_running)) by category | top 1 by availability asc | project category",
+        "columns": ["category"],
+        "label": "Process family with the lowest availability"
+      },
+      "ground_truth": "The answer ranks the six process families by the governed Availability measure, names the lowest, identifies its lowest-availability station by line_id and station_position, and points to that station's SOP by file name."
+    },
+    {
+      "id": "rel-mttr-mtbf",
+      "persona": "Reliability Engineer",
+      "question": "What are MTTR and MTBF by line over the full history?",
+      "exercises": "Governed MTTR (min) and MTBF (min) measures from the Direct Lake semantic model",
+      "sources": ["data"],
+      "facts": ["mttr", "mtbf", "line-a", "line-b", "line-c", "line-d", "line-e"],
+      "ground_truth": "The answer gives MTTR (average minutes from Created to Resolved per work order) and MTBF (running minutes per work order) for Line-A through Line-E from the governed OEEAnalytics measures over all available data, and calls out the line with the highest MTTR and the line with the lowest MTBF."
+    }
+  ]
+}

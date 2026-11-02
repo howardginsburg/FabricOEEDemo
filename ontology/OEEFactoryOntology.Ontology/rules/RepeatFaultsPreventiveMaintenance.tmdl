@@ -1,0 +1,11 @@
+rule RepeatFaultsPreventiveMaintenance
+	lineageTag: 7dc0f86f-b88f-5b98-8f2d-c1562f190974
+	statement: Three or more work orders on the same station within one hour require the Maintenance Lead to pull the station for preventive maintenance and run a root-cause review, regardless of the PM schedule.
+
+	ruleReferencedEntity maintenance#WorkOrder
+		propertyScope: specific
+		ruleReferencedProperty created_at
+
+	ruleReferencedEntity equipment#Station
+
+	ruleReferencedRelationship maintenance#WorkOrderOnStation

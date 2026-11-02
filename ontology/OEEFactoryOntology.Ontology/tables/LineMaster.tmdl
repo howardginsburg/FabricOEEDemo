@@ -1,0 +1,29 @@
+table LineMaster
+	lineageTag: b78a2300-052c-59e5-82c8-e0b5b0453982
+
+	column line_id
+		dataType: string
+		lineageTag: 7ce13ba8-b757-5720-aa3e-2bc8bba1be1d
+		sourceColumn: line_id
+
+	column line_name
+		dataType: string
+		lineageTag: 5ac26084-9639-5ab6-ad77-e9d041a25d6c
+		sourceColumn: line_name
+
+	column purpose
+		dataType: string
+		lineageTag: 6e6e931f-cac4-59e8-8916-e402d47d8c8a
+		sourceColumn: purpose
+
+	column station_count
+		dataType: int64
+		lineageTag: ebeafc54-4a1c-5bfa-a8c0-5ba8a57321ce
+		sourceColumn: station_count
+
+	partition LineMaster = entity
+		mode: directLake
+		source
+			entityName: LineMaster
+			schemaName: dbo
+			expressionSource: 'DirectLake - ManufacturingLH'

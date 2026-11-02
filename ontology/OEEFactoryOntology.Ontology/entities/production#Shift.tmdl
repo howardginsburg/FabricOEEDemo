@@ -1,0 +1,31 @@
+/// A production shift window. Every event belongs to the shift whose hours contain its timestamp.
+entity production#Shift
+	lineageTag: c4a077c5-42cd-5d98-b709-757923567548
+	backingTable: ShiftMaster
+	keyProperty: shift
+
+	/// Shift name: Day or Night.
+	property shift
+		dataType: string
+		lineageTag: 1e54d70a-ba4c-5bbf-89f3-e2a9fd715c3b
+
+		backingConfiguration
+			valueColumn: ShiftMaster.shift
+
+		synonym 'shift id'
+
+	/// Hour of day the shift starts (0-23, plant local).
+	property start_hour
+		dataType: int64
+		lineageTag: f2e8e2e6-abf0-5291-adc5-0e1d8a7c33b2
+
+		backingConfiguration
+			valueColumn: ShiftMaster.start_hour
+
+	/// Hour of day the shift ends (0-23, plant local).
+	property end_hour
+		dataType: int64
+		lineageTag: 4fe403d1-4cd9-5dab-aacc-087d648f145d
+
+		backingConfiguration
+			valueColumn: ShiftMaster.end_hour

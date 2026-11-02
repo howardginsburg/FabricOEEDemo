@@ -1,0 +1,66 @@
+/// One lifecycle step of a work order: Created, Acknowledged, InProgress, or Resolved. MTTR is Resolved minus Created.
+entity maintenance#MaintenanceEvent
+	lineageTag: 86a62063-74b1-5996-954c-5d9b74fb22c8
+	backingTable: MaintenanceEvents
+
+	/// Work order this step belongs to.
+	property work_order_id
+		dataType: string
+		lineageTag: 3c2fb9b5-b912-5572-9192-561be17eeec6
+
+		backingConfiguration
+			valueColumn: MaintenanceEvents.work_order_id
+
+	/// Station and machine of the work order.
+	property device_id
+		dataType: string
+		lineageTag: 8c04cb97-b9fd-52c2-a6e4-ca9901ef5c60
+
+		backingConfiguration
+			valueColumn: MaintenanceEvents.device_id
+
+	/// Lifecycle step: Created, Acknowledged, InProgress, or Resolved.
+	property action
+		dataType: string
+		lineageTag: 555dd963-c24b-5023-8567-59e7698cbeac
+
+		backingConfiguration
+			valueColumn: MaintenanceEvents.action
+
+		synonym status
+		synonym step
+
+	/// Fault code of the work order.
+	property issue_type
+		dataType: string
+		lineageTag: 2c618472-4cc9-56fa-bb94-8a10f42c780d
+
+		backingConfiguration
+			valueColumn: MaintenanceEvents.issue_type
+
+	/// Assigned technician.
+	property technician_id
+		dataType: string
+		lineageTag: d9816de2-8960-54c0-804c-75b546160ce7
+
+		backingConfiguration
+			valueColumn: MaintenanceEvents.technician_id
+
+	/// Shift in which the step happened.
+	property shift_id
+		dataType: string
+		lineageTag: 169b375d-3aea-5423-813e-574fa44b1555
+
+		backingConfiguration
+			valueColumn: MaintenanceEvents.shift_id
+
+	/// When the step happened.
+	property timestamp
+		dataType: dateTime
+		lineageTag: fa226cf2-0cf1-5bcd-b474-d333beba797b
+
+		backingConfiguration
+			valueColumn: MaintenanceEvents.timestamp
+
+	synonym 'work order event'
+	synonym 'lifecycle event'

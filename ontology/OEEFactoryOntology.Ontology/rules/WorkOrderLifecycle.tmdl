@@ -1,0 +1,12 @@
+rule WorkOrderLifecycle
+	lineageTag: e8b6c6e4-f102-5f3f-ae94-0d85463437b6
+	statement: A work order moves through Created, Acknowledged, InProgress, and Resolved. It is open until its latest lifecycle step is Resolved. Repair time (MTTR) runs from Created to Resolved.
+
+	ruleReferencedEntity maintenance#MaintenanceEvent
+		propertyScope: specific
+		ruleReferencedProperty action
+		ruleReferencedProperty timestamp
+
+	ruleReferencedEntity maintenance#WorkOrder
+
+	ruleReferencedRelationship maintenance#EventOfWorkOrder

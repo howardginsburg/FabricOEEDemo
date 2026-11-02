@@ -1,0 +1,77 @@
+/// A station-scoped standard operating procedure, calibration, or troubleshooting guide.
+entity knowledge#SOP
+	lineageTag: 81f4842a-9d6e-5c48-8bca-237b60eb460b
+	backingTable: SopMaster
+	baseEntityType: knowledge#Document
+	keyProperty: sop_id
+
+	/// SOP identifier, for example Line-D_05_Curing-Oven_SOP.
+	property sop_id
+		dataType: string
+		lineageTag: 501ce17e-0044-54b7-a662-f8423da045b6
+
+		backingConfiguration
+			valueColumn: SopMaster.sop_id
+
+	/// Station the SOP applies to.
+	property device_id
+		dataType: string
+		lineageTag: 75d0a1ba-e243-5518-9e21-0c840347fd76
+
+		backingConfiguration
+			valueColumn: SopMaster.device_id
+
+	/// Line of the station.
+	property line_id
+		dataType: string
+		lineageTag: 3a6098f6-9fb7-50fc-b605-3ae823e14ab7
+
+		backingConfiguration
+			valueColumn: SopMaster.line_id
+
+	/// Position of the station.
+	property station_position
+		dataType: int64
+		lineageTag: ae71ceab-470b-5549-a872-d9277986ef2f
+
+		backingConfiguration
+			valueColumn: SopMaster.station_position
+
+	/// Machine type the SOP covers.
+	property machine_type
+		dataType: string
+		lineageTag: 79e936e9-a5a2-5f6a-8c4b-80dfcd381c3f
+
+		backingConfiguration
+			valueColumn: SopMaster.machine_type
+
+	property title
+		dataType: string
+		lineageTag: d9b02ee6-27a3-563b-821d-aae681d57ac8
+		redefines: knowledge#Document.title
+
+		backingConfiguration
+			valueColumn: SopMaster.title
+
+	property doc_type
+		dataType: string
+		lineageTag: d3e56568-4a08-5d75-b832-8e64bd50cf5f
+		redefines: knowledge#Document.doc_type
+
+		backingConfiguration
+			valueColumn: SopMaster.doc_type
+
+	property file_name
+		dataType: string
+		lineageTag: b01a7606-1d19-50b1-9dc8-35e89a7a5a56
+		redefines: knowledge#Document.file_name
+
+		backingConfiguration
+			valueColumn: SopMaster.file_name
+
+	overriddenMetadataField description
+	overriddenMetadataField synonyms
+
+	synonym 'standard operating procedure'
+	synonym procedure
+	synonym 'work instruction'

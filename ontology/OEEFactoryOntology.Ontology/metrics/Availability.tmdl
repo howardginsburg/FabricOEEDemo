@@ -1,0 +1,9 @@
+/// Share of machine-status samples that are Running (Idle, Fault, and Maintenance count as not running). Same definition as the OEEAnalytics semantic model measure [Availability].
+metric Availability
+	lineageTag: 38aa4c32-9895-5cd0-b8e6-ea795e7f0a80
+
+	expression
+		dialect: SQL
+		expression: SELECT CAST(SUM(is_running) AS FLOAT) / NULLIF(COUNT(*), 0) FROM dbo.MachineEvents
+
+	synonym uptime

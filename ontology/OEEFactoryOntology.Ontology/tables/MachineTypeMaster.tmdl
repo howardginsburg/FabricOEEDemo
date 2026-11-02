@@ -1,0 +1,19 @@
+table MachineTypeMaster
+	lineageTag: a955e9a8-9029-5289-989a-4752202ac403
+
+	column machine_type
+		dataType: string
+		lineageTag: 0ce619b4-7b20-5027-ab27-083c4437058a
+		sourceColumn: machine_type
+
+	column category
+		dataType: string
+		lineageTag: 6d170e23-6ee6-5eca-b811-014994ed8b19
+		sourceColumn: category
+
+	partition MachineTypeMaster = entity
+		mode: directLake
+		source
+			entityName: MachineTypeMaster
+			schemaName: dbo
+			expressionSource: 'DirectLake - ManufacturingLH'

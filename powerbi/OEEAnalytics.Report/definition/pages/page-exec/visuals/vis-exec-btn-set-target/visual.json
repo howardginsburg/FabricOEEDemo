@@ -1,0 +1,100 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.12.0/schema.json",
+  "name": "vis-exec-btn-set-target",
+  "position": { "x": 216, "y": 636, "z": 2, "height": 40, "width": 120, "tabOrder": 10 },
+  "visual": {
+    "visualType": "actionButton",
+    "objects": {
+      "icon": [
+        {
+          "properties": { "shapeType": { "expr": { "Literal": { "Value": "'blank'" } } } },
+          "selector": { "id": "default" }
+        }
+      ],
+      "text": [
+        {
+          "properties": { "show": { "expr": { "Literal": { "Value": "true" } } } }
+        },
+        {
+          "properties": { "text": { "expr": { "Literal": { "Value": "'Update OEE'" } } } },
+          "selector": { "id": "default" }
+        }
+      ],
+      "fill": [
+        {
+          "properties": {
+            "fillColor": { "solid": { "color": { "expr": { "ThemeDataColor": { "ColorId": 2, "Percent": 0 } } } } }
+          },
+          "selector": { "id": "default" }
+        }
+      ]
+    },
+    "visualContainerObjects": {
+      "title": [
+        {
+          "properties": {
+            "show": { "expr": { "Literal": { "Value": "false" } } },
+            "text": { "expr": { "Literal": { "Value": "'Update OEE'" } } }
+          }
+        }
+      ],
+      "visualLink": [
+        {
+          "properties": {
+            "show": { "expr": { "Literal": { "Value": "true" } } },
+            "type": { "expr": { "Literal": { "Value": "'DataFunction'" } } },
+            "dataFunction": {
+              "kind": "ItemLocation",
+              "byReference": {
+                "itemId": { "expr": { "Literal": { "Value": "'__UDF_ITEM_ID__'" } } },
+                "workspaceId": { "expr": { "Literal": { "Value": "'__WORKSPACE_ID__'" } } }
+              },
+              "metadata": {
+                "dataFunction": {
+                  "name": "set_oee_target",
+                  "autoRefresh": true,
+                  "parameters": [
+                    {
+                      "name": "lineId",
+                      "dataType": "string",
+                      "isOptional": false,
+                      "defaultValue": null,
+                      "type": "ValueParameter",
+                      "value": {
+                        "expr": {
+                          "Measure": {
+                            "Expression": { "SourceRef": { "Entity": "_Measures" } },
+                            "Property": "Selected Line ID"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "name": "targetOee",
+                      "dataType": "number",
+                      "isOptional": false,
+                      "defaultValue": null,
+                      "type": "SlicerParameter",
+                      "slicer": "vis-exec-slicer-target",
+                      "autoClear": false
+                    },
+                    {
+                      "type": "SlicerParameter",
+                      "autoClear": false,
+                      "name": "setBy",
+                      "dataType": "string",
+                      "isOptional": true,
+                      "defaultValue": "report"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "drillFilterOtherVisuals": true
+  },
+  "howCreated": "InsertVisualButton"
+}

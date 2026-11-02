@@ -1,6 +1,9 @@
 # Generated dashboard (has user-specific cluster URI / database ID)
 dashboard/oee-dashboard.json
 
+# Setup scripts' scratch space (request bodies, definitions); self-cleans, but a failed run can leave files
+/.fabric-tmp/
+
 # Simulator runtime config (contains connection strings)
 simulator/**/simulator.local.yaml
 
@@ -30,5 +33,8 @@ Desktop.ini
 __pycache__/
 *.pyc
 
-# Local ontology accelerator package
-/ontology/*.whl
+# RDF export generated from the ontology TMDL (scripts/6-publish-ontology.py --export-ttl)
+/ontology/*.ttl
+
+# Agent evaluation responses and results (scripts/12-evaluate-agent.py)
+/agent/evals/results/

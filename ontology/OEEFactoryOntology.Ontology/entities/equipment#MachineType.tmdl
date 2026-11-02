@@ -1,0 +1,27 @@
+/// A machine type, rolled up into one of six process families for cross-line comparison.
+entity equipment#MachineType
+	lineageTag: 58ba3a7b-9a37-5b7c-a082-e6ac2fb93175
+	backingTable: MachineTypeMaster
+	keyProperty: machine_type
+
+	/// Machine type name, for example Hydraulic-Press.
+	property machine_type
+		dataType: string
+		lineageTag: 0b809cde-c0d6-5fdb-a0ab-c90c6e5d28a0
+
+		backingConfiguration
+			valueColumn: MachineTypeMaster.machine_type
+
+	/// Process family: Machining, Forming, Joining, Surface, Electronics, or Inspection.
+	property category
+		dataType: string
+		lineageTag: b4105b0e-213c-5080-bbd4-3e66627c59d1
+
+		backingConfiguration
+			valueColumn: MachineTypeMaster.category
+
+		synonym 'process family'
+		synonym family
+
+	synonym 'machine model'
+	synonym 'equipment type'

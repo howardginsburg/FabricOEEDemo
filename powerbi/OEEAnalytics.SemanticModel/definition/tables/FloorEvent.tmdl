@@ -1,0 +1,138 @@
+/// Floor Ops Console events (Andon issue lifecycle + Quality defects + Shift rollup),
+/// written by the Fabric app to its managed SQL database and surfaced into
+/// ManufacturingLH/dbo.FloorEvent via a OneLake shortcut. Direct Lake over the
+/// ManufacturingLH SQL analytics endpoint. Joins to StationDim (device_id), DimLine
+/// (line_id) and DimShift (shift) so human floor context sits beside machine telemetry.
+table FloorEvent
+
+	column id
+		dataType: string
+		sourceColumn: id
+		summarizeBy: none
+		lineageTag: 3f2a9d10-2010-4b7c-9e11-aa0000019001
+
+	column device_id
+		dataType: string
+		sourceColumn: device_id
+		summarizeBy: none
+		lineageTag: 3f2a9d10-2010-4b7c-9e11-aa0000019002
+
+	column line_id
+		dataType: string
+		sourceColumn: line_id
+		summarizeBy: none
+		lineageTag: 3f2a9d10-2010-4b7c-9e11-aa0000019003
+
+	column station_position
+		dataType: int64
+		sourceColumn: station_position
+		summarizeBy: none
+		lineageTag: 3f2a9d10-2010-4b7c-9e11-aa0000019004
+
+	column shift
+		dataType: string
+		sourceColumn: shift
+		summarizeBy: none
+		lineageTag: 3f2a9d10-2010-4b7c-9e11-aa0000019005
+
+	column event_ts
+		dataType: dateTime
+		formatString: General Date
+		sourceColumn: event_ts
+		summarizeBy: none
+		lineageTag: 3f2a9d10-2010-4b7c-9e11-aa0000019006
+
+	column category
+		dataType: string
+		sourceColumn: category
+		summarizeBy: none
+		lineageTag: 3f2a9d10-2010-4b7c-9e11-aa0000019007
+
+	column priority
+		dataType: string
+		sourceColumn: priority
+		summarizeBy: none
+		lineageTag: 3f2a9d10-2010-4b7c-9e11-aa0000019008
+
+	column description
+		dataType: string
+		sourceColumn: description
+		summarizeBy: none
+		lineageTag: 3f2a9d10-2010-4b7c-9e11-aa0000019009
+
+	column status
+		dataType: string
+		sourceColumn: status
+		summarizeBy: none
+		lineageTag: 3f2a9d10-2010-4b7c-9e11-aa0000019010
+
+	column acknowledged_at
+		dataType: dateTime
+		formatString: General Date
+		sourceColumn: acknowledged_at
+		summarizeBy: none
+		lineageTag: 3f2a9d10-2010-4b7c-9e11-aa0000019011
+
+	column resolved_at
+		dataType: dateTime
+		formatString: General Date
+		sourceColumn: resolved_at
+		summarizeBy: none
+		lineageTag: 3f2a9d10-2010-4b7c-9e11-aa0000019012
+
+	column root_cause_code
+		dataType: string
+		sourceColumn: root_cause_code
+		summarizeBy: none
+		lineageTag: 3f2a9d10-2010-4b7c-9e11-aa0000019013
+
+	column corrective_action
+		dataType: string
+		sourceColumn: corrective_action
+		summarizeBy: none
+		lineageTag: 3f2a9d10-2010-4b7c-9e11-aa0000019014
+
+	column defect_type
+		dataType: string
+		sourceColumn: defect_type
+		summarizeBy: none
+		lineageTag: 3f2a9d10-2010-4b7c-9e11-aa0000019015
+
+	column severity
+		dataType: string
+		sourceColumn: severity
+		summarizeBy: none
+		lineageTag: 3f2a9d10-2010-4b7c-9e11-aa0000019016
+
+	column scrap_qty
+		dataType: int64
+		formatString: #,0
+		sourceColumn: scrap_qty
+		summarizeBy: sum
+		lineageTag: 3f2a9d10-2010-4b7c-9e11-aa0000019017
+
+	column raised_by
+		dataType: string
+		sourceColumn: raised_by
+		summarizeBy: none
+		lineageTag: 3f2a9d10-2010-4b7c-9e11-aa0000019018
+
+	column resolved_by
+		dataType: string
+		sourceColumn: resolved_by
+		summarizeBy: none
+		lineageTag: 3f2a9d10-2010-4b7c-9e11-aa0000019019
+
+	column logged_at
+		dataType: dateTime
+		formatString: General Date
+		sourceColumn: logged_at
+		summarizeBy: none
+		lineageTag: 3f2a9d10-2010-4b7c-9e11-aa0000019020
+
+	partition FloorEvent = entity
+		mode: directLake
+		source
+			entityName: FloorEvent
+			schemaName: dbo
+			expressionSource: 'DirectLake - ManufacturingLH'

@@ -1,0 +1,29 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.12.0/schema.json",
+  "name": "vis-fo-card-resrate",
+  "position": { "x": 832, "y": 88, "z": 0, "width": 196, "height": 110, "tabOrder": 4 },
+  "visual": {
+    "visualType": "card",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            { "field": { "Measure": { "Expression": { "SourceRef": { "Entity": "_Measures" } }, "Property": "Resolution Rate" } }, "queryRef": "_Measures.Resolution Rate", "nativeQueryRef": "Resolution Rate" }
+          ]
+        }
+      }
+    },
+    "objects": {
+      "categoryLabels": [
+        { "properties": { "show": { "expr": { "Literal": { "Value": "false" } } } } }
+      ],
+      "labels": [
+        { "properties": { "fontSize": { "expr": { "Literal": { "Value": "28D" } } } } }
+      ]
+    },
+    "visualContainerObjects": {
+      "title": [ { "properties": { "text": { "expr": { "Literal": { "Value": "'Resolution Rate'" } } } } } ]
+    },
+    "drillFilterOtherVisuals": true
+  }
+}

@@ -7,12 +7,10 @@ udf = fn.UserDataFunctions()
 
 def _validate_target(line_id: str, target_oee: float, set_by: str) -> tuple[str, float, str]:
     line = (line_id or "").strip()
-    setter = (set_by or "").strip()
+    setter = (set_by or "").strip() or "report"
 
     if not line:
         raise fn.UserThrownError("Select a production line before setting the OEE target.")
-    if not setter:
-        raise fn.UserThrownError("Provide the user or process setting the OEE target.")
 
     try:
         target = float(target_oee)
@@ -27,7 +25,7 @@ def _validate_target(line_id: str, target_oee: float, set_by: str) -> tuple[str,
 
 @udf.connection(argName="sqlDB", alias="OeeGovernance")
 @udf.function()
-def set_oee_target(sqlDB: fn.FabricSqlConnection, lineId: str, targetOee: float, setBy: str) -> str:
+def set_oee_target(sqlDB: fn.FabricSqlConnection, lineId: str, targetOee: float, setBy: str = "report") -> str:
     line, target, setter = _validate_target(lineId, targetOee, setBy)
 
     merge_sql = """

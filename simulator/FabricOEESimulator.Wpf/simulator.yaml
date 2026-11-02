@@ -15,6 +15,28 @@ simulator:
     technicians: [T001, T002, T003, T004, T005, T006, T007, T008]
 
   # ---------------------------------------------------------------------------
+  # Demo scenarios (right-hand panel buttons; act on the selected station)
+  #
+  #   Fault now      — immediate fault, normal work-order lifecycle
+  #   Repeat faults  — repeatFaultCount back-to-back faults with quick repairs
+  #                    (each lifecycle step lasts quickFixStepMin..MaxSeconds)
+  #   Long outage    — one fault held down for longOutageMinutes end to end
+  #   Reject spike   — reject probability raised for rejectSpikeMinutes
+  #   Slow cycles    — cycle times multiplied for slowCycleMinutes
+  #
+  # Scenarios only change the simulated behavior; telemetry keeps the same schema.
+  # ---------------------------------------------------------------------------
+  scenarios:
+    repeatFaultCount: 3
+    quickFixStepMinSeconds: 10
+    quickFixStepMaxSeconds: 20
+    longOutageMinutes: 6
+    rejectSpikeMinutes: 10
+    rejectSpikeProbability: 0.35
+    slowCycleMinutes: 10
+    slowCycleMultiplier: 1.8
+
+  # ---------------------------------------------------------------------------
   # Production Lines
   #
   # Each line represents an ordered sequence of stations that parts flow through.

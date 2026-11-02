@@ -21,6 +21,6 @@ ref table DimShift
 ref table DimIssueType
 ref table DimTechnician
 ref table ProductionSchedule
-ref table DowntimeReason
+ref table FloorEvent
 ref table OeeTarget
 ref table _Measures

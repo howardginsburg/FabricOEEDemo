@@ -1,0 +1,11 @@
+rule LineOeeEscalation
+	lineageTag: b981b674-8010-5d14-ade0-58a406443319
+	statement: Per the OEE Targets and Escalation policy, if a production line's OEE stays below 60% for more than 15 minutes, notify the Plant Manager and open an incident review; if it stays below 60% for more than one hour, escalate to the Corp Exec daily flash report.
+
+	ruleReferencedEntity equipment#ProductionLine
+
+	ruleReferencedEntity production#OeeTarget
+		propertyScope: specific
+		ruleReferencedProperty target_oee
+
+	ruleReferencedRelationship production#TargetForLine

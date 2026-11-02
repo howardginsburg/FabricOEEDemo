@@ -1,0 +1,10 @@
+/// Parts that left the line (completed at its last station) divided by the plan pro-rated to the minutes each line ran. Same definition as the OEEAnalytics semantic model measure [Schedule Adherence].
+metric ScheduleAdherence
+	lineageTag: d4fd8c18-ba73-5cc2-bac3-94623bb0c454
+
+	expression
+		dialect: SQL
+		expression: SELECT CAST(f.n AS FLOAT) / NULLIF(e.n, 0) FROM (SELECT SUM(p.is_completed) AS n FROM dbo.PartPasses AS p JOIN dbo.LineMaster AS l ON l.line_id = p.line_id WHERE p.station_position = l.station_count) AS f CROSS JOIN (SELECT SUM(CAST(s.planned_parts AS FLOAT) * r.minutes_run / (((sm.end_hour - sm.start_hour + 24) % 24) * 60)) AS n FROM dbo.ProductionSchedule AS s JOIN dbo.ShiftMaster AS sm ON sm.shift = s.shift JOIN (SELECT line_id, shift_id, COUNT(DISTINCT DATEDIFF(MINUTE, '2000-01-01', timestamp)) AS minutes_run FROM dbo.MachineEvents WHERE station_position = 1 GROUP BY line_id, shift_id) AS r ON r.line_id = s.line_id AND r.shift_id = s.shift) AS e
+
+	synonym 'plan attainment'
+	synonym 'schedule attainment'
