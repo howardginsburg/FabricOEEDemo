@@ -85,6 +85,10 @@ Every setup script is safe to re-run, and re-running the script for the failed s
 :   The agent acts as the signed-in user, who needs read access to the ontology, the data agent, and their
     sources. Service principals aren't supported.
 
+**The knowledge base fails with a payment-required error.**
+:   The search service has used this month's free agentic retrieval allowance. Enable the standard plan; see
+    [the note in step 9](foundry-agent.md#create-the-knowledge-base-and-the-agent).
+
 ## Azure
 
 **Step 9 reports that a model has no quota.**

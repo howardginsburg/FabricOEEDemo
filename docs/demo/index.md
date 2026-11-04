@@ -12,7 +12,7 @@ in presenting order, with what to show and what to say at each step.
 | [Floor Ops Console](floor-ops.md) | Operators logging issues that join the machine data | 4, 5 |
 | [Ontology and graph](ontology.md) | The plant's business model and its graph | 7 |
 | [OEE Data Agent](data-agent.md) | Questions answered from the ontology, the model, and the Eventhouse | 7 |
-| [OEE Factory IQ agent](foundry-agent.md) | Procedures and data in one answer, and the evaluations | 9, 10 |
+| [Foundry agent](foundry-agent.md) | The OEE Factory IQ agent, its knowledge base over the SOPs and the ontology, procedures and data in one answer, and the evaluations | 9, 10 |
 | [Operations agent](operations-agent.md) | Alerts when the plant breaks its own rules | 8 |
 
 ## Before you present
@@ -27,7 +27,8 @@ in presenting order, with what to show and what to say at each step.
       Teams if your tenant has it, for the operations agent's messages.
 - [ ] **Open the tabs** in presenting order: the simulator, the `manufacturing-telemetry` Eventstream, the
       `ManufacturingEH` KQL database, the Real-Time Dashboard, the `OEEAnalytics` report, the Floor Ops Console,
-      `OEEFactoryOntology`, the OEE Data Agent, and the `oee-factory-iq` agent in the Foundry portal.
+      `OEEFactoryOntology`, the OEE Data Agent, and in the Foundry portal, the `oee-factory-iq` agent and the
+      `oee-factory-kb` knowledge base.
 - [ ] **Ask each agent one question** beforehand. The first answer of a session is the slowest.
 - [ ] **Wake the lakehouse's SQL analytics endpoint** a few minutes before you show the ontology and the agents:
       open `ManufacturingLH`, switch to its **SQL analytics endpoint**, and select **Refresh**. The endpoint stops
@@ -51,7 +52,7 @@ All four scenarios are buttons in the simulator's **Demo Scenarios** panel; see
 | 7 | Fire **Repeat faults** on the Line-B Hydraulic-Press | Three outage emails, then the preventive maintenance alert a few minutes after the third fault |
 | 8 | [Ontology and graph](ontology.md) | What a station, a rule, and a metric mean, and how they connect |
 | 9 | [OEE Data Agent](data-agent.md) | Which station caused Line-D's starved and blocked time |
-| 10 | Fire **Fault now** on the Line-D Curing-Oven, then go to [OEE Factory IQ agent](foundry-agent.md) | The Curing-Oven's Thermocouple-Drift procedure, with its open work order |
+| 10 | [Foundry agent](foundry-agent.md): tour the agent and its knowledge base, then fire **Fault now** on the Line-D Curing-Oven and ask about it | The knowledge base's two sources, the documents and the ontology, and the Curing-Oven's Thermocouple-Drift procedure with its open work order |
 | 11 | [Operations agent](operations-agent.md) | The alerts from steps 1, 2, 3, and 7 in its activity log |
 
 When you're done, [clean up](../setup/clean-up.md): stop the operations agent and the simulator, and pause the

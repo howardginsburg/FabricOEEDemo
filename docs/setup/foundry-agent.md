@@ -81,6 +81,14 @@ script with `--replace` to create a new version of the agent.
     the agent needs read access to the ontology, the data agent, and their sources. The ontology doesn't
     accept service principals. The knowledge base reads the SOP index with the project's managed identity.
 
+!!! note "The knowledge base starts on the free agentic retrieval plan"
+    Agentic retrieval in Azure AI Search comes with a monthly free token allowance. Once it's used, the knowledge
+    base's requests fail until the next month, and with them the agent's answers. Evaluation runs use the
+    allowance fastest. To keep going, select **Enable standard plan** on the **Knowledge** page in the Foundry
+    portal. The standard plan bills per use beyond the free allowance, and it needs the Basic search tier or
+    higher, which script 9 creates. See
+    [Enable or disable agentic retrieval billing](https://learn.microsoft.com/azure/search/agentic-retrieval-how-to-enable-disable).
+
 ## Verify
 
 - `--smoke` prints an answer for each tool and knowledge source.

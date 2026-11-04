@@ -110,7 +110,7 @@ nav:
       - Floor Ops Console: demo/floor-ops.md
       - Ontology and graph: demo/ontology.md
       - OEE Data Agent: demo/data-agent.md
-      - OEE Factory IQ agent: demo/foundry-agent.md
+      - Foundry agent: demo/foundry-agent.md
       - Operations agent: demo/operations-agent.md
       - Sample questions: demo/sample-questions.md
   - How it works: how-it-works.md
