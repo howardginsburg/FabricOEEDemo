@@ -222,17 +222,21 @@ else
 fi
 
 # Reconcile: an Azure Policy may disable public network access after creation,
-# which breaks AAD uploads and the indexer (403 mis-reported as "network rules").
+# which breaks AAD uploads and the indexer (403 "blocked by network rules").
+# A policy with a modify effect rewrites the update back to Disabled while the
+# call still succeeds, so read the value back instead of trusting the exit code.
 PNA=$(az storage account show -n "$STORAGE_ACCOUNT" -g "$RESOURCE_GROUP" \
   --query publicNetworkAccess -o tsv 2>/dev/null || echo "")
 if [[ "$PNA" == "Disabled" ]]; then
   warn "Public network access is Disabled — attempting to re-enable"
-  if az storage account update -n "$STORAGE_ACCOUNT" -g "$RESOURCE_GROUP" \
-       --public-network-access Enabled -o none 2>/dev/null; then
+  az storage account update -n "$STORAGE_ACCOUNT" -g "$RESOURCE_GROUP" \
+    --public-network-access Enabled -o none 2>/dev/null || true
+  PNA=$(az storage account show -n "$STORAGE_ACCOUNT" -g "$RESOURCE_GROUP" \
+    --query publicNetworkAccess -o tsv 2>/dev/null || echo "")
+  if [[ "$PNA" == "Enabled" ]]; then
     ok "Public network access re-enabled"
   else
-    warn "Could not re-enable public network access (Azure Policy may enforce Disabled)."
-    warn "  Ask an admin to allow it, or add your client IP to the storage firewall, then re-run."
+    die "Public network access on $STORAGE_ACCOUNT is still Disabled (an Azure Policy is enforcing it, or you can't change it). Ask an administrator to exempt the account or turn public network access on, then re-run this script. It can be turned off again after this script finishes."
   fi
 fi
 

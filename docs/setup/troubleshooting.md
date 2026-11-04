@@ -101,10 +101,11 @@ Every setup script is safe to re-run, and re-running the script for the failed s
 **AI Search fails with `InsufficientResourcesAvailable`.**
 :   The region has no AI Search capacity. Add `--search-location <OTHER_REGION>` to script 9.
 
-**Uploads or the indexer fail with 403 "blocked by network rules".**
-:   An Azure Policy disabled public network access on the storage account. Script 9 turns it back on, but if a
-    policy keeps turning it off, an administrator has to exempt the account or add your client IP to its
-    firewall.
+**Script 9 stops because public network access is still Disabled, or uploads fail with 403 "blocked by network rules".**
+:   An Azure Policy disabled public network access on the storage account. Script 9 tries to turn it back on, but
+    a policy that enforces the setting switches it straight back. Have an administrator exempt the account or
+    turn public network access on, then run script 9 again. You can turn it off once script 9 finishes: the index
+    keeps the SOP text, so the agent never reads the storage account.
 
 **The indexer fails with 403 right after the search service is created.**
 :   The search service's access to storage can take a few minutes to apply. Script 9 retries; if it still

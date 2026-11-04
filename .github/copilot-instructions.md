@@ -105,10 +105,12 @@ and were 96% of the usage while the demo was built (Capacity Metrics app → Com
   `9-setup-aisearch.sh` supports `--search-location <other-region>` (it reads storage + calls AOAI
   cross‑region).
 - **Storage `publicNetworkAccess`** may be force‑disabled by an org **Azure Policy** (a `modify`
-  effect that reverts your update via ARM). Symptoms: blob container create / the AI Search indexer
-  fail with 403 "blocked by network rules". Re‑enable with an ARM PATCH
-  (`properties.publicNetworkAccess=Enabled`) and run the upload/index promptly. If the policy keeps
-  reverting it, the human operator may need to enable it.
+  effect). Symptoms: blob container create / the AI Search indexer fail with 403 "blocked by network
+  rules". The policy rewrites both `az storage account update` and a direct ARM PATCH back to
+  `Disabled` while the call still succeeds, so always read the value back (`9-setup-aisearch.sh` does,
+  and stops with guidance). Only the human operator can open it (policy exemption or admin change);
+  then upload + index promptly. Once the indexer finishes it can be closed again — the index holds the
+  chunks and vectors, so the agent never reads storage.
 - **AI Search indexer 403 "credentials invalid or expired"** right after service creation is RBAC
   propagation lag for the search managed identity (Storage Blob Data Reader). Wait for the role to
   propagate, then re‑run `9-setup-aisearch.sh` (idempotent) to create + run the indexer.
