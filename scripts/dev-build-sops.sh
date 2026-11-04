@@ -215,38 +215,38 @@ fi
 step "Rendering ${#TARGETS[@]} document(s) with engine: $ENGINE"
 
 # ── Render loop ───────────────────────────────────────────────────────────────
+# For wkhtmltopdf, pandoc writes the HTML and wkhtmltopdf prints it here, rather
+# than through pandoc's --pdf-engine. Pandoc would write the HTML to a temporary
+# file in the current directory, and this wkhtmltopdf build (unpatched Qt) can't
+# turn the table of contents' #anchor links into in-document links: it writes
+# them as file:/// URIs of that temporary file, which puts the builder's local
+# path in every PDF. The TOC entries are unlinked instead.
+WORK_DIR="$(mktemp -d)"
+trap 'rm -rf "$WORK_DIR"' EXIT
+
+render() {
+  local src="$1" out="$2" html
+  local common=(--from=markdown --standalone --toc --toc-depth=2 --metadata=lang=en)
+  if [[ "$ENGINE" == "wkhtmltopdf" ]]; then
+    html="$WORK_DIR/$(basename "$src" .md).html"
+    pandoc "${common[@]}" --to=html5 -o "$html" "$src" \
+      && sed -i -E 's/<a href="#[^"]*"/<a/g' "$html" \
+      && wkhtmltopdf --quiet --enable-local-file-access \
+           --margin-top 18mm --margin-bottom 18mm --margin-left 18mm --margin-right 18mm \
+           "$html" "$out"
+  else
+    pandoc "${common[@]}" --pdf-engine=xelatex \
+      -V geometry:margin=18mm -V mainfont="DejaVu Sans" -V monofont="DejaVu Sans Mono" \
+      -o "$out" "$src"
+  fi
+}
+
 fail_count=0
 for src in "${TARGETS[@]}"; do
   base="$(basename "$src" .md)"
   out="$OUTPUT_DIR/${base}.pdf"
 
-  args=(
-    --from=markdown
-    --pdf-engine="$ENGINE"
-    --standalone
-    --toc
-    --toc-depth=2
-    --metadata=lang=en
-    -o "$out"
-    "$src"
-  )
-
-  if [[ "$ENGINE" == "wkhtmltopdf" ]]; then
-    args+=(
-      -V margin-top=18mm
-      -V margin-bottom=18mm
-      -V margin-left=18mm
-      -V margin-right=18mm
-    )
-  elif [[ "$ENGINE" == "xelatex" ]]; then
-    args+=(
-      -V geometry:margin=18mm
-      -V mainfont="DejaVu Sans"
-      -V monofont="DejaVu Sans Mono"
-    )
-  fi
-
-  if pandoc "${args[@]}" 2>/tmp/build-sops.err; then
+  if render "$src" "$out" 2>/tmp/build-sops.err; then
     ok "$base.pdf"
   else
     err "$base.pdf  ($(tail -1 /tmp/build-sops.err))"

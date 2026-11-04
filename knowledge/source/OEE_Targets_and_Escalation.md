@@ -17,7 +17,7 @@ This document is the corporate KPI definition for **Overall Equipment
 Effectiveness (OEE)** at this site, the **target values** each line is held
 to, and the **escalation matrix** that fires when targets are missed.
 
-## 2. OEE definition (matches the Fabric Dashboard)
+## 2. OEE definition
 
 ```
 OEE = Availability × Performance × Quality
@@ -28,12 +28,6 @@ OEE = Availability × Performance × Quality
   reflects neighboring-station issues, not the station's own availability.
 - **Performance** = ideal cycle time ÷ actual cycle time.
 - **Quality** = (parts produced − rejected parts) ÷ parts produced.
-
-The Real-Time Dashboard composes these components on the fly from the
-Silver-tier numeric proxy columns (`MachineEvents.is_running`,
-`MachineEventsEnriched.performance_ratio`, `PartEvents.is_pass` filtered to
-`is_completed == 1`) on rolling 5-minute windows by station and line.
-The Plant Manager and Line Manager pages surface them.
 
 ## 3. Site-level targets
 
