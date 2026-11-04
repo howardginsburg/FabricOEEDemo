@@ -4,7 +4,7 @@
 #
 # Runs AFTER scripts/8-setup-foundry.sh because it relies on the Foundry AOAI
 # endpoint (with text-embedding-3-large deployed) to generate the chunk
-# vectors. See README.md for the end-to-end flow.
+# vectors. See docs/setup/foundry-agent.md for the end-to-end flow.
 #
 # Builds the static knowledge layer of the Fabric IQ + AI Search demo:
 #   • Resource group (reuse or create)

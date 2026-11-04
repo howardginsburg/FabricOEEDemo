@@ -25,15 +25,19 @@ simulator:
   #   Slow cycles    — cycle times multiplied for slowCycleMinutes
   #
   # Scenarios only change the simulated behavior; telemetry keeps the same schema.
+  # The durations let the operations agent, which checks its rules every 5 minutes,
+  # see each condition: a bottleneck down for more than 5 minutes (Long outage), a
+  # rolling-hour reject rate with at least 3 rejects (Reject spike), and a station's
+  # OEE below 60% for more than 15 minutes (Slow cycles).
   # ---------------------------------------------------------------------------
   scenarios:
     repeatFaultCount: 3
     quickFixStepMinSeconds: 10
     quickFixStepMaxSeconds: 20
-    longOutageMinutes: 6
-    rejectSpikeMinutes: 10
+    longOutageMinutes: 12
+    rejectSpikeMinutes: 20
     rejectSpikeProbability: 0.35
-    slowCycleMinutes: 10
+    slowCycleMinutes: 30
     slowCycleMultiplier: 1.8
 
   # ---------------------------------------------------------------------------
@@ -50,7 +54,7 @@ simulator:
   #   faultProbability       — chance of fault per completed cycle (0.0 to 1.0)
   #   rejectProbability      — chance of quality reject per part (0.0 to 1.0)
   #   bufferCapacity         — max parts in the input buffer before upstream blocks
-  #   faultTypes             — possible fault categories (random pick on fault)
+  #   faultTypes             — possible fault categories (random pick on a fault; the Fault now scenario uses the first)
   # ---------------------------------------------------------------------------
   lines:
 

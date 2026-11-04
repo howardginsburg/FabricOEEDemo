@@ -63,7 +63,7 @@ public sealed class MainViewModel : ViewModelBase
         });
 
         FaultNowCommand = ScenarioCommand("Demo scenario: Fault now", (station, _) =>
-            station.InjectFaults([new FaultRequest("Fault now", null)]));
+            station.InjectFaults([new FaultRequest("Fault now", null, Primary: true)]));
 
         RepeatFaultsCommand = ScenarioCommand("Demo scenario: Repeat faults", (station, config) =>
             station.InjectFaults(Enumerable.Range(0, config.RepeatFaultCount)

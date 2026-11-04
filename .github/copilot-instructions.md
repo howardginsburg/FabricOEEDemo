@@ -10,9 +10,10 @@ simulator streams factory telemetry → Fabric Eventstream → Eventhouse/KQL (B
 OneLake → Real‑Time Dashboard + a Direct Lake on OneLake Power BI model. A Fabric IQ ontology
 (`OEEFactoryOntology`, TMDL) grounds the OEE Data Agent, a Foundry IQ knowledge base, the
 `oee-factory-iq` Foundry agent, and an operations agent. Other optional layers: a translytical
-write‑back UDF, a Rayfin Fabric App, an Activator alert, and an Event Schema Set. See `README.md`
-for the architecture and the script reference table, and `docs/FABRIC_IQ_DESIGN.md` for the
-Fabric IQ design.
+write‑back UDF, a Rayfin Fabric App, an Activator alert, and an Event Schema Set. The documentation
+site is built from `docs/` (see "Documentation site" below): `docs/setup/` has every setup step,
+`docs/how-it-works.md` the architecture and design, and `docs/reference/scripts.md` the script
+reference.
 
 Deployment order: `scripts/1-setup-fabric.sh` (always first; it also runs `1a` (Event Schema Set),
 `6` (ontology), and `7` (data agent)) → `2-setup-translytical.sh` → `3-setup-floor-ops.sh` →
@@ -86,7 +87,11 @@ and were 96% of the usage while the demo was built (Capacity Metrics app → Com
   throttling yet.
 - **Throttling** (`CapacityLimitExceeded`, HTTP 429 `RequestBlocked`) means billable usage ran ahead of
   the capacity. Suspend and resume clears it at once, but the pause bills the remaining smoothed usage
-  immediately, so space heavy runs out instead.
+  immediately, so space heavy runs out instead. Throttling also takes the Eventstream's endpoint offline
+  ("Namespace cannot be resolved") and pauses its destinations: resume them afterwards (`POST
+  .../eventstreams/{id}/destinations/{destId}/resume`, `{"startType":"WhenLastStopped"}` backfills the gap).
+  The simulator drops events it can't send and logs `send_error` / `send_recovered` in its telemetry log;
+  before that fix, one failed send silently stalled the whole simulation.
 
 ## Azure region / quota gotchas (seen in Central US)
 
@@ -263,29 +268,68 @@ Root cause: a legacy PBIR format. Use the **modern** schema versions everywhere 
   ontology source can evaluate only a property's latest value (no aggregations), and every alert
   rule here counts events or computes a rate over a window. **Each alert rule is checked by a
   stored function `Rule<RuleName>()` in the Eventhouse's `Rules` folder** (script 1; script 11 exits
-  if one is missing). Each returns one row per firing station or line with every message field, and
-  counts only stations or lines that are reporting. Without them, the playbook generator built its
+  if one is missing). Each returns one row per reporting station or line (LineOeeEscalation: one per
+  line and escalation tier), keyed by `alert_id`, with `fired` true where the rule fires and every
+  message field; the agent alerts when `fired` becomes true, once per episode, instead of at every
+  5-minute check (each alert is an LLM call of about 7,600 tokens). Without them, the playbook generator built its
   own windowed queries, dropped joins, and failed different rules on every attempt, even with the
-  logic spelled out. With them, all six rules bound on the first attempt. Script 11 generates the
+  logic spelled out. The generator still fails one to six rules per attempt unless each rule's entry
+  in the instructions names its condition column and message columns: every function returns
+  `fired` and `alert_id`, and script 11 renders each rule's columns from the function's live output schema
+  (`Rule<Name>() | getschema`), after which all six bind. Script 11 retries a failed generation up to
+  three times, then checks that every rule's query calls its function as of the current time (no
+  argument, `datetime(null)`, or `endTime`); as of `startTime`, the agent's long check window misses
+  new events. Generation fails for every rule while the capacity is throttled, because it can't read
+  the functions. Script 11 generates the
   playbook through the agent's MCP endpoint (`/v1/mcp/workspaces/{ws}/operationsAgents/{id}/configure`:
   `generate_playbook`, then poll `get_generate_playbook_status` until `Completed`; 2–15 minutes).
   A generation orphaned by a capacity pause stays `InProgress` and makes `generate_playbook` fail
   with an internal error; writing the configuration again clears it (script 11 does this
   automatically). Never send `playbook` back from a readback (item references come back as the
-  zero GUID; `{}` is rejected). Start and stop with MCP `start_agent` / `stop_agent`
+  zero GUID; `{}` is rejected): even the readback playbook with one rule's query fixed failed with
+  HTTP 500 and cleared the playbook, so a bad rule means generating again. For "fired becomes true"
+  the generator emits the transition condition `propertychangechangestotrue` (one alert per
+  episode); it once called a function with a fixed `datetime(...)` it had evaluated, which the
+  instructions now forbid and script 11's check rejects. Start and stop with MCP `start_agent` / `stop_agent`
   (`--start` / `--stop`); it's left stopped so it doesn't use capacity.
+- **The operations agent samples each rule every 5 minutes**, so a condition must hold for well over
+  5 minutes to be caught: the simulator's scenario durations (`simulator.yaml` `scenarios:`) are
+  sized for that. Its query keeps a rule's rows whose `checked_at` is between `startTime` and
+  `endTime`, and runs just after `endTime`, so a row stamped with the query's own `now()` is dropped:
+  that's why RejectRateQuarantine, RepeatFaults, and ConcurrentOpenWorkOrders never alerted until the
+  rule functions defaulted to evaluating as of `now() - 1m`. Check alert noise by replaying the checks (`Rule<Name>(asOf)` at 5‑minute steps)
+  before demoing. Two fixes came from that: `RuleStationOeeEscalation` uses the policy's
+  Availability (`samples - idle`, from `OeeFacts().idle`), because starved/blocked time counts
+  against the station that caused it — with measured Availability about half the stations escalated
+  at any moment; and `RuleRejectRateQuarantine` needs at least 3 rejects, since one random reject at
+  a ~20 parts/hour station exceeds twice its target. The data agent's station and reject examples
+  (script 7) match these. A third came from replaying episodes (`fired` per `alert_id` across checks):
+  the OEE rules evaluate complete 5‑minute buckets only, and count a bucket with Availability 0 or no
+  finished or rejected part as OEE 0 (a station's wholly idle bucket is left out). Before that, the
+  in-progress bucket and null-Quality buckets flipped `fired` off and back on within one episode, so
+  the agent alerted on it again. Changing a function body needs no playbook regeneration if its name and
+  output columns stay the same; changing an alert rule's statement in the ontology does.
 - **Eventhouse streaming ingestion is on**, so update policies can't look up or join other tables —
   enrich per row from the payload (script 1).
 - **OneLake mirror reseed gap:** each script 1 run reseeds the reference tables; their OneLake
   copies are empty for about 7 minutes, so the ontology and the model briefly show no reference data.
+- **The ontology reads through the lakehouse SQL analytics endpoint** (`Sql.Database` binding), so its
+  data trails the Eventhouse by the OneLake export (`TargetLatencyInMinutes` 5) plus the endpoint's
+  metadata sync. The legacy sync stops after 15 minutes without queries; the next query reads tables
+  as of the last sync (hours old was seen for `MaintenanceEvents`/`PartEvents`) while it catches up
+  over about a minute. `POST .../sqlEndpoints/{id}/refreshMetadata?preview=true` or the portal's
+  **Refresh** wakes it. So script 7 routes "is a work order open" and anything from the last few
+  minutes to ManufacturingEH, stated in the ontology's own entry (not only in a separate paragraph):
+  the orchestrator otherwise followed "START HERE" for work orders with technician names.
 
 ## Agent evaluation (`12-evaluate-agent.py`)
 
 - Responses are generated locally as the signed‑in user (the Fabric IQ tools need the user's
   identity, which a server‑side agent‑target evaluation can't provide), then judged in the Foundry
   evaluation "oee-factory-iq persona set" by `gpt-5.4-mini` — a different model from the agent's.
-- `agent/evals/cases.json` is the single source for the questions and `agent/samples/queries.md`
-  (`--write-samples`). Data facts come from `facts_kql` at run time — never copy seed values into it.
+- `agent/evals/cases.json` is the single source for the questions and `docs/demo/sample-questions.md`
+  (`--write-samples`; don't edit the page by hand). Data facts come from `facts_kql` at run time —
+  never copy seed values into it.
 - Bump `CRITERIA_VERSION` in script 12 when the item schema or the criteria change, so runs judged
   differently don't share an evaluation.
 - Map every field an evaluator supports when the items carry it, or the run fails with
@@ -307,6 +351,20 @@ Root cause: a legacy PBIR format. Use the **modern** schema versions everywhere 
   `4-setup-powerbi.sh` bakes the button into the report — run script 2 *before* script 4). The Floor
   Ops Console's `FloorEvent` shortcut (from the app's managed SQL DB) is likewise scripted via
   `3-setup-floor-ops.sh`. The report opens and shows the current target regardless.
+
+## Documentation site (`docs/`)
+
+- Built with **Zensical** from `docs/` and `mkdocs.yml` (Material for MkDocs config format, so
+  Material stays a fallback); `.github/workflows/docs.yml` publishes it to GitHub Pages on pushes to
+  `main` that touch the site. Local build: `pip install -r docs/requirements.txt`, then
+  `zensical build --clean` (or `zensical serve`). Keep the build free of warnings.
+- Every page must be in the `nav` in `mkdocs.yml`. **Link to repo files outside `docs/` with full
+  GitHub URLs** (`https://github.com/howardginsburg/FabricOEEDemo/blob/main/<path>`); relative links
+  outside `docs/` break the build.
+- Each fact lives on one page: the setup steps own the commands, `demo/factory-floor.md` owns the
+  scenario table, `demo/operations-agent.md` owns the rule table; other pages link to them.
+- Screenshots live in `docs/assets/screenshots/{setup,demo}/`. The repo is public: blur account
+  names, emails, and tenant identifiers, and never show keys.
 
 ## Conventions
 

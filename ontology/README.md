@@ -112,8 +112,8 @@ labels repeat the namespace (`<ns>_<ns>_<Relationship>`).
    another (`baseEntityType`) must declare `overriddenMetadataField synonyms` when it sets its
    own synonyms.
 2. Preview with `--dry-run`, then publish.
-3. If the change adds a property the graph should expose, run **Manage graph**, then
-   `--refresh-graph`.
+3. If the change adds a property the graph should expose, run **Manage graph** again. Materializing
+   loads the data, so `--refresh-graph` isn't needed after it.
 4. If the change adds a rule, re-run `scripts/7-setup-data-agent.py` (it renders the rules into
    the Data Agent's instructions). For an operations agent alert rule, also add its
    `Rule<RuleName>()` check function to `scripts/1-setup-fabric.sh` and its name to

@@ -1,0 +1,120 @@
+site_name: Fabric OEE Demo
+site_description: >-
+  A real-time OEE demo on Microsoft Fabric: a factory simulator streaming into an Eventhouse,
+  Direct Lake reports, a Fabric IQ ontology, data and operations agents, and a Foundry agent.
+site_url: https://howardginsburg.github.io/FabricOEEDemo/
+repo_url: https://github.com/howardginsburg/FabricOEEDemo
+repo_name: howardginsburg/FabricOEEDemo
+edit_uri: edit/main/docs/
+docs_dir: docs
+site_dir: site
+exclude_docs: |
+  requirements.txt
+
+theme:
+  name: material
+  variant: modern
+  language: en
+  features:
+    - content.action.edit
+    - content.code.annotate
+    - content.code.copy
+    - content.tabs.link
+    - content.tooltips
+    - navigation.footer
+    - navigation.indexes
+    - navigation.instant
+    - navigation.path
+    - navigation.sections
+    - navigation.tabs
+    - navigation.top
+    - navigation.tracking
+    - search.highlight
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/brightness-auto
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/weather-night
+        name: Switch to system preference
+
+plugins:
+  - search
+  - glightbox:
+      auto_caption: true
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.betterem
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.mark
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+      combine_header_slug: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+
+nav:
+  - Home: index.md
+  - Setup:
+      - setup/index.md
+      - Prerequisites: setup/prerequisites.md
+      - 1. Fabric foundation: setup/fabric-foundation.md
+      - 2. Connect the simulator: setup/simulator.md
+      - 3. OEE target write-back: setup/write-back.md
+      - 4. Floor Ops Console: setup/floor-ops-console.md
+      - 5. Power BI report: setup/power-bi.md
+      - 6. Activator alert: setup/activator.md
+      - 7. Fabric IQ: setup/fabric-iq.md
+      - 8. Operations agent: setup/operations-agent.md
+      - 9. Foundry agent: setup/foundry-agent.md
+      - 10. Evaluate the agent: setup/evaluate.md
+      - Clean up: setup/clean-up.md
+      - Troubleshooting: setup/troubleshooting.md
+  - Demo:
+      - demo/index.md
+      - The factory floor: demo/factory-floor.md
+      - Real-time operations: demo/real-time.md
+      - Analytics and write-back: demo/analytics.md
+      - Floor Ops Console: demo/floor-ops.md
+      - Ontology and graph: demo/ontology.md
+      - OEE Data Agent: demo/data-agent.md
+      - OEE Factory IQ agent: demo/foundry-agent.md
+      - Operations agent: demo/operations-agent.md
+      - Sample questions: demo/sample-questions.md
+  - How it works: how-it-works.md
+  - Reference:
+      - Scripts: reference/scripts.md
+      - Capacity and cost: reference/capacity.md
+      - Repository map: reference/repository.md

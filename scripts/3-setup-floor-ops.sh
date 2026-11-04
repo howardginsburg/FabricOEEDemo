@@ -93,4 +93,4 @@ fi
 
 step "Done"
 printf "   Next: refresh the OEEAnalytics semantic model to frame FloorEvent, then open the\n"
-printf "   Floor Ops report page. See docs/FLOOR_OPS_CONSOLE.md for the full flow.\n"
+printf "   Floor Ops report page. See https://howardginsburg.github.io/FabricOEEDemo/demo/floor-ops/ for the full flow.\n"

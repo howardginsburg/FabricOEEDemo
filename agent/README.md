@@ -10,7 +10,7 @@ with its connections and knowledge base; each run with `--replace` adds a new ag
 | [system-prompt.md](system-prompt.md) | The agent's instructions. Script 10 keeps the `<!-- mode: … -->` blocks for the knowledge mode it deploys and drops the rest. |
 | [knowledge/aisearch_sops.md](knowledge/aisearch_sops.md) | The `oee-sops` index over the 36 SOP and policy PDFs. |
 | [evals/](evals/) | The persona question set and how the agent is evaluated. |
-| [samples/queries.md](samples/queries.md) | Demo questions by persona, generated from `evals/cases.json`. |
+| [docs/demo/sample-questions.md](../docs/demo/sample-questions.md) | Demo questions by persona, generated from `evals/cases.json`. |
 
 ## Tools
 

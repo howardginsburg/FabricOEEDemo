@@ -132,8 +132,11 @@
         "kind": "inline",
         "dataSourceId": "b12979d1-e244-4088-b1ae-d91ca3ed9d9d"
       },
-      "text": "MachineEvents\n| summarize arg_max(timestamp, machine_status, idle_reason, machine_type, line_id,\n    station_position, input_buffer_count, output_buffer_count, current_part_id) by device_id\n| project device_id, line_id, station_position, machine_type, machine_status,\n    idle_reason, input_buffer_count, output_buffer_count, current_part_id, timestamp\n| order by line_id asc, station_position asc",
-      "usedVariables": []
+      "text": "MachineEvents\n| where timestamp between (_startTime .. _endTime)\n| summarize arg_max(timestamp, machine_status, idle_reason, machine_type, line_id,\n    station_position, input_buffer_count, output_buffer_count, current_part_id) by device_id\n| project device_id, line_id, station_position, machine_type, machine_status,\n    idle_reason, input_buffer_count, output_buffer_count, current_part_id, timestamp\n| order by line_id asc, station_position asc",
+      "usedVariables": [
+        "_startTime",
+        "_endTime"
+      ]
     },
     {
       "id": "01000000-0000-4000-8000-000000000005",
@@ -153,7 +156,7 @@
         "kind": "inline",
         "dataSourceId": "b12979d1-e244-4088-b1ae-d91ca3ed9d9d"
       },
-      "text": "PartEvents\n| where timestamp between (_startTime .. _endTime)\n| where action == \"completed\"\n| summarize parts_completed = count() by bin(timestamp, 5m), line_id\n| order by timestamp desc, line_id asc",
+      "text": "PartEvents\n| where timestamp between (_startTime .. _endTime)\n| where action == \"completed\"\n| lookup kind=inner (LineMaster | project line_id, station_count) on line_id\n| where station_position == station_count\n| summarize parts_finished = count() by bin(timestamp, 5m), line_id\n| order by timestamp desc, line_id asc",
       "usedVariables": [
         "_startTime",
         "_endTime"
@@ -177,7 +180,7 @@
         "kind": "inline",
         "dataSourceId": "b12979d1-e244-4088-b1ae-d91ca3ed9d9d"
       },
-      "text": "OeeFacts(_startTime, _endTime)\n| where line_id == _lineId\n| summarize samples = sum(samples), running = sum(running), ideal = sum(ideal), actual = sum(actual), completed = sum(completed), rejected = sum(rejected) by station_position, device_id, machine_type\n| invoke OeeKpis()\n| project station_position, device_id, machine_type, availability = round(Availability, 4),\n          performance = round(Performance, 4), quality = round(Quality, 4), oee = round(OEE, 4)\n| order by station_position asc",
+      "text": "OeeFacts(_startTime, _endTime)\n| where line_id == _lineId\n| summarize samples = sum(samples), running = sum(running), ideal = sum(ideal), actual = sum(actual), completed = sum(completed), rejected = sum(rejected) by station_position, machine_type\n| invoke OeeKpis()\n| order by station_position asc\n| project station = strcat(station_position, \" \", machine_type), availability = round(Availability, 4),\n          performance = round(Performance, 4), quality = round(Quality, 4), oee = round(OEE, 4)",
       "usedVariables": [
         "_startTime",
         "_endTime",
@@ -190,9 +193,11 @@
         "kind": "inline",
         "dataSourceId": "b12979d1-e244-4088-b1ae-d91ca3ed9d9d"
       },
-      "text": "MachineEvents\n| summarize arg_max(timestamp, machine_status, idle_reason, machine_type, line_id,\n    station_position, input_buffer_count, output_buffer_count, current_part_id) by device_id\n| where line_id == _lineId\n| project device_id, station_position, machine_type, machine_status,\n    idle_reason, input_buffer_count, output_buffer_count, current_part_id, timestamp\n| order by station_position asc",
+      "text": "MachineEvents\n| where timestamp between (_startTime .. _endTime)\n| summarize arg_max(timestamp, machine_status, idle_reason, machine_type, line_id,\n    station_position, input_buffer_count, output_buffer_count, current_part_id) by device_id\n| where line_id == _lineId\n| project device_id, station_position, machine_type, machine_status,\n    idle_reason, input_buffer_count, output_buffer_count, current_part_id, timestamp\n| order by station_position asc",
       "usedVariables": [
-        "_lineId"
+        "_lineId",
+        "_startTime",
+        "_endTime"
       ]
     },
     {
@@ -201,9 +206,11 @@
         "kind": "inline",
         "dataSourceId": "b12979d1-e244-4088-b1ae-d91ca3ed9d9d"
       },
-      "text": "MachineEvents\n| summarize arg_max(timestamp, machine_status, idle_reason, input_buffer_count,\n    output_buffer_count, buffer_capacity) by device_id, line_id, station_position, machine_type\n| where line_id == _lineId\n| where machine_status == \"Idle\"\n| project device_id, station_position, machine_type, idle_reason,\n    input_buffer_count, output_buffer_count, buffer_capacity, timestamp\n| order by station_position asc",
+      "text": "MachineEvents\n| where timestamp between (_startTime .. _endTime)\n| summarize arg_max(timestamp, machine_status, idle_reason, input_buffer_count,\n    output_buffer_count, buffer_capacity) by device_id, line_id, station_position, machine_type\n| where line_id == _lineId\n| where machine_status == \"Idle\"\n| project device_id, station_position, machine_type, idle_reason,\n    input_buffer_count, output_buffer_count, buffer_capacity, timestamp\n| order by station_position asc",
       "usedVariables": [
-        "_lineId"
+        "_lineId",
+        "_startTime",
+        "_endTime"
       ]
     },
     {
@@ -417,7 +424,7 @@
         "kind": "inline",
         "dataSourceId": "b12979d1-e244-4088-b1ae-d91ca3ed9d9d"
       },
-      "text": "let total_p = toscalar(PartEvents | where timestamp between (_startTime .. _endTime) | where action == \"completed\" | count);\nlet rejected_p = toscalar(PartEvents | where timestamp between (_startTime .. _endTime) | where action == \"rejected\" | count);\nlet running_c = toscalar(MachineEvents | where timestamp between (_startTime .. _endTime) | where machine_status == \"Running\" | count);\nlet fault_c = toscalar(MachineEvents | where timestamp between (_startTime .. _endTime) | where machine_status == \"Fault\" | count);\nprint Total_Parts_Produced = total_p, Rejected = rejected_p, Running_Stations = running_c, Active_Faults = fault_c",
+      "text": "let parts = PartEvents | where timestamp between (_startTime .. _endTime);\nlet finished = toscalar(parts | where action == \"completed\" | lookup kind=inner (LineMaster | project line_id, station_count) on line_id | where station_position == station_count | count);\nlet rejected = toscalar(parts | where action == \"rejected\" | count);\nlet status = MachineEvents | where timestamp between (_startTime .. _endTime) | summarize arg_max(timestamp, machine_status) by device_id;\nunion (print order = 1, Metric = \"Parts finished\", Value = finished),\n      (print order = 2, Metric = \"Parts rejected\", Value = rejected),\n      (print order = 3, Metric = \"Stations running\", Value = toscalar(status | where machine_status == \"Running\" | count)),\n      (print order = 4, Metric = \"Stations idle\", Value = toscalar(status | where machine_status == \"Idle\" | count)),\n      (print order = 5, Metric = \"Stations down\", Value = toscalar(status | where machine_status in (\"Fault\", \"Maintenance\") | count))\n| order by order asc\n| project Metric, Value",
       "usedVariables": [
         "_startTime",
         "_endTime"
@@ -429,7 +436,7 @@
         "kind": "inline",
         "dataSourceId": "b12979d1-e244-4088-b1ae-d91ca3ed9d9d"
       },
-      "text": "let total_p = toscalar(PartEvents | where timestamp between (_startTime .. _endTime) | where action == \"completed\" | count);\nprint Metric = \"Parts Produced\", Value = total_p",
+      "text": "let finished = toscalar(PartEvents | where timestamp between (_startTime .. _endTime) | where action == \"completed\" | lookup kind=inner (LineMaster | project line_id, station_count) on line_id | where station_position == station_count | count);\nprint Metric = \"Parts finished\", Value = finished",
       "usedVariables": [
         "_startTime",
         "_endTime"
@@ -453,7 +460,7 @@
         "kind": "inline",
         "dataSourceId": "b12979d1-e244-4088-b1ae-d91ca3ed9d9d"
       },
-      "text": "let oeeVal = toscalar(OeeFacts(_startTime, _endTime)\n    | summarize samples = sum(samples), running = sum(running), ideal = sum(ideal), actual = sum(actual), completed = sum(completed), rejected = sum(rejected)\n    | invoke OeeKpis()\n    | project round(coalesce(OEE, 0.0) * 100, 1));\nprint plotly = strcat('{\"data\":[{\"type\":\"indicator\",\"mode\":\"gauge+number\",\"value\":', oeeVal, ',\"number\":{\"font\":{\"size\":28}},\"title\":{\"text\":\"Factory OEE %\",\"font\":{\"size\":14}},\"domain\":{\"x\":[0.05,0.95],\"y\":[0.1,0.9]},\"gauge\":{\"axis\":{\"range\":[0,100],\"tickfont\":{\"size\":10}},\"bar\":{\"color\":\"darkblue\"},\"steps\":[{\"range\":[0,60],\"color\":\"#ff4444\"},{\"range\":[60,80],\"color\":\"#ffbb33\"},{\"range\":[80,100],\"color\":\"#00C851\"}],\"threshold\":{\"line\":{\"color\":\"black\",\"width\":3},\"thickness\":0.7,\"value\":', oeeVal, '}}}],\"layout\":{\"autosize\":true,\"margin\":{\"t\":10,\"b\":10,\"l\":10,\"r\":10},\"paper_bgcolor\":\"rgba(0,0,0,0)\",\"font\":{\"size\":12}}}')",
+      "text": "OeeFacts(_startTime, _endTime)\n| summarize samples = sum(samples), running = sum(running), ideal = sum(ideal), actual = sum(actual), completed = sum(completed), rejected = sum(rejected)\n| invoke OeeKpis()\n| project Factory_OEE_pct = round(coalesce(OEE, 0.0) * 100, 1)",
       "usedVariables": [
         "_startTime",
         "_endTime"
@@ -1001,7 +1008,7 @@
         "queryId": "01000000-0000-4000-8000-000000000034",
         "kind": "query"
       },
-      "visualType": "card",
+      "visualType": "multistat",
       "layout": {
         "x": 8,
         "y": 0,
@@ -1012,7 +1019,7 @@
     },
     {
       "id": "02000000-0000-4000-8000-000000000035",
-      "title": "Total Parts Produced",
+      "title": "Parts Finished",
       "pageId": "e5f6a7b8-c9d0-4e1f-ba5c-d6e7f8a9b0c1",
       "queryRef": {
         "queryId": "01000000-0000-4000-8000-000000000035",
@@ -1046,13 +1053,13 @@
     },
     {
       "id": "02000000-0000-4000-8000-000000000037",
-      "title": "Factory OEE Gauge (Plotly)",
+      "title": "Factory OEE %",
       "pageId": "a1b2c3d4-e5f6-4a8b-9c0d-e1f2a3b4c5d6",
       "queryRef": {
         "queryId": "01000000-0000-4000-8000-000000000037",
         "kind": "query"
       },
-      "visualType": "plotly",
+      "visualType": "card",
       "layout": {
         "x": 0,
         "y": 0,

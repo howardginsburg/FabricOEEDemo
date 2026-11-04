@@ -2,7 +2,7 @@
 # =============================================================================
 # 1-setup-fabric.sh — End-to-end Fabric OEE demo provisioner
 #
-# Automates the core Fabric-side setup described in README.md.
+# Automates the core Fabric-side setup described in docs/setup/fabric-foundation.md.
 # This is the required first script for both ingestion options.
 #
 # What it creates:
@@ -40,7 +40,7 @@
 #   - base64, sed (standard on Linux/macOS/WSL)
 #   - jq (auto-installed via apt if missing)
 #   - A Fabric workspace (not "My workspace") with Real-Time Intelligence enabled
-#   - Tenant admin has enabled "Service principals can call Fabric public APIs"
+#   - The tenant settings listed in docs/setup/prerequisites.md (the scripts sign in as you)
 #
 # Usage:
 #   bash 1-setup-fabric.sh --workspace-name <NAME>
@@ -59,7 +59,7 @@
 #      scripts/7-setup-data-agent.py so the optional entities and the semantic-model
 #      source are added; optionally materialize the ontology graph (portal-only)
 #   3. Configure and start the simulator (see the final step output)
-#   4. Optionally set up Activator alerts (see README.md)
+#   4. Optionally set up Activator alerts (see docs/setup/activator.md)
 # =============================================================================
 set -euo pipefail
 
@@ -930,16 +930,19 @@ _derive_table PartPasses \
 # sum them to any grain and pipe the result through OeeKpis(), which applies the
 # ratios: Availability = running / samples, Performance = min(1, ideal / actual) over
 # running samples, Quality = completed / (completed + rejected), OEE = A x P x Q.
+# idle counts the Idle (Starved or Blocked) samples, for the OEE targets policy's
+# Availability, which leaves them out (samples - idle): the station escalation check
+# uses it, because idle time counts against the station that caused it.
 # Both read tables only: the Data Agent's query generator can't see stored functions,
 # so scripts/7-setup-data-agent.py inlines these bodies as let statements in its
 # example queries.
 read -r -d '' _OEE_FACTS <<'KQLEOF' || true
-.create-or-alter function with (folder = "OEE", docstring = "Additive OEE facts per time bucket and station, the inputs to OeeKpis(). Same definitions as the ontology metrics and the OEEAnalytics measures.")
+.create-or-alter function with (folder = "OEE", docstring = "Additive OEE facts per time bucket and station, the inputs to OeeKpis(). Same definitions as the ontology metrics and the OEEAnalytics measures. idle counts Idle (Starved or Blocked) samples, which the OEE targets policy leaves out of Availability.")
 OeeFacts(windowStart: datetime, windowEnd: datetime, bucket: timespan = 1d) {
     let Machine = MachineEvents
         | where timestamp between (windowStart .. windowEnd)
         | lookup kind=leftouter (StationMaster | project device_id, ideal_cycle_time) on device_id
-        | summarize samples = count(), running = sum(is_running),
+        | summarize samples = count(), running = sum(is_running), idle = sum(is_idle),
                     ideal = sumif(ideal_cycle_time, is_running == 1 and actual_cycle_time > 0),
                     actual = sumif(actual_cycle_time, is_running == 1 and actual_cycle_time > 0)
           by bucket_start = bin(timestamp, bucket), line_id, device_id, station_position, machine_type, shift_id;
@@ -948,8 +951,8 @@ OeeFacts(windowStart: datetime, windowEnd: datetime, bucket: timespan = 1d) {
         | summarize completed = sum(is_completed), rejected = sum(is_rejected)
           by bucket_start = bin(passed_at, bucket), line_id, device_id, station_position, machine_type, shift_id;
     union Machine, Passes
-    | summarize samples = sum(samples), running = sum(running), ideal = sum(ideal), actual = sum(actual),
-                completed = sum(completed), rejected = sum(rejected)
+    | summarize samples = sum(samples), running = sum(running), idle = sum(idle), ideal = sum(ideal),
+                actual = sum(actual), completed = sum(completed), rejected = sum(rejected)
       by bucket_start, line_id, device_id, station_position, machine_type, shift_id
 }
 KQLEOF
@@ -969,119 +972,148 @@ kusto_run "$CLUSTER_URI" "$DB_NAME" "$_OEE_KPIS" "OeeKpis function (canonical OE
 
 # --- Rule checks for the operations agent (scripts/11-setup-operations-agent.py) ---
 # One function per alert rule, named Rule<RuleName> after the ontology rule it implements
-# (ontology/OEEFactoryOntology.Ontology/rules/). Each returns one row per station or line
-# where the rule fires at asOf (default now()), with the fields the alert message needs.
+# (ontology/OEEFactoryOntology.Ontology/rules/). Each returns one row per station or line that's
+# reporting telemetry (for LineOeeEscalation, one per line and escalation tier), keyed by alert_id,
+# with fired true where the rule fires at asOf and the fields the alert message needs. The
+# operations agent alerts when fired becomes true, so it sends one alert per episode instead of one
+# at every check; stale data never raises an alert. With no asOf, a function
+# evaluates the rule as of a minute ago: late telemetry is in by then, and checked_at falls
+# inside the operations agent's check window (its query keeps rows whose checked_at is between
+# startTime and endTime, and runs a moment after endTime, so a row stamped now() would drop).
 # The rule's statement stays in the ontology; these are its executable checks, the way each
-# ontology metric has a SQL and a DAX form. A station or line counts only while it's
-# reporting telemetry, so stale data never raises an alert.
+# ontology metric has a SQL and a DAX form.
 read -r -d '' _RULE_BOTTLENECK <<'KQLEOF' || true
-.create-or-alter function with (folder = "Rules", docstring = "Ontology rule BottleneckDowntime: a bottleneck station (Line-A CMM-Inspection, Line-D Curing-Oven, Line-E Wave-Solder) down (Fault or Maintenance) for more than 5 minutes. One row per firing station.")
+.create-or-alter function with (folder = "Rules", docstring = "Ontology rule BottleneckDowntime: a bottleneck station (Line-A CMM-Inspection, Line-D Curing-Oven, Line-E Wave-Solder) down (Fault or Maintenance) for more than 5 minutes. One row per reporting bottleneck station; fired is true where the rule fires.")
 RuleBottleneckDowntime(asOf: datetime = datetime(null)) {
-    let at = iff(isnull(asOf), now(), asOf);
+    let at = iff(isnull(asOf), now() - 1m, asOf);
     let Bottlenecks = datatable(line_id: string, machine_type: string)
         ["Line-A", "CMM-Inspection", "Line-D", "Curing-Oven", "Line-E", "Wave-Solder"];
     let Samples = MachineEvents
         | where timestamp between ((at - 2h) .. at)
         | join kind=inner Bottlenecks on line_id, machine_type;
-    Samples
-    | summarize last_up = maxif(timestamp, machine_status !in ("Fault", "Maintenance")),
-                arg_max(timestamp, machine_status, station_position) by line_id, device_id, machine_type
-    | where timestamp > at - 5m and machine_status in ("Fault", "Maintenance")
-    | join kind=inner (Samples | where machine_status in ("Fault", "Maintenance") | project device_id, down_at = timestamp)
-        on device_id
-    | where isnull(last_up) or down_at > last_up
-    | summarize down_since = min(down_at) by line_id, device_id, station_position, machine_type, machine_status
-    | extend downtime_minutes = round((at - down_since) / 1m, 1)
-    | where downtime_minutes > 5
-    | project rule = "BottleneckDowntime", line_id, device_id, station_position, machine_type, machine_status,
-              down_since, downtime_minutes, threshold_minutes = 5, checked_at = at
-}
-KQLEOF
-read -r -d '' _RULE_REPEAT_FAULTS <<'KQLEOF' || true
-.create-or-alter function with (folder = "Rules", docstring = "Ontology rule RepeatFaultsPreventiveMaintenance: three or more work orders on one station within the last hour. One row per firing station.")
-RuleRepeatFaultsPreventiveMaintenance(asOf: datetime = datetime(null)) {
-    let at = iff(isnull(asOf), now(), asOf);
-    WorkOrders
-    | where created_at between ((at - 1h) .. at)
-    | summarize work_orders = count(), work_order_ids = make_list(work_order_id), issue_types = make_set(issue_type)
-      by line_id, device_id, station_position, machine_type
-    | where work_orders >= 3
-    | project rule = "RepeatFaultsPreventiveMaintenance", line_id, device_id, station_position, machine_type,
-              work_orders, threshold = 3, work_order_ids, issue_types, window_start = at - 1h, window_end = at,
+    let Latest = Samples
+        | summarize last_up = maxif(timestamp, machine_status !in ("Fault", "Maintenance")),
+                    arg_max(timestamp, machine_status, station_position) by line_id, device_id, machine_type
+        | where timestamp > at - 5m;
+    let DownSince = Latest
+        | where machine_status in ("Fault", "Maintenance")
+        | join kind=inner (Samples | where machine_status in ("Fault", "Maintenance") | project device_id, down_at = timestamp)
+            on device_id
+        | where isnull(last_up) or down_at > last_up
+        | summarize down_since = min(down_at) by device_id;
+    Latest
+    | lookup kind=leftouter DownSince on device_id
+    | extend downtime_minutes = iff(isnull(down_since), 0.0, round((at - down_since) / 1m, 1))
+    | project fired = downtime_minutes > 5, alert_id = device_id, rule = "BottleneckDowntime", line_id, device_id,
+              station_position, machine_type, machine_status, down_since, downtime_minutes, threshold_minutes = 5,
               checked_at = at
 }
 KQLEOF
+read -r -d '' _RULE_REPEAT_FAULTS <<'KQLEOF' || true
+.create-or-alter function with (folder = "Rules", docstring = "Ontology rule RepeatFaultsPreventiveMaintenance: three or more work orders on one station within the last hour. One row per reporting station; fired is true where the rule fires.")
+RuleRepeatFaultsPreventiveMaintenance(asOf: datetime = datetime(null)) {
+    let at = iff(isnull(asOf), now() - 1m, asOf);
+    let Orders = WorkOrders
+        | where created_at between ((at - 1h) .. at)
+        | summarize work_orders = count(), work_order_ids = make_list(work_order_id), issue_types = make_set(issue_type)
+          by device_id;
+    MachineEvents
+    | where timestamp between ((at - 5m) .. at)
+    | distinct line_id, device_id, station_position, machine_type
+    | lookup kind=leftouter Orders on device_id
+    | extend work_orders = coalesce(work_orders, long(0))
+    | project fired = work_orders >= 3, alert_id = device_id, rule = "RepeatFaultsPreventiveMaintenance", line_id,
+              device_id, station_position, machine_type, work_orders, threshold = 3, work_order_ids, issue_types,
+              window_start = at - 1h, window_end = at, checked_at = at
+}
+KQLEOF
 read -r -d '' _RULE_REJECT_RATE <<'KQLEOF' || true
-.create-or-alter function with (folder = "Rules", docstring = "Ontology rule RejectRateQuarantine: a station's reject rate over the last hour above twice its target_reject_rate (StationMaster). One row per firing station.")
+.create-or-alter function with (folder = "Rules", docstring = "Ontology rule RejectRateQuarantine: a station's reject rate over the last hour above twice its target_reject_rate (StationMaster), with at least 3 rejected parts so that one or two random rejects at a low-volume station don't trigger it. One row per reporting station; fired is true where the rule fires.")
 RuleRejectRateQuarantine(asOf: datetime = datetime(null)) {
-    let at = iff(isnull(asOf), now(), asOf);
-    PartPasses
-    | where passed_at between ((at - 1h) .. at)
-    | summarize completed = sum(is_completed), rejected = sum(is_rejected)
-      by line_id, device_id, station_position, machine_type
+    let at = iff(isnull(asOf), now() - 1m, asOf);
+    let Passes = PartPasses
+        | where passed_at between ((at - 1h) .. at)
+        | summarize completed = sum(is_completed), rejected = sum(is_rejected) by device_id;
+    MachineEvents
+    | where timestamp between ((at - 5m) .. at)
+    | distinct line_id, device_id, station_position, machine_type
+    | lookup kind=leftouter Passes on device_id
     | lookup kind=inner (StationMaster | project device_id, target_reject_rate) on device_id
-    | extend reject_rate = todouble(rejected) / (completed + rejected), quarantine_threshold = 2 * target_reject_rate
-    | where rejected > 0 and reject_rate > quarantine_threshold
-    | project rule = "RejectRateQuarantine", line_id, device_id, station_position, machine_type, completed, rejected,
+    | extend completed = coalesce(completed, long(0)), rejected = coalesce(rejected, long(0))
+    | extend reject_rate = iff(completed + rejected == 0, 0.0, todouble(rejected) / (completed + rejected)),
+             quarantine_threshold = 2 * target_reject_rate
+    | project fired = rejected >= 3 and reject_rate > quarantine_threshold, alert_id = device_id,
+              rule = "RejectRateQuarantine", line_id, device_id, station_position, machine_type, completed, rejected,
               reject_rate = round(reject_rate, 4), target_reject_rate, quarantine_threshold,
               window_start = at - 1h, window_end = at, checked_at = at
 }
 KQLEOF
 read -r -d '' _RULE_STATION_OEE <<'KQLEOF' || true
-.create-or-alter function with (folder = "Rules", docstring = "Ontology rule StationOeeEscalation: a station's OEE (OeeFacts/OeeKpis in 5-minute intervals; an interval with Availability 0 counts as 0) below 60% for more than 15 minutes. One row per firing station.")
+.create-or-alter function with (folder = "Rules", docstring = "Ontology rule StationOeeEscalation: a station's OEE (OeeFacts/OeeKpis in complete 5-minute intervals; an interval with Availability 0 or without any finished or rejected part counts as 0) below 60% for more than 15 minutes. Availability follows the OEE targets policy and leaves out Idle (Starved or Blocked) samples, which count against the station that caused them (rule StarvedBlockedRootCause), so an interval the station spent wholly idle is left out. The interval still in progress is left out too, so a few minutes of data can't end an episode. One row per reporting station; fired is true where the rule fires.")
 RuleStationOeeEscalation(asOf: datetime = datetime(null)) {
-    let at = iff(isnull(asOf), now(), asOf);
+    let at = iff(isnull(asOf), now() - 1m, asOf);
     OeeFacts(at - 3h, at, 5m)
-    | summarize samples = sum(samples), running = sum(running), ideal = sum(ideal), actual = sum(actual),
-                completed = sum(completed), rejected = sum(rejected)
+    | where bucket_start + 5m <= at
+    | summarize samples = sum(samples), running = sum(running), idle = sum(idle), ideal = sum(ideal),
+                actual = sum(actual), completed = sum(completed), rejected = sum(rejected)
       by bucket_start, line_id, device_id, station_position, machine_type
+    | extend samples = samples - coalesce(idle, 0)
     | invoke OeeKpis()
-    | extend OEE = iff(Availability == 0, 0.0, OEE)
+    | where isnotnull(Availability)
+    | extend OEE = iff(Availability == 0 or isnull(OEE), 0.0, OEE)
     | summarize last_at_or_above_60 = maxif(bucket_start, OEE >= 0.6), first_interval = min(bucket_start),
                 arg_max(bucket_start, OEE) by line_id, device_id, station_position, machine_type
-    | where bucket_start >= at - 10m and OEE < 0.6
-    | extend below_60_since = iff(isnull(last_at_or_above_60), first_interval, last_at_or_above_60 + 5m)
-    | extend minutes_below_60 = round((at - below_60_since) / 1m, 0)
-    | where minutes_below_60 > 15
-    | project rule = "StationOeeEscalation", line_id, device_id, station_position, machine_type,
-              latest_5m_oee = round(OEE, 3), below_60_since, minutes_below_60, threshold_minutes = 15, checked_at = at
+    | where bucket_start >= at - 10m
+    | extend below_60_since = iff(OEE < 0.6, iff(isnull(last_at_or_above_60), first_interval, last_at_or_above_60 + 5m),
+                                  datetime(null))
+    | extend minutes_below_60 = iff(isnull(below_60_since), 0.0, round((at - below_60_since) / 1m, 0))
+    | project fired = minutes_below_60 > 15, alert_id = device_id, rule = "StationOeeEscalation", line_id, device_id,
+              station_position, machine_type, latest_5m_oee = round(OEE, 3), below_60_since, minutes_below_60,
+              threshold_minutes = 15, checked_at = at
 }
 KQLEOF
 read -r -d '' _RULE_LINE_OEE <<'KQLEOF' || true
-.create-or-alter function with (folder = "Rules", docstring = "Ontology rule LineOeeEscalation: a line's OEE (OeeFacts/OeeKpis in 5-minute intervals; an interval with Availability 0 counts as 0) below 60% for more than 15 minutes, or more than 1 hour. One row per firing line.")
+.create-or-alter function with (folder = "Rules", docstring = "Ontology rule LineOeeEscalation: a line's OEE (OeeFacts/OeeKpis in complete 5-minute intervals; an interval with Availability 0 or without any finished or rejected part counts as 0) below 60% for more than 15 minutes, or more than 1 hour. The interval still in progress is left out, so a few minutes of data can't end an episode. One row per reporting line and escalation tier; fired is true where that tier of the rule fires.")
 RuleLineOeeEscalation(asOf: datetime = datetime(null)) {
-    let at = iff(isnull(asOf), now(), asOf);
+    let at = iff(isnull(asOf), now() - 1m, asOf);
     OeeFacts(at - 3h, at, 5m)
+    | where bucket_start + 5m <= at
     | summarize samples = sum(samples), running = sum(running), ideal = sum(ideal), actual = sum(actual),
                 completed = sum(completed), rejected = sum(rejected)
       by bucket_start, line_id
     | invoke OeeKpis()
-    | extend OEE = iff(Availability == 0, 0.0, OEE)
+    | extend OEE = iff(Availability == 0 or isnull(OEE), 0.0, OEE)
     | summarize last_at_or_above_60 = maxif(bucket_start, OEE >= 0.6), first_interval = min(bucket_start),
                 arg_max(bucket_start, OEE) by line_id
-    | where bucket_start >= at - 10m and OEE < 0.6
-    | extend below_60_since = iff(isnull(last_at_or_above_60), first_interval, last_at_or_above_60 + 5m)
-    | extend minutes_below_60 = round((at - below_60_since) / 1m, 0)
-    | where minutes_below_60 > 15
-    | project rule = "LineOeeEscalation", line_id, latest_5m_oee = round(OEE, 3), below_60_since, minutes_below_60,
-              escalation_tier = iff(minutes_below_60 > 60, "more than 1 hour", "more than 15 minutes"), checked_at = at
+    | where bucket_start >= at - 10m
+    | extend below_60_since = iff(OEE < 0.6, iff(isnull(last_at_or_above_60), first_interval, last_at_or_above_60 + 5m),
+                                  datetime(null))
+    | extend minutes_below_60 = iff(isnull(below_60_since), 0.0, round((at - below_60_since) / 1m, 0))
+    | mv-expand threshold_minutes = dynamic([15, 60]) to typeof(int)
+    | extend escalation_tier = iff(threshold_minutes == 60, "more than 1 hour", "more than 15 minutes")
+    | project fired = minutes_below_60 > threshold_minutes, alert_id = strcat(line_id, ", ", escalation_tier),
+              rule = "LineOeeEscalation", line_id, escalation_tier, latest_5m_oee = round(OEE, 3), below_60_since,
+              minutes_below_60, threshold_minutes, checked_at = at
 }
 KQLEOF
 read -r -d '' _RULE_OPEN_WORK_ORDERS <<'KQLEOF' || true
-.create-or-alter function with (folder = "Rules", docstring = "Ontology rule ConcurrentOpenWorkOrders: two or more work orders open at once on a line that's reporting telemetry. A work order is open while its latest MaintenanceEvents step isn't Resolved. One row per firing line.")
+.create-or-alter function with (folder = "Rules", docstring = "Ontology rule ConcurrentOpenWorkOrders: two or more work orders open at once on a line that's reporting telemetry. A work order is open while its latest MaintenanceEvents step isn't Resolved. One row per reporting line; fired is true where the rule fires.")
 RuleConcurrentOpenWorkOrders(asOf: datetime = datetime(null)) {
-    let at = iff(isnull(asOf), now(), asOf);
-    let Reporting = MachineEvents | where timestamp between ((at - 5m) .. at) | distinct line_id;
-    MaintenanceEvents
-    | where timestamp <= at
-    | summarize arg_max(timestamp, action, line_id, device_id, issue_type) by work_order_id
-    | where action != "Resolved" and line_id in (Reporting)
-    | summarize open_work_orders = count(), work_order_ids = make_list(work_order_id), stations = make_set(device_id),
-                issue_types = make_set(issue_type)
-      by line_id
-    | where open_work_orders >= 2
-    | project rule = "ConcurrentOpenWorkOrders", line_id, open_work_orders, threshold = 2, work_order_ids, stations,
-              issue_types, checked_at = at
+    let at = iff(isnull(asOf), now() - 1m, asOf);
+    let Open = MaintenanceEvents
+        | where timestamp <= at
+        | summarize arg_max(timestamp, action, line_id, device_id, issue_type) by work_order_id
+        | where action != "Resolved"
+        | summarize open_work_orders = count(), work_order_ids = make_list(work_order_id), stations = make_set(device_id),
+                    issue_types = make_set(issue_type)
+          by line_id;
+    MachineEvents
+    | where timestamp between ((at - 5m) .. at)
+    | distinct line_id
+    | lookup kind=leftouter Open on line_id
+    | extend open_work_orders = coalesce(open_work_orders, long(0))
+    | project fired = open_work_orders >= 2, alert_id = line_id, rule = "ConcurrentOpenWorkOrders", line_id,
+              open_work_orders, threshold = 2, work_order_ids, stations, issue_types, checked_at = at
 }
 KQLEOF
 for _rule in "$_RULE_BOTTLENECK" "$_RULE_REPEAT_FAULTS" "$_RULE_REJECT_RATE" "$_RULE_STATION_OEE" \
@@ -1498,8 +1530,8 @@ CONN_STR=""
 
 if [[ -t 0 ]]; then
   manual "Open manufacturing-telemetry Eventstream in Fabric"
-  manual "Click the 'oee-simulator' source node → Keys tab"
-  manual "Copy 'Connection string–primary key'"
+  manual "Select the 'oee-simulator' source → Details → SAS Key Authentication"
+  manual "Show and copy 'Connection string-primary key'"
   read -rp "   Paste the connection string here to create simulator.local.yaml (or press Enter to skip): " CONN_STR
 fi
 

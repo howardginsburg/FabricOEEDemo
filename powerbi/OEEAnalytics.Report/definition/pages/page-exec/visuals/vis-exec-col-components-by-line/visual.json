@@ -1,0 +1,26 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.12.0/schema.json",
+  "name": "vis-exec-col-components-by-line",
+  "position": { "x": 652, "y": 230, "z": 0, "width": 612, "height": 230, "tabOrder": 7 },
+  "visual": {
+    "visualType": "clusteredColumnChart",
+    "query": {
+      "queryState": {
+        "Category": {
+          "projections": [
+            { "field": { "Column": { "Expression": { "SourceRef": { "Entity": "DimLine" } }, "Property": "line_name" } }, "queryRef": "DimLine.line_name", "nativeQueryRef": "line_name" } ]
+        },
+        "Y": {
+          "projections": [
+            { "field": { "Measure": { "Expression": { "SourceRef": { "Entity": "_Measures" } }, "Property": "Availability" } }, "queryRef": "_Measures.Availability", "nativeQueryRef": "Availability" },
+            { "field": { "Measure": { "Expression": { "SourceRef": { "Entity": "_Measures" } }, "Property": "Performance" } }, "queryRef": "_Measures.Performance", "nativeQueryRef": "Performance" },
+            { "field": { "Measure": { "Expression": { "SourceRef": { "Entity": "_Measures" } }, "Property": "Quality" } }, "queryRef": "_Measures.Quality", "nativeQueryRef": "Quality" } ]
+        }
+      }
+    },
+    "visualContainerObjects": {
+      "title": [ { "properties": { "text": { "expr": { "Literal": { "Value": "'OEE Components by Line'" } } } } } ]
+    },
+    "drillFilterOtherVisuals": true
+  }
+}

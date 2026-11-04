@@ -1,17 +1,21 @@
-# OEE Factory IQ — Sample Queries
+# Sample questions
 
 <!-- Generated from agent/evals/cases.json by `python scripts/12-evaluate-agent.py --write-samples`.
-     Edit the cases file, then regenerate this one. -->
+     Edit the cases file, then regenerate this page. -->
 
-Persona questions for demos. They're also the question set `scripts/12-evaluate-agent.py`
-evaluates the agent on. Each question names the knowledge its answer needs:
+Questions from the demo's six personas for the [OEE Factory IQ agent](foundry-agent.md). They're also
+the question set that `scripts/12-evaluate-agent.py` evaluates the agent on. Each question names the
+knowledge its answer needs:
 
 - **SOPs**: the SOP and policy documents, through the Foundry IQ knowledge base (or the AI Search
   tool in tools mode).
 - **Ontology**: the Fabric IQ ontology's entities, relationships, current machine state, and
   business rules.
-- **Data agent**: the OEE data agent's governed KPIs from the Direct Lake semantic model and its
+- **Data agent**: the OEE Data Agent's governed KPIs from the Direct Lake semantic model and its
   event detail from the Eventhouse.
+
+Questions that need only the data agent or the ontology also work in the
+[OEE Data Agent](data-agent.md) itself.
 
 ## Corp Exec
 

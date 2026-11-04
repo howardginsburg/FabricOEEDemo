@@ -91,7 +91,9 @@ public sealed class SimulationEngine : IHostedService
         await _cts.CancelAsync();
         if (_runTask is not null)
         {
-            try { await _runTask; } catch (OperationCanceledException) { }
+            try { await _runTask; }
+            catch (OperationCanceledException) { }
+            catch (Exception ex) { _logger.LogError(ex, "The simulation loop failed"); }
         }
         _cts.Dispose();
         _cts = null;
@@ -101,6 +103,8 @@ public sealed class SimulationEngine : IHostedService
     {
         _logger.LogInformation("Shutting down simulator...");
         await StopSimulationAsync();
+        if (_maintenanceManager is not null)
+            await _maintenanceManager.ResolveActiveAsync(TimeSpan.FromSeconds(3));
         await _sink.DisposeAsync();
         _logger.LogInformation("Simulator stopped.");
     }

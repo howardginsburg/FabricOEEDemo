@@ -1,6 +1,6 @@
 rule AvailabilityDefinition
 	lineageTag: e8b78d4e-db69-554c-ab00-dc304b400085
-	statement: Availability is measured as running samples divided by all machine-status samples, so Idle time (Starved or Blocked) lowers a machine's measured availability. The plant policy document defines Availability excluding Idle; reports, dashboards, and agents use the measured definition.
+	statement: Availability is measured as running samples divided by all machine-status samples, so Idle time (Starved or Blocked) lowers a machine's measured availability. The plant policy document defines Availability excluding Idle; reports and dashboards use the measured definition, and the station OEE escalation check (rule StationOeeEscalation) uses the policy's, because idle time counts against the station that caused it (rule StarvedBlockedRootCause).
 
 	ruleReferencedEntity equipment#Machine
 		propertyScope: specific

@@ -51,7 +51,7 @@ table _Measures
 
 	/// Quality = good parts ÷ total parts produced (First-Pass Yield).
 	/// good = completed; total = completed + rejected. (is_pass fires on multiple
-	/// part events per part, so it is NOT used here — see docs/POWERBI_NOTES.md.)
+	/// part events per part, so it is NOT used here.)
 	measure Quality = DIVIDE([Parts Completed], [Parts Produced])
 		formatString: 0.0%;-0.0%;0.0%
 		lineageTag: 3f2a9d10-3001-4b7c-9e11-aa0000020009
@@ -151,7 +151,7 @@ table _Measures
 		lineageTag: 3f2a9d10-3001-4b7c-9e11-aa0000020016
 
 	/// Mean Time Between Failures (minutes, approx): running minutes ÷ failures.
-	/// Sample interval assumed via Running Samples; see docs/POWERBI_NOTES.md.
+	/// Running samples convert to minutes at the simulator's 10-second telemetry interval (6 a minute).
 	measure 'MTBF (min)' = ```
 			VAR Failures = [Work Orders]
 			VAR RunningMinutes = [Running Samples] * DIVIDE ( 1, 6 )

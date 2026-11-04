@@ -13,6 +13,7 @@ public sealed class MaintenanceManager
     private readonly Random _random = new();
     private readonly List<MaintenanceWorkOrder> _activeOrders = [];
     private readonly object _lock = new();
+    private readonly CancellationTokenSource _shutdown = new();
 
     public MaintenanceManager(MaintenanceConfig config, ITelemetrySink sink, ILogger<MaintenanceManager> logger)
     {
@@ -47,29 +48,45 @@ public sealed class MaintenanceManager
 
     private async Task RunLifecycleAsync(MaintenanceWorkOrder wo, MaintenanceTiming? timing)
     {
+        var ct = _shutdown.Token;
         try
         {
             await EmitEventAsync(wo, "Created");
 
             var ackDelay = timing?.Acknowledge ?? RandomDelay(_config.AcknowledgeDelayMinSeconds, _config.AcknowledgeDelayMaxSeconds);
-            await Task.Delay(ackDelay);
+            await Task.Delay(ackDelay, ct);
             wo.Status = WorkOrderStatus.Acknowledged;
             wo.AcknowledgedAtUtc = DateTime.UtcNow;
             await EmitEventAsync(wo, "Acknowledged");
             _logger.LogInformation("Work order {WoId} acknowledged after {Delay}s", wo.Id, ackDelay.TotalSeconds);
 
             var ipDelay = timing?.InProgress ?? RandomDelay(_config.InProgressDelayMinSeconds, _config.InProgressDelayMaxSeconds);
-            await Task.Delay(ipDelay);
+            await Task.Delay(ipDelay, ct);
             wo.Status = WorkOrderStatus.InProgress;
             wo.InProgressAtUtc = DateTime.UtcNow;
             await EmitEventAsync(wo, "InProgress");
             _logger.LogInformation("Work order {WoId} in progress after {Delay}s", wo.Id, ipDelay.TotalSeconds);
 
             var resolveDelay = timing?.Resolve ?? RandomDelay(_config.ResolveDelayMinSeconds, _config.ResolveDelayMaxSeconds);
-            await Task.Delay(resolveDelay);
+            await Task.Delay(resolveDelay, ct);
             wo.MarkResolved();
             await EmitEventAsync(wo, "Resolved");
             _logger.LogInformation("Work order {WoId} resolved after {Delay}s", wo.Id, resolveDelay.TotalSeconds);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // The simulator is shutting down mid-repair. Resolve the work order, or it stays open in the data
+            // forever and every "open work orders" view and rule keeps counting it.
+            wo.MarkResolved();
+            try
+            {
+                await EmitEventAsync(wo, "Resolved");
+                _logger.LogInformation("Work order {WoId} resolved at shutdown", wo.Id);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Could not resolve work order {WoId} at shutdown", wo.Id);
+            }
         }
         catch (Exception ex)
         {
@@ -81,6 +98,15 @@ public sealed class MaintenanceManager
             lock (_lock)
                 _activeOrders.Remove(wo);
         }
+    }
+
+    /// <summary>Resolves the open work orders when the simulator shuts down, waiting up to <paramref name="timeout"/>.</summary>
+    public async Task ResolveActiveAsync(TimeSpan timeout)
+    {
+        await _shutdown.CancelAsync();
+        var deadline = DateTime.UtcNow + timeout;
+        while (ActiveOrders.Count > 0 && DateTime.UtcNow < deadline)
+            await Task.Delay(100);
     }
 
     private TimeSpan RandomDelay(int minSeconds, int maxSeconds) =>

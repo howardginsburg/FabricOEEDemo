@@ -42,7 +42,7 @@
 #   Add --case <id> (repeatable) or --persona <name> for a subset, --skip-foundry for the
 #   local checks only, or --resubmit <results.json> to check and judge saved responses
 #   again without asking the agent.
-#   python scripts/12-evaluate-agent.py --write-samples   # regenerate agent/samples/queries.md
+#   python scripts/12-evaluate-agent.py --write-samples   # regenerate docs/demo/sample-questions.md
 # =============================================================================
 import argparse
 import json
@@ -58,7 +58,7 @@ from pathlib import Path
 FABRIC_API = "https://api.fabric.microsoft.com/v1"
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CASES_FILE = REPO_ROOT / "agent" / "evals" / "cases.json"
-SAMPLES_FILE = REPO_ROOT / "agent" / "samples" / "queries.md"
+SAMPLES_FILE = REPO_ROOT / "docs" / "demo" / "sample-questions.md"
 RESULTS_DIR = REPO_ROOT / "agent" / "evals" / "results"
 
 # Bump when the item schema or the testing criteria change, so the next run starts a new
@@ -539,17 +539,20 @@ def details(records, judged):
 
 def write_samples(cases):
     lines = [
-        "# OEE Factory IQ — Sample Queries", "",
+        "# Sample questions", "",
         "<!-- Generated from agent/evals/cases.json by `python scripts/12-evaluate-agent.py --write-samples`.",
-        "     Edit the cases file, then regenerate this one. -->", "",
-        "Persona questions for demos. They're also the question set `scripts/12-evaluate-agent.py`",
-        "evaluates the agent on. Each question names the knowledge its answer needs:", "",
+        "     Edit the cases file, then regenerate this page. -->", "",
+        "Questions from the demo's six personas for the [OEE Factory IQ agent](foundry-agent.md). They're also",
+        "the question set that `scripts/12-evaluate-agent.py` evaluates the agent on. Each question names the",
+        "knowledge its answer needs:", "",
         "- **SOPs**: the SOP and policy documents, through the Foundry IQ knowledge base (or the AI Search",
         "  tool in tools mode).",
         "- **Ontology**: the Fabric IQ ontology's entities, relationships, current machine state, and",
         "  business rules.",
-        "- **Data agent**: the OEE data agent's governed KPIs from the Direct Lake semantic model and its",
+        "- **Data agent**: the OEE Data Agent's governed KPIs from the Direct Lake semantic model and its",
         "  event detail from the Eventhouse.", "",
+        "Questions that need only the data agent or the ontology also work in the",
+        "[OEE Data Agent](data-agent.md) itself.", "",
     ]
     number = 0
     for persona in dict.fromkeys(c["persona"] for c in cases):

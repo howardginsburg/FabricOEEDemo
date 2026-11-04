@@ -168,7 +168,9 @@ public sealed class Station
     /// <summary>Runs a fault through Fault → Maintenance → resolved. Returns false if the simulation stopped.</summary>
     private async Task<bool> RunFaultAsync(FaultRequest request, CancellationToken ct)
     {
-        var faultType = _config.FaultTypes[_random.Next(_config.FaultTypes.Count)];
+        var faultType = request.Primary
+            ? _config.FaultTypes[0]
+            : _config.FaultTypes[_random.Next(_config.FaultTypes.Count)];
         lock (_scenarioLock)
             _activeScenario = request.ScenarioLabel;
 

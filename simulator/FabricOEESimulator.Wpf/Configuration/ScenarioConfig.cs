@@ -8,10 +8,10 @@ public sealed class ScenarioConfig
     public int RepeatFaultCount { get; set; } = 3;
     public int QuickFixStepMinSeconds { get; set; } = 10;
     public int QuickFixStepMaxSeconds { get; set; } = 20;
-    public int LongOutageMinutes { get; set; } = 6;
-    public int RejectSpikeMinutes { get; set; } = 10;
+    public int LongOutageMinutes { get; set; } = 12;
+    public int RejectSpikeMinutes { get; set; } = 20;
     public double RejectSpikeProbability { get; set; } = 0.35;
-    public int SlowCycleMinutes { get; set; } = 10;
+    public int SlowCycleMinutes { get; set; } = 30;
     public double SlowCycleMultiplier { get; set; } = 1.8;
 
     /// <summary>Short acknowledge / in-progress / resolve steps so repeat faults fit in a few minutes.</summary>

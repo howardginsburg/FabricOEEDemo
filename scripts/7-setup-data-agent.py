@@ -288,10 +288,13 @@ Pick the source before you query. Start with the ontology; use the others for wh
    - current machine state from the time-series properties (__TIMESERIES__): the latest value per machine;
    - rules and thresholds (Station.target_reject_rate, OeeTarget.target_oee): quote rules by name from "Business rules" below;
    - plant-wide values of the governed metrics.
+   Not for whether a work order is open, or anything else from the last few minutes: see Freshness below.
 2. OEEAnalytics (semantic model) — governed KPI measures over the full history, sliced by line, shift, station, or machine type: OEE, Availability, Performance, Quality, Rejection Rate, Throughput, Parts Finished, Schedule Adherence, MTTR (min), MTBF (min), Target OEE, OEE vs Target, OEE — Day, OEE — Night, and the floor-ops measures (Open Issues, Critical Open, Resolution Rate, Human MTTA (min), Human MTTR (min), Scrap Qty). Use its measures instead of recomputing a KPI. It has no time dimension: never use it for a time window, the latest data, or how long a condition lasted.
 3. ManufacturingEH (KQL database) — raw and live events: the latest N events, minute-level trends, KPIs for a time window (with the OeeFacts/OeeKpis definitions from its example queries), part and work-order timelines, starved/blocked cascades, and rule checks over a window.
 
-Split mixed questions. Example: "Which Line-B machines are down, and do they have open work orders?" → machine state from the ontology, then open work orders (latest step isn't Resolved) from the ontology or ManufacturingEH.
+Freshness: the ontology and OEEAnalytics read OneLake copies of the event tables, which trail the live stream by a few minutes. So whether a work order is open, and anything else from the last few minutes such as a fault that was just raised, always comes from ManufacturingEH, together with the details asked for (technician names are in its TechnicianMaster table).
+
+Split mixed questions. Example: "Which Line-B machines are down, and do they have open work orders?" → machine state from the ontology, then open work orders (latest step isn't Resolved) from ManufacturingEH.
 
 Rule checks: whether a rule with a duration or a rolling window fired (OEE below 60% for more than 15 minutes or an hour, a rolling-hour reject rate, work orders within an hour) is always checked in ManufacturingEH, never inferred from a full-history KPI. If the question also asks for KPIs or targets, get those from OEEAnalytics. Pass ManufacturingEH the user's wording and the rule's threshold without prescribing a method (a window length, consecutive buckets): its example queries define each check.
 
@@ -316,7 +319,7 @@ If a source can't answer (no query, an error, a missing column), ask the next so
 ## Answering
 1. Lead with the answer, then the evidence: source, filters, and time window (KPIs without a window cover all available data).
 2. For OEE, show Availability, Performance, and Quality, and name the biggest loss.
-3. A fault starves downstream stations and blocks upstream ones. Starved or blocked time counts against root_cause_device_id (rule StarvedBlockedRootCause): to find the station that caused the most, group by root_cause_device_id, never by the idle station's device_id.
+3. A station that stops or slows starves the stations after it (downstream) and blocks the stations before it (upstream); describe its impact that way round ("it starved the stations after it and blocked the ones before it"), never as starving upstream or blocking downstream. Starved or blocked time counts against root_cause_device_id (rule StarvedBlockedRootCause): to find the station that caused the most, group by root_cause_device_id, never by the idle station's device_id. Give time in a state in minutes (samples ÷ 6), not as a sample count.
 4. Current state is each machine's latest sample.
 5. Name only the sources you queried; there's no precomputed OEE table. Don't overstate empty results: say what was checked.
 6. For an SOP or policy, give its title and file_name; the full text is in the Foundry agent's search index.
@@ -326,6 +329,8 @@ If a source can't answer (no query, an error, a missing column), ask the next so
 ## Ontology notes
 - Entity names are namespaced (equipment#Station). Station is the process position (key device_id, the same as its machine's).
 - PartPass and MaintenanceEvent are keyless events: one row per station pass and per work-order step. SOP and Policy derive from Document; query SOP or Policy directly, because querying Document returns neither.
+- WorkOrder and MaintenanceEvent rows trail the live stream by a few minutes, so the ontology can't tell whether a work order is open now: ask ManufacturingEH.
+- For time in a state (idle, starved, blocked, running, down), ask the ontology for sample counts, not minutes: asked for minutes, it subtracts timestamps, which also counts the gaps when the plant wasn't running.
 - Support group by in GQL.
 """
 MODEL_INSTRUCTIONS = (
@@ -349,7 +354,10 @@ KQL_INSTRUCTIONS = (
     "nothing, say when the latest event was. "
     "Duration rules (OEE below 60% for more than 15 minutes) use OEE in 5-minute buckets as in the example "
     "queries: below 60% since the bucket after the last one at or above 60%, measured to the latest event, not by "
-    "numbering consecutive rows. A bucket with Availability 0 counts as OEE 0. "
+    "numbering consecutive rows. A bucket with Availability 0 counts as OEE 0. The station rule "
+    "(StationOeeEscalation) leaves Idle samples out of Availability (samples - idle), as the OEE targets policy "
+    "does, because idle time counts against the station that caused it; the line rule uses all samples. "
+    "The reject-rate quarantine check (RejectRateQuarantine) also needs at least 3 rejected parts in the hour. "
     "Open work orders: summarize arg_max(timestamp, *) by work_order_id, then action != 'Resolved'. "
     "Starved and Blocked time belongs to root_cause_device_id (rule StarvedBlockedRootCause), not to the idle "
     "device_id; group by it as in its example query. "
@@ -362,14 +370,21 @@ _OEE_SUMS = ("samples = sum(samples), running = sum(running), ideal = sum(ideal)
              "completed = sum(completed), rejected = sum(rejected)")
 
 
-def _below_60_query(keys: str) -> str:
-    """How long each line or station has stayed below 60% OEE, from the last 5-minute bucket at or above it."""
+def _below_60_query(keys: str, policy_availability: bool = False) -> str:
+    """How long each line or station has stayed below 60% OEE, from the last complete 5-minute bucket at or above
+    it, the same way the Rule*OeeEscalation functions check it: the bucket still in progress is left out, and a
+    bucket with Availability 0 or no finished or rejected part counts as 0. policy_availability leaves Idle samples
+    out of Availability, as the station escalation rule does, so a bucket the station spent wholly idle is left out."""
+    sums, idle = (f"{_OEE_SUMS}, idle = sum(idle)", "| extend samples = samples - coalesce(idle, 0)\n") \
+        if policy_availability else (_OEE_SUMS, "")
+    wholly_idle = "| where isnotnull(Availability)\n" if policy_availability else ""
     return ("let LatestEvent = toscalar(MachineEvents | summarize max(timestamp));\n"
-            f"OeeFacts(LatestEvent - 3h, LatestEvent, 5m)\n| summarize {_OEE_SUMS} by bucket_start, {keys}\n"
-            "| invoke OeeKpis()\n| extend OEE = iff(Availability == 0, 0.0, OEE)\n"
+            "OeeFacts(LatestEvent - 3h, LatestEvent, 5m)\n| where bucket_start + 5m <= LatestEvent\n"
+            f"| summarize {sums} by bucket_start, {keys}\n"
+            f"{idle}| invoke OeeKpis()\n{wholly_idle}| extend OEE = iff(Availability == 0 or isnull(OEE), 0.0, OEE)\n"
             "| summarize last_at_or_above_60 = maxif(bucket_start, OEE >= 0.6), first_bucket = min(bucket_start), "
             f"arg_max(bucket_start, OEE) by {keys}\n"
-            "| extend below_60_since = iff(OEE >= 0.6, datetime(null), "
+            "| extend below_60_since = iff(OEE >= 0.6 or isnull(OEE), datetime(null), "
             "iff(isnull(last_at_or_above_60), first_bucket, last_at_or_above_60 + 5m))\n"
             "| extend minutes_below_60 = iff(isnull(below_60_since), 0, "
             "datetime_diff('minute', LatestEvent, below_60_since))\n"
@@ -402,7 +417,7 @@ KQL_FEWSHOTS = [
      "and since when?",
      _below_60_query("line_id")),
     ("Which stations' OEE has stayed below 60% for more than 15 minutes in the latest data, and since when?",
-     _below_60_query("line_id, device_id")),
+     _below_60_query("line_id, device_id", policy_availability=True)),
     ("What is schedule adherence by line and shift for the last 8 hours?",
      "let Window = 8h;\nlet LastStation = LineMaster | project line_id, last_station = station_count;\n"
      "let Finished = PartEvents\n| where timestamp > ago(Window) and action == \"completed\"\n"
@@ -431,12 +446,12 @@ KQL_FEWSHOTS = [
      "affected = make_list(strcat(device_id, \" \", idle_reason, \" \", round(samples / 6.0, 1), \" min\")) "
      "by root_cause_device_id\n"
      "| order by idle_minutes_caused desc"),
-    ("Which stations' reject rate over the last hour is more than twice their target reject rate?",
+    ("Which stations meet the reject-rate quarantine rule over the last hour?",
      "PartPasses\n| where passed_at > ago(1h)\n"
      "| summarize completed = sum(is_completed), rejected = sum(is_rejected) by line_id, device_id\n"
      "| lookup kind=inner (StationMaster | project device_id, target_reject_rate) on device_id\n"
      "| extend reject_rate = todouble(rejected) / (completed + rejected)\n"
-     "| where rejected > 0 and reject_rate > 2 * target_reject_rate\n"
+     "| where rejected >= 3 and reject_rate > 2 * target_reject_rate\n"
      "| project line_id, device_id, completed, rejected, reject_rate = round(reject_rate, 3), target_reject_rate, "
      "quarantine_threshold = 2 * target_reject_rate\n| order by reject_rate desc"),
     ("Show the hourly reject-rate trend of line-e-station-4 over the latest 12 hours of data, with its target.",

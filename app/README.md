@@ -33,7 +33,8 @@ The FloorEvent table joins the OEE star schema on shared dimensions
 context sits **beside** machine telemetry in Power BI — same KPIs on the floor and in
 leadership's report, minutes apart.
 
-See [`docs/FLOOR_OPS_CONSOLE.md`](../docs/FLOOR_OPS_CONSOLE.md) for the full flow.
+See the [Floor Ops Console setup](https://howardginsburg.github.io/FabricOEEDemo/setup/floor-ops-console/) and
+[demo](https://howardginsburg.github.io/FabricOEEDemo/demo/floor-ops/) pages for the full flow.
 
 ## Layout
 ```

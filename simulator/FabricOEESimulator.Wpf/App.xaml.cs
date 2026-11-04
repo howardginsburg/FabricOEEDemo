@@ -47,7 +47,8 @@ public partial class App : Application
                     var config = sp.GetRequiredService<IOptions<SimulatorConfig>>().Value;
                     var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
 
-                    return new EventHubSink(config.Broker, loggerFactory.CreateLogger<EventHubSink>());
+                    return new EventHubSink(config.Broker, sp.GetRequiredService<TelemetryLog>(),
+                        loggerFactory.CreateLogger<EventHubSink>());
                 });
 
                 services.AddSingleton<TelemetryLog>();

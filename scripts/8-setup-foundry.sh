@@ -376,7 +376,7 @@ if [[ -n "$SEARCH_SERVICE" ]]; then
     warn "AI Search '$SEARCH_SERVICE' not found yet — expected if scripts/9-setup-aisearch.sh has not run."
   fi
 else
-  warn "--search-service not provided. Run scripts/9-setup-aisearch.sh next, then collect its output for the README agent setup."
+  warn "--search-service not provided. Run scripts/9-setup-aisearch.sh next, then scripts/10-setup-foundry-agent.py (docs/setup/foundry-agent.md)."
 fi
 
 # ── 7. Summary + next steps ──────────────────────────────────────────────────
