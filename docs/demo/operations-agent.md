@@ -35,6 +35,9 @@ whether the rule fires for it.
 
     ![An alert in the activity log, with the message the agent sent](../assets/screenshots/demo/ops-agent-alert.png)
 
+The agent writes its rules and its messages with AI, so their names and wording differ a little from these
+screenshots, and from one playbook generation to the next.
+
 !!! quote "What to say"
     "Nobody had to watch a dashboard for this. The agent applies the plant's own rules, the same ones the other
     agents quote, and tells the right person what to do about it."
