@@ -15,7 +15,7 @@ way to recover from a failed run.
 | [4. Floor Ops Console](floor-ops-console.md) | A Fabric App where operators log floor issues | Optional (preview) |
 | [5. Power BI report](power-bi.md) | The Direct Lake semantic model and 5-page report | Optional |
 | [6. Activator alert](activator.md) | An email when a machine faults | Optional |
-| [7. Fabric IQ](fabric-iq.md) | The ontology's optional entities, its graph, and the data agent's semantic model source | Optional (preview) |
+| [7. Fabric IQ](fabric-iq.md) | The ontology's entities from the SQL database, the Floor Ops Console, and the semantic model; its graph; and the data agent | Optional (preview) |
 | [8. Operations agent](operations-agent.md) | Alerts when an ontology rule fires | Optional (preview) |
 | [9. Foundry agent](foundry-agent.md) | SOP search, a Foundry IQ knowledge base, and the OEE Factory IQ agent | Optional (Azure) |
 | [10. Evaluate the agent](evaluate.md) | Persona evaluations of the agent in Foundry | Optional (Azure) |

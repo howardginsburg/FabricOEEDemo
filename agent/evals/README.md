@@ -44,7 +44,7 @@ python3 scripts/12-evaluate-agent.py \
 
 Each run takes about 20 minutes to ask the 25 questions and another 5–10 minutes to judge. The script exits with status 1 if any response errored or the Foundry run failed.
 
-**Capacity cost.** A full run asks the data agent about 30–40 times, and each question uses about 66,000 prompt tokens, which is about 7,000 CU-seconds on the Fabric capacity. That's about a third of an F8's daily capacity per run, and three full runs in one afternoon throttled it. While iterating, run subsets with `--case` or `--persona`, re-judge saved responses with `--resubmit`, and keep full runs for checkpoints (or scale the capacity up while iterating). The judges run in Foundry and don't use Fabric capacity.
+**Capacity cost.** A full run asks the data agent about 30–40 times, and each question uses 65,000–100,000 prompt tokens, about 7,000–10,000 CU-seconds on the Fabric capacity. That's a third to a half of an F8's daily capacity per run, and three full runs in one afternoon throttled it. While iterating, run subsets with `--case` or `--persona`, re-judge saved responses with `--resubmit`, and keep full runs for checkpoints (or scale the capacity up while iterating). The judges run in Foundry and don't use Fabric capacity.
 
 When you change the testing criteria or the item schema, bump `CRITERIA_VERSION` in the script. The next run then starts a new evaluation, instead of adding a run whose criteria differ from the earlier ones.
 
@@ -64,6 +64,8 @@ Each row is one run of the 25 cases (passed out of 25). All runs are in the **oe
 
 ¹ One groundedness result was a judge connection error, not a failure.
 ² `lm-line-b-down` failed every criterion because the knowledge base's ontology source returned BadGateway, a service error rather than an agent failure.
+
+v12 moved the data agent to the ontology as its context: the ontology now binds the Eventhouse, the lakehouse, the `OeeGovernance` SQL database, and the `OEEAnalytics` model, and the agent writes KQL, SQL, or DAX for the source each entity is bound to. An 8-case subset over the routes that changed (`exec-lines-below-target`, `pm-oee-latest-hour`, `lm-line-b-down`, `lm-line-d-starved-blocked`, `mt-thermocouple-drift`, `qw-part-genealogy`, `rel-technician-resolved`, `rel-mttr-mtbf`) passed every criterion in 7 cases. In `exec-lines-below-target`, the data agent's escalation-duration query hit a type error and the agent said it couldn't confirm the tier, which task adherence and tool-call success count; the same question succeeded when asked again, and the case was flaky before (v7, v9). Version 11 was a portal save (reasoning effort and voice settings) and wasn't evaluated.
 
 In v10, 23 of the 25 cases passed every criterion and no response failed. The task and completeness judges marked `lm-line-b-down` down for adding each faulted station's fault type and open work order, which the system prompt asks for. In `lm-aoi-trend`, the data agent's first query failed before it recovered, which tool-call success counts.
 

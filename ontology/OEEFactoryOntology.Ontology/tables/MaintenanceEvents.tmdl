@@ -37,9 +37,10 @@ table MaintenanceEvents
 		lineageTag: da8e5c98-16d6-5999-90cb-4d0b9b24f068
 		sourceColumn: timestamp
 
-	partition MaintenanceEvents = entity
-		mode: directLake
-		source
-			entityName: MaintenanceEvents
-			schemaName: dbo
-			expressionSource: 'DirectLake - ManufacturingLH'
+	partition MaintenanceEvents = m
+		mode: directQuery
+		source =
+				let
+				  Source = AzureDataExplorer.Contents("__KQL_CLUSTER_URI__", "__KQL_DATABASE__", "MaintenanceEvents")
+				in
+				  Source

@@ -40,13 +40,13 @@ flowchart TB
 
     %% ---------------- Fabric IQ & semantics ----------------
     subgraph SERVE["Fabric IQ & semantic layer"]
-        ONT["🕸️ OEEFactoryOntology<br/>entities · relationships · rules · metrics<br/>+ graph"]
+        ONT["🕸️ OEEFactoryOntology<br/>entities · relationships · rules · metrics<br/>binds 4 sources · graph"]
         SM["📊 OEEAnalytics<br/>Direct Lake on OneLake<br/>OEE = A × P × Q (DAX)"]
-        DA["🤖 OEE Data Agent<br/>ontology → semantic model → Eventhouse"]
+        DA["🤖 OEE Data Agent<br/>ontology as context<br/>KQL · SQL · DAX"]
         SEARCH["🔎 Azure AI Search<br/>36 SOP PDFs (indexed)"]
         KB["📚 Foundry IQ knowledge base<br/>SOP index + ontology"]
-        ONT --> DA
-        SM --> DA
+        SM -->|measures| ONT
+        ONT -->|context| DA
         ONT --> KB
         SEARCH --> KB
     end
@@ -71,8 +71,9 @@ flowchart TB
     GSQL -->|mirror| MIRROR
 
     LH -->|SQL endpoint| ONT
+    EH -->|live events| ONT
+    GSQL -->|OEE targets| ONT
     LH -->|Direct Lake on OneLake| SM
-    EH -->|NL2KQL| DA
 
     SM --> RPT
     EH --> DASH
@@ -98,8 +99,10 @@ flowchart TB
 
 Three sources feed Fabric: streaming telemetry, floor issues that operators log, and OEE targets that managers
 set from the report. Each lands in its own store, and everything mirrors into OneLake, where lakehouse
-shortcuts bring it together under `ManufacturingLH/Tables/dbo`. The ontology and the semantic model both read
-that one surface, and the agents, reports, and alerts at the bottom consume them.
+shortcuts bring it together under `ManufacturingLH/Tables/dbo`. The semantic model reads that one surface. The
+ontology binds the plant's structure there too, but reads live events straight from the Eventhouse, OEE
+targets straight from the `OeeGovernance` database, and its KPIs from the semantic model. The agents, reports,
+and alerts at the bottom consume them.
 
 ## The data path
 
@@ -131,10 +134,9 @@ OEE is computed when you query it, from the same definitions in each layer. Ther
 |---|---|
 | Eventhouse | `OeeFacts()` returns additive counts per time bucket; `OeeKpis()` turns them into ratios at any grain |
 | Semantic model | The measures in `powerbi/OEEAnalytics.SemanticModel/definition/tables/_Measures.tmdl` |
-| Ontology | The metrics in `ontology/OEEFactoryOntology.Ontology/metrics/` |
+| Ontology | The `OeeScorecard` metrics reference the semantic model's measures by name, so they aren't defined again |
 
-`scripts/6-publish-ontology.py --check-metrics` compares each ontology metric with its DAX twin and reports any
-difference.
+`scripts/6-publish-ontology.py` checks that every measure the ontology references exists in the semantic model.
 
 One check differs on purpose. The operations agent's station escalation follows the plant's policy and leaves
 starved and blocked time out of Availability, because that time counts against the station that caused it. With
@@ -146,8 +148,9 @@ the measured definition, about half the stations would escalate at any moment be
   import and no SQL endpoint in the query path. Direct Lake relationships are single-column, so stations are
   keyed on `device_id`.
 - **OEE targets.** The report's **Update OEE** button calls the `set_oee_target` user data function, which
-  upserts a row in the `OeeGovernance` SQL database. The database mirrors to OneLake, and a shortcut lets the
-  model's `Target OEE` measure read it minutes later.
+  upserts a row in the `OeeGovernance` SQL database. The ontology reads the table straight from the database.
+  The database also mirrors to OneLake, and a shortcut lets the model's `Target OEE` measure read it minutes
+  later.
 - **Floor issues.** The Floor Ops Console writes only to its own SQL database: a deployed Fabric App signs users
   in with Fabric and can't reach other data sources without an app registration. Fabric does the integration
   instead. The database mirrors to OneLake, and the issues join the model on line, station, and shift.
@@ -157,18 +160,29 @@ the measured definition, about half the stations would escalate at any moment be
 ## Fabric IQ
 
 The ontology is where the plant's meaning lives: what a station, a work order, or a part pass is, how they
-relate, what each business rule requires, and how each KPI is defined. It has 17 entity types in five
-namespaces, 16 relationships, 13 rules, and 9 metrics, authored as TMDL in `ontology/` and published by
+relate, what each business rule requires, and which measure defines each KPI. It has 18 entity types in five
+namespaces, 16 relationships, 13 rules, and 28 metrics, authored as TMDL in `ontology/` and published by
 script 6. Nothing is edited in the portal except materializing the graph.
 
-- **It binds the lakehouse, not the semantic model.** The new ontology experience can bind a semantic model,
-  but data agents and operations agents can't use an ontology bound that way, and the graph, the rules, and the
-  metrics need keyed physical tables. So the ontology binds `ManufacturingLH` through its SQL analytics
-  endpoint, and the semantic model sits beside it as a separate data agent source.
-- **Events are entities, and telemetry is a time series.** The keyed tables make work orders and parts
-  addressable, and the keyless `PartPass` and `MaintenanceEvent` entities carry part genealogy and work order
-  timelines. Each machine's telemetry is a set of time-series properties whose latest value is its current
-  state. It trails the Eventhouse by the mirror's 5 minutes.
+- **Each entity reads the source that owns its data.** The ontology binds all four kinds of source the demo has:
+
+    | Source | Binding | Entities |
+    |---|---|---|
+    | `ManufacturingLH` lakehouse | Direct Lake, through its SQL analytics endpoint | The plant's structure and records: lines, stations, machines, machine types, shifts, schedules, parts, work orders, technicians, fault codes, SOPs, policies, and floor issues |
+    | `ManufacturingEH` Eventhouse | DirectQuery (KQL) | Machine telemetry, work order steps (`MaintenanceEvent`), and part passes (`PartPass`) |
+    | `OeeGovernance` SQL database | Direct Lake, through its SQL analytics endpoint | `OeeTarget` |
+    | `OEEAnalytics` semantic model | DirectQuery to the model | `OeeScorecard`, whose metrics are the model's measures |
+
+- **Live events come straight from the Eventhouse.** Each machine's telemetry is a set of time-series properties
+  whose latest value is its current state, and the keyless `PartPass` and `MaintenanceEvent` entities carry part
+  genealogy and work order timelines. None of them waits for the OneLake export, so whether a work order is
+  open is current.
+- **KPIs are the model's measures.** `OeeScorecard` references 28 `OEEAnalytics` measures with
+  `EXTERNALMEASURE`, so the ontology shows each KPI's DAX and evaluates it in the model. Script 6 copies each
+  measure's description from the model and stops if one no longer exists.
+- **The graph holds the plant's structure.** The graph doesn't load entities bound to the Eventhouse or the
+  semantic model, so it covers lines, stations, parts, work orders, and documents, and leaves telemetry, events,
+  and KPIs to their sources.
 - **Rules come from the SOPs.** The 13 rules restate the escalation, quarantine, maintenance, safety, and
   attribution policies in the SOP documents, tied to the properties they reference. The data agent gets them in
   its instructions, and the operations agent applies the alert rules.
@@ -177,7 +191,7 @@ script 6. Nothing is edited in the portal except materializing the graph.
 
 | Agent | Answers from | Notes |
 |---|---|---|
-| **OEE Data Agent** (Fabric) | The ontology first, then the semantic model, then the Eventhouse | The ontology answers what, which, and who; the model answers governed KPIs; the Eventhouse answers windows, trends, and timelines. Its KQL examples inline `OeeFacts()` and `OeeKpis()`, because its query generator can't see stored functions. |
+| **OEE Data Agent** (Fabric) | The ontology, as context | The ontology tells it what each entity means and which source holds it, and it writes KQL for the Eventhouse, SQL for the lakehouse, or DAX for the semantic model. The Eventhouse and the lakehouse are mounted under the ontology with their own instructions, and the Eventhouse's example queries inline `OeeFacts()` and `OeeKpis()`, because the query generator can't see stored functions. Data agents can't query a SQL database bound to an ontology, so it reads OEE targets from the model. |
 | **OEE Factory IQ** (Foundry) | A Foundry IQ knowledge base over the SOP index and the ontology, plus the data agent | Numbers go to the data agent, and procedures, rules, and plant design go to the knowledge base. It acts as the signed-in user. |
 | **OEE Operations Agent** (Fabric) | The Eventhouse, with the ontology's alert rules | An operations agent over an ontology checks only a property's latest value, and these rules count events or compute rates over a window. Each rule has a `Rule…()` check function in the Eventhouse. |
 
@@ -186,8 +200,6 @@ next to Foundry's AI judges.
 
 ## Not included
 
-- **Eventhouse-native time-series bindings.** They're available in the portal, but their TMDL isn't documented,
-  so the ontology binds telemetry through the lakehouse.
 - **A schema-aware Eventstream.** The event contracts are published as an Event Schema Set, but associating
   them with a stream needs a new Eventstream created in the portal.
 

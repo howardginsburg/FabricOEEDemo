@@ -2,6 +2,7 @@ table WorkOrders
 	lineageTag: e7a2c998-bab0-5416-95aa-706a3c3076b5
 
 	column work_order_id
+		isKey
 		dataType: string
 		lineageTag: fff116ff-3436-5627-af08-549adb3453d4
 		sourceColumn: work_order_id

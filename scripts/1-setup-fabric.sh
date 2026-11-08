@@ -56,8 +56,9 @@
 #   1. Verify the Eventstream is running in the Fabric UI (it may need a manual
 #      Publish click to activate)
 #   2. After scripts 2–4, re-run scripts/6-publish-ontology.py and
-#      scripts/7-setup-data-agent.py so the optional entities and the semantic-model
-#      source are added; optionally materialize the ontology graph (portal-only)
+#      scripts/7-setup-data-agent.py so the entities bound to the OeeGovernance SQL
+#      database, the Floor Ops table, and the OEEAnalytics model are added;
+#      optionally materialize the ontology graph (portal-only)
 #   3. Configure and start the simulator (see the final step output)
 #   4. Optionally set up Activator alerts (see docs/setup/activator.md)
 # =============================================================================
@@ -925,8 +926,8 @@ _derive_table PartPasses \
   PartEvents 'part_id, device_id'
 
 # --- Canonical OEE in KQL (dashboard tiles, Data Agent, Activator) ---
-# One definition per KPI, the same as the ontology metrics and the OEEAnalytics
-# measures. OeeFacts() returns additive counts per time bucket and station; callers
+# One definition per KPI, the same as the OEEAnalytics measures, which the ontology's
+# metrics reference. OeeFacts() returns additive counts per time bucket and station; callers
 # sum them to any grain and pipe the result through OeeKpis(), which applies the
 # ratios: Availability = running / samples, Performance = min(1, ideal / actual) over
 # running samples, Quality = completed / (completed + rejected), OEE = A x P x Q.
@@ -937,7 +938,7 @@ _derive_table PartPasses \
 # so scripts/7-setup-data-agent.py inlines these bodies as let statements in its
 # example queries.
 read -r -d '' _OEE_FACTS <<'KQLEOF' || true
-.create-or-alter function with (folder = "OEE", docstring = "Additive OEE facts per time bucket and station, the inputs to OeeKpis(). Same definitions as the ontology metrics and the OEEAnalytics measures. idle counts Idle (Starved or Blocked) samples, which the OEE targets policy leaves out of Availability.")
+.create-or-alter function with (folder = "OEE", docstring = "Additive OEE facts per time bucket and station, the inputs to OeeKpis(). Same definitions as the OEEAnalytics measures, which the ontology's metrics reference. idle counts Idle (Starved or Blocked) samples, which the OEE targets policy leaves out of Availability.")
 OeeFacts(windowStart: datetime, windowEnd: datetime, bucket: timespan = 1d) {
     let Machine = MachineEvents
         | where timestamp between (windowStart .. windowEnd)
@@ -980,8 +981,7 @@ kusto_run "$CLUSTER_URI" "$DB_NAME" "$_OEE_KPIS" "OeeKpis function (canonical OE
 # evaluates the rule as of a minute ago: late telemetry is in by then, and checked_at falls
 # inside the operations agent's check window (its query keeps rows whose checked_at is between
 # startTime and endTime, and runs a moment after endTime, so a row stamped now() would drop).
-# The rule's statement stays in the ontology; these are its executable checks, the way each
-# ontology metric has a SQL and a DAX form.
+# The rule's statement stays in the ontology; these are its executable checks.
 read -r -d '' _RULE_BOTTLENECK <<'KQLEOF' || true
 .create-or-alter function with (folder = "Rules", docstring = "Ontology rule BottleneckDowntime: a bottleneck station (Line-A CMM-Inspection, Line-D Curing-Oven, Line-E Wave-Solder) down (Fault or Maintenance) for more than 5 minutes. One row per reporting bottleneck station; fired is true where the rule fires.")
 RuleBottleneckDowntime(asOf: datetime = datetime(null)) {

@@ -1,10 +1,9 @@
 # OEE Data Agent
 
-The OEE Data Agent answers questions in plain language. For each question it picks the right source: the
-ontology for what things are, how they connect, and their current state; the semantic model for governed KPIs;
-and the Eventhouse for time windows, trends, timelines, and anything from the last few minutes, such as whether a
-work order is open. The ontology and the semantic model read OneLake copies of the events, which trail the live
-stream by a few minutes.
+The OEE Data Agent answers questions in plain language, with the `OEEFactoryOntology` ontology as its context.
+The ontology tells it what each thing means and which source holds it, and the agent writes the query in that
+source's language: KQL for live telemetry, work orders, and anything over a time window in the Eventhouse; SQL
+for the plant's records in the lakehouse; and DAX for the governed KPIs and OEE targets in the semantic model.
 
 !!! info "Needs"
     Setup step [7](../setup/fabric-iq.md)
@@ -14,23 +13,23 @@ stream by a few minutes.
 Open **OEE Data Agent** in the workspace and ask:
 
 1. "Which station caused the most starved or blocked time on Line-D, and why?" It names line-d-station-5, the
-   Curing-Oven and the line's slowest station, with the minutes of starved and blocked time it caused. The agent
-   counts idle time against the station that caused it, as the ontology's rule says, not against the station
-   that sat idle.
-2. "Which lines' OEE has stayed below 60% for more than 15 minutes, and since when?"
-3. "What should happen when a line's OEE falls below its target?" The answer comes from the ontology's rules.
+   Curing-Oven and the line's slowest station, with the starved and blocked time it caused, from the Eventhouse.
+   The agent counts idle time against the station that caused it, as the ontology's rule says, not against the
+   station that sat idle.
+2. "What is OEE by station on Line-D?" It evaluates the semantic model's OEE measures by station, the same numbers
+   the report shows.
+3. "Which stations are on Line-C, and what machine type runs at each?" It answers from the lakehouse.
+4. "What should happen when a line's OEE falls below its target?" The answer comes from the ontology's rules.
 
 ![The data agent naming the station that caused Line-D's starved and blocked time](../assets/screenshots/demo/data-agent.png)
 
-Expand **1 step completed** under an answer, open the step, and select **Show input**. You see which source
-answered and the query it ran: here the ontology answered with SQL over the lakehouse its entities are bound to.
-
-![The step behind the answer: the ontology source and the SQL it ran](../assets/screenshots/demo/data-agent-steps.png)
+Expand the steps under an answer, open a step, and select **Show input**. You see which source answered and the
+query it ran: KQL for the first question, DAX for the second, and SQL for the third.
 
 !!! quote "What to say"
-    "Nobody had to know which table holds what. The agent starts from the business model, and it picks the
-    database or the semantic model when the question needs a time window or a governed KPI. You can see exactly
-    what it ran."
+    "Nobody had to know which table holds what. The agent starts from the business model, and the model tells it
+    where each answer lives: the Eventhouse for what's happening now, the lakehouse for the plant's records, and
+    the semantic model for the KPIs. You can see exactly what it ran."
 
 More questions, grouped by persona, are on the [Sample questions](sample-questions.md) page. The ones whose
 answer needs only the data agent or the ontology work here too.

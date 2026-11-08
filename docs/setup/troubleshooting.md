@@ -53,14 +53,30 @@ Every setup script is safe to re-run, and re-running the script for the failed s
 :   The graph keeps the properties it was materialized with. Run **Manage graph** again; see
     [step 7](fabric-iq.md#materialize-the-graph).
 
-**The ontology's data trails the Eventhouse.**
-:   A few minutes behind is expected: the ontology reads the lakehouse, which trails the Eventhouse by the
-    OneLake mirror's latency, up to 5 minutes. That's why the data agent sends questions about the last few
-    minutes, such as whether a work order is open, to the Eventhouse.
+**The ontology's records trail the Eventhouse.**
+:   The ontology reads machine telemetry, work order steps, and part passes live from the Eventhouse. The plant's
+    records, such as work orders as raised and the stations, come from the lakehouse, which trails the Eventhouse
+    by the OneLake mirror's latency, up to 5 minutes.
 
     Hours behind means the lakehouse's SQL analytics endpoint, which the ontology reads through, has stopped
     syncing: it does that after 15 minutes without queries. Open `ManufacturingLH`, switch to its **SQL analytics
     endpoint**, and select **Refresh**; the tables catch up within a minute or so.
+
+**The data agent doesn't use a change to the ontology.**
+:   The data agent reloads the ontology's context every 10 minutes. Wait, or open the agent, select the ontology's
+    **...** menu, and refresh its context.
+
+**The data agent can't answer KPI questions from the semantic model.**
+:   Check that the ontology includes `OeeScorecard` (script 6 leaves it out until `OEEAnalytics` exists) and that
+    you have Read and Build permissions on the model. The agent reaches a source only through entity properties
+    bound to it, which is why `OeeScorecard` binds the model's `_Measures[Value]` column.
+
+**KPIs in the report or from the agents are hours or days old.**
+:   The semantic model stopped framing, which can happen when the capacity was throttled. Re-run
+    [step 5](power-bi.md), which reframes it, or select **Refresh** on `OEEAnalytics`.
+
+**An ontology question returns nothing after about a minute.**
+:   Questions that compute KPIs for many stations at once can time out. Ask for one line, or ask the data agent.
 
 **The data agent finds no data for "the last hour".**
 :   The simulator isn't streaming. Ask about "the latest hour of data" instead; the agent anchors that window

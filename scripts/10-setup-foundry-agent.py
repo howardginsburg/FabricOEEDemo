@@ -49,8 +49,10 @@
 #   - The Foundry connections ARM endpoint intermittently returns HTTP 500
 #     (ServiceError). Connection PUTs are retried.
 #   - Fabric IQ connections pass the caller's Entra identity through: every user of
-#     the agent needs read access to the ontology, the data agent, and their sources.
-#     The ontology endpoint doesn't accept service principals.
+#     the agent needs read access to the ontology, the data agent, and the sources the
+#     ontology binds (ManufacturingLH, ManufacturingEH, the OeeGovernance SQL database,
+#     and Read and Build on the OEEAnalytics semantic model). The ontology endpoint
+#     doesn't accept service principals.
 #   - The ontology knowledge source queries Fabric on behalf of the caller: Agent
 #     Service sends the user's token in x-ms-query-source-authorization. Without it the
 #     knowledge base answers from the SOP index only (HTTP 206, the ontology source
@@ -134,18 +136,21 @@ SMOKE_QUESTIONS = {
 }
 
 KB_DESCRIPTION = (
-    "The OEE plant's knowledge: the Fabric IQ ontology (lines, stations, machines and their telemetry, parts and "
-    "station passes, work orders, technicians, OEE targets and target reject rates, business rules, metrics) and "
-    "the SOP and policy documents."
+    "The OEE plant's knowledge: the Fabric IQ ontology (lines, stations, machines and their live telemetry, parts "
+    "and station passes, work orders and their steps, technicians, OEE targets and target reject rates, business "
+    "rules, and the governed metrics from the OEEAnalytics semantic model) and the SOP and policy documents."
 )
 KB_RETRIEVAL_INSTRUCTIONS = (
     f"{SOP_KNOWLEDGE_SOURCE} holds the SOPs and plant policies: procedures, corrective actions, preventive "
     "maintenance, lockout/tagout, quality disposition, escalation, and the plant design facts they document, such "
     f"as each line's bottleneck station, KPI targets, and pause thresholds. {ONTOLOGY_KNOWLEDGE_SOURCE} answers by "
-    "querying the plant's live data through the Fabric IQ ontology: lines, stations, machines and their current "
-    "status, machine types, shifts, production schedules, OEE targets and target reject rates, parts and their "
-    "station passes, work orders, technicians, floor issues, and the ontology's business rules and metrics. Use "
-    f"{ONTOLOGY_KNOWLEDGE_SOURCE} for a direct question about those facts or about what a business rule says. A "
+    "querying the plant's data through the Fabric IQ ontology, which reads each part from the source that holds it: "
+    "machines' current status and work orders' steps live from the Eventhouse; lines, stations, machine types, "
+    "shifts, production schedules, target reject rates, parts and their station passes, technicians, and floor "
+    "issues from the lakehouse; each line's OEE target from the database the Power BI report writes it to; and the "
+    "ontology's business rules. Use "
+    f"{ONTOLOGY_KNOWLEDGE_SOURCE} for a direct question about those facts, about whether a work order is open, or "
+    "about what a business rule says. A "
     "question that describes a condition (\"if rejects exceed 8%\", \"when a line is below target\") or asks what to "
     f"do is a procedure question: use {SOP_KNOWLEDGE_SOURCE}. Never use {ONTOLOGY_KNOWLEDGE_SOURCE} to compute, rank, "
     "or trend KPIs, to check which lines or stations miss a target, or to derive a bottleneck from data; "
@@ -300,7 +305,8 @@ def ensure_knowledge_base(args, mgmt_token, sub, search_key, ws_id, ontology_id)
                                   {"name": "station_position"}]}},
         {"name": ONTOLOGY_KNOWLEDGE_SOURCE, "kind": "fabricOntology",
          "description": f"The {args.ontology_name} Fabric IQ ontology: the plant's entities, relationships, live "
-                        "machine state, business rules, and metrics, queried live as the signed-in user.",
+                        "machine state and work order steps, OEE targets, business rules, and metrics (the "
+                        "OEEAnalytics model's measures), queried live as the signed-in user.",
          "fabricOntologyParameters": {"workspaceId": ws_id, "ontologyId": ontology_id}},
     ]
     for source in sources:

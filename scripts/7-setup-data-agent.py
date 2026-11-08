@@ -1,29 +1,37 @@
 #!/usr/bin/env python3
-"""Create, configure, and publish the OEE Data Agent — ontology-first (Fabric IQ).
+"""Create, configure, and publish the OEE Data Agent, with the OEEFactoryOntology ontology as its context (Fabric IQ).
 
-Sources (a Data Agent takes up to five):
-  • OEEFactoryOntology (ontology)     — the plant's business model: lines, stations, machines and
-                                        their live telemetry, parts, work orders, SOPs, business
-                                        rules, and the governed metrics
-  • OEEAnalytics (semantic model)     — the governed KPI measures (the DAX twins of the ontology
-                                        metrics), sliced by line, shift, station, or machine type
-  • ManufacturingEH (KQL database)    — raw and live events: latest events, minute-level trends,
-                                        single-record timelines
-  • the ontology's graph (--graph)    — optional separate GQL source once the graph is materialized;
-                                        the ontology source already traverses relationships
+The agent has one source, the ontology. The ontology describes the plant's entities, their relationships, and its
+rules, and binds each entity to the item that holds its data. For each question the agent picks the bound item
+and runs a source-native query against it:
+  • ManufacturingEH (Eventhouse, KQL)    — live machine telemetry, work order steps, and part passes, and every
+                                           time window, trend, and duration rule;
+  • ManufacturingLH (lakehouse, SQL)     — the plant's structure and records;
+  • OEEAnalytics (semantic model, DAX)   — the governed KPIs, which are the ontology's OeeScorecard metrics, and
+                                           each line's OEE target.
+The ontology also binds OeeTarget to the OeeGovernance SQL database, which data agents can't query (the service
+rejects mounting it), so the agent reads targets from the model's Target OEE measure, which reads the same table.
+The agent attaches a source only through the entity properties bound to it, which is why OeeScorecard binds the
+model's measures table's Value column.
 
-The script writes the draft configuration and publishes it — the published copy is what the
-agent's endpoint, Microsoft Foundry, and Copilot Studio use — through the item definition API.
-New-experience ontologies attach through their own definition part
-(Files/Config/<stage>/ontologies/<name>/ontology.json); a datasource.json of type "ontology" only
-works for old-experience items. Element lists come from the deployed ontology, semantic model,
-and KQL schema, so optional entities that scripts/6-publish-ontology.py left out never appear.
+The Eventhouse and the lakehouse are mounted under the ontology with a description, instructions, and example
+queries that only the data agent uses (Files/Config/<stage>/ontologies/<name>/ontologydatasources/<item id>/).
+They're the items the deployed ontology's tables are bound to, read from its ONT_* annotations. Semantic models
+take no data-agent context, so the guidance for the model is in the agent instructions, with the ontology's
+business rules and metric names: the agent's ontology context carries entities, properties, relationships, and
+bindings, but not rules. The agent runs on the preview runtime, which Microsoft recommends for ontology context.
+Before publishing, every KQL example query runs against the Eventhouse, so a schema change can't leave the
+agent with a broken example.
+
+The script writes the draft configuration and publishes it (the published copy is what the agent's endpoint,
+Microsoft Foundry, and Copilot Studio use) through the item definition API. Entities that
+scripts/6-publish-ontology.py left out, because their source doesn't exist yet, never appear.
 
 Usage
 -----
     python scripts/7-setup-data-agent.py --workspace-name "OEE Demo"
     python scripts/7-setup-data-agent.py --workspace-name "OEE Demo" --smoke
-    python scripts/7-setup-data-agent.py --workspace-name "OEE Demo" --ask "Which machines on Line-C are faulted right now?"
+    python scripts/7-setup-data-agent.py --workspace-name "OEE Demo" --ask "Which machines on Line-C are faulted right now?" --show-queries
     python scripts/7-setup-data-agent.py --workspace-name "OEE Demo" --draft-only
 
 Authentication uses the current Azure CLI session ('az login').
@@ -46,10 +54,13 @@ FABRIC_API = "https://api.fabric.microsoft.com/v1"
 FABRIC_RESOURCE = "https://api.fabric.microsoft.com"
 SCHEMA_BASE = "https://developer.microsoft.com/json-schemas/fabric/item/dataAgent/definition"
 ASSISTANT_API_VERSION = "2024-05-01-preview"
-DEFAULTS = {"agent": "OEE Data Agent", "ontology": "OEEFactoryOntology", "model": "OEEAnalytics",
-            "kql": "ManufacturingEH"}
-# Raw landing tables and scratch tables stay out of the agent's view.
-KQL_EXCLUDE = re.compile(r"(_Raw|_stage)$|^StationDim$")
+DEFAULTS = {"agent": "OEE Data Agent", "ontology": "OEEFactoryOntology"}
+# Ontology-bound items (ONT_ItemKind) that the agent mounts with its own context, and the type it records for each.
+# Semantic models can't take data-agent context.
+MOUNTED_KINDS = {"KQLDatabase": "Eventhouse", "Lakehouse": "Lakehouse"}
+SOURCE_LABELS = {"KQLDatabase": "Eventhouse", "Lakehouse": "lakehouse", "SQLDatabase": "SQL database",
+                 "Dataset": "semantic model"}
+GUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
 ID_NAMESPACE = uuid.UUID("6f1d3c52-8a0e-4c47-9a39-0e5d3b7f2a10")
 
 
@@ -137,8 +148,9 @@ def post_lro(path: str, body=None, timeout: int = 600) -> dict:
 
 
 def get_definition(ws: str, item: str, fmt: str | None = None) -> dict[str, str]:
+    """The item's definition parts as text, with LF line endings (the service returns TMDL with CRLF)."""
     result = post_lro(f"workspaces/{ws}/items/{item}/getDefinition" + (f"?format={fmt}" if fmt else ""))
-    return {p["path"]: base64.b64decode(p["payload"]).decode("utf-8-sig")
+    return {p["path"]: base64.b64decode(p["payload"]).decode("utf-8-sig").replace("\r\n", "\n")
             for p in result.get("definition", {}).get("parts", [])}
 
 
@@ -154,17 +166,25 @@ def element_id(*parts: str) -> str:
     return str(uuid.uuid5(ID_NAMESPACE, "/".join(parts)))
 
 
-# ─── Data source elements ─────────────────────────────────────────────────────
+# ─── Ontology context ─────────────────────────────────────────────────────────
 
 
-def ontology_context(ws: str, ontology_id: str) -> tuple[list[dict], list[tuple[str, str]], dict[str, list[str]]]:
-    """Entity elements (described by each entity's doc comment), the business rules' statements, the governed
-    metrics, and each entity's time-series properties.
+def _tmdl_name(raw: str) -> str:
+    raw = raw.strip()
+    return raw[1:-1].replace("''", "'") if raw.startswith("'") and raw.endswith("'") else raw
 
-    The Data Agent's ontology connector exposes entity data but not rules, so the rules are rendered into
-    the agent instructions from the deployed ontology — defined once, derived at publish time.
+
+def ontology_context(ws: str, ontology_id: str) -> tuple[list[dict], list[tuple[str, str]], dict[str, list[str]],
+                                                         dict[str, tuple[str, str]]]:
+    """From the deployed ontology: entity elements (described by each entity's doc comment), the business rules'
+    statements, the metric names (the model measures its tables reference) and time-series properties, and the
+    item behind each kind of bound table (ONT_ItemKind → (item id, item name)).
+
+    The agent's ontology context carries entities, properties, relationships, and bindings, but not rules, so the
+    rules are rendered into the agent instructions from the deployed ontology: defined once, derived at publish
+    time.
     """
-    elements, rules, facts = [], [], {"metrics": [], "timeseries": []}
+    elements, rules, facts, items = [], [], {"metrics": [], "timeseries": []}, {}
     for path, text in sorted(get_definition(ws, ontology_id).items()):
         if path.startswith("entities/"):
             match = re.search(r"((?:^///.*\n)*)^entity (\S+)", text, re.M)
@@ -179,9 +199,14 @@ def ontology_context(ws: str, ontology_id: str) -> tuple[list[dict], list[tuple[
             statement = re.search(r"^\tstatement: (.+)$", text, re.M)
             if statement:
                 rules.append((name, statement.group(1).strip()))
-        elif path.startswith("metrics/"):
-            facts["metrics"].append(re.search(r"^metric (\S+)", text, re.M).group(1))
-    return elements, rules, facts
+        elif path.startswith("tables/"):
+            annotations = dict(re.findall(r"^\t+annotation (ONT_\w+) = (.+)$", text, re.M))
+            item = GUID.search(annotations.get("ONT_ItemId", ""))
+            if item and annotations.get("ONT_ItemKind"):
+                items.setdefault(annotations["ONT_ItemKind"], (item.group(0), annotations.get("ONT_ItemName", "").strip()))
+            facts["metrics"] += [_tmdl_name(m) for m in
+                                 re.findall(r"^\tmeasure ('(?:[^']|'')+'|\S+) = EXTERNALMEASURE\(", text, re.M)]
+    return elements, rules, facts, items
 
 
 def render_instructions(rules: list[tuple[str, str]], facts: dict[str, list[str]], ontology_name: str) -> str:
@@ -195,71 +220,10 @@ def render_instructions(rules: list[tuple[str, str]], facts: dict[str, list[str]
             + "\n".join(lines) + "\n")
 
 
-def _tmdl_name(raw: str) -> str:
-    raw = raw.strip()
-    return raw[1:-1].replace("''", "'") if raw.startswith("'") and raw.endswith("'") else raw
-
-
-def semantic_model_elements(ws: str, model_id: str) -> list[dict]:
-    """Tables with their columns and measures; measure doc comments become descriptions."""
-    elements = []
-    for path, text in sorted(get_definition(ws, model_id, "TMDL").items()):
-        if not path.startswith("definition/tables/"):
-            continue
-        lines = text.splitlines()
-        table = _tmdl_name(re.search(r"^table (.+)$", text, re.M).group(1))
-        children, doc = [], []
-        for n, line in enumerate(lines):
-            if line.startswith("\t///"):
-                doc.append(line[4:].strip())
-                continue
-            column = re.match(r"^\tcolumn ('[^']+'|\S+)", line)
-            measure = re.match(r"^\tmeasure ('(?:[^']|'')+'|\S+)\s*=", line)
-            if column:
-                name = _tmdl_name(column.group(1))
-                dtype = next((m.group(1) for m in (re.match(r"^\t\tdataType: (\S+)", x) for x in lines[n + 1:n + 6]) if m),
-                             None)
-                if name != "Value" or table != "_Measures":
-                    children.append({"id": element_id(model_id, table, name), "is_selected": True, "display_name": name,
-                                     "type": "semantic_model.column", "data_type": dtype,
-                                     "description": " ".join(doc) or None})
-            elif measure:
-                name = _tmdl_name(measure.group(1))
-                children.append({"id": element_id(model_id, table, name), "is_selected": True, "display_name": name,
-                                 "type": "semantic_model.measure", "description": " ".join(doc) or None})
-            if not line.startswith("\t///"):
-                doc = []
-        elements.append({"id": element_id(model_id, table), "is_selected": True, "display_name": table,
-                         "type": "semantic_model.table", "description": None, "children": children})
-    return elements
-
-
-def kql_elements(cluster: str, db: str, db_id: str) -> list[dict]:
-    """The portal's shape: a 'Tables' grouping of kusto.table elements with their columns.
-
-    The agent's query generator validates against these tables only — stored functions are invisible to it —
-    so the OEE functions reach it as let statements inside the example queries (see kql_fewshots)."""
-    status, _, body = request("POST", f"{cluster}/v1/rest/mgmt",
-                              {"db": db, "csl": f".show database ['{db}'] schema as json"}, resource=cluster)
-    if status >= 400:
-        sys.exit(f"KQL schema query failed: HTTP {status}: {json.dumps(body)[:500]}")
-    # The schema keys databases by internal name; the response holds just this one.
-    schema = next(iter(json.loads(body["Tables"][0]["Rows"][0][0])["Databases"].values()))["Tables"]
-    tables = []
-    for name in sorted(schema):
-        if KQL_EXCLUDE.search(name):
-            continue
-        columns = [{"id": c["Name"], "is_selected": True, "display_name": c["Name"], "type": "kusto.column",
-                    "data_type": c["Type"], "description": None} for c in schema[name]["OrderedColumns"]]
-        tables.append({"id": element_id(db_id, name), "is_selected": True, "display_name": name, "type": "kusto.table",
-                       "description": None, "children": columns})
-    return [{"id": element_id(db_id, "Tables"), "is_selected": True, "display_name": "Tables",
-             "type": "table_grouping", "description": None, "children": tables}]
-
-
 def kql_fewshots(cluster: str, db: str) -> list[tuple[str, str]]:
     """KQL_FEWSHOTS with each referenced OEE function inlined as a let statement read from the database,
-    so the examples always carry the deployed definition (scripts/1-setup-fabric.sh owns it)."""
+    so the examples always carry the deployed definition (scripts/1-setup-fabric.sh owns it). The agent's query
+    generator can't see stored functions, so this is how the OEE definitions reach it."""
     status, _, body = request("POST", f"{cluster}/v1/rest/mgmt", resource=cluster, body={
         "db": db, "csl": ".show functions | where Name in ('OeeFacts', 'OeeKpis') | project Name, Parameters, Body"})
     if status >= 400:
@@ -275,30 +239,38 @@ def kql_fewshots(cluster: str, db: str) -> list[tuple[str, str]]:
     return shots
 
 
+def check_kql_fewshots(cluster: str, db: str, shots: list[tuple[str, str]]) -> None:
+    """Run every example query against the Eventhouse. The agent copies their patterns, so an example that no
+    longer runs (a renamed column, a changed function) would teach it a broken query."""
+    failed = []
+    for question, query in shots:
+        status, _, body = request("POST", f"{cluster}/v1/rest/query", {"db": db, "csl": query}, resource=cluster)
+        if status >= 400:
+            error = body.get("error") or {}
+            failed.append(f"{question}\n      {error.get('@message') or error.get('message') or json.dumps(body)[:300]}")
+    if failed:
+        sys.exit(f"✗ Example queries that don't run against {db}:\n    " + "\n    ".join(failed))
+
+
 # ─── Instructions ─────────────────────────────────────────────────────────────
 
 AI_INSTRUCTIONS = """You are the plant-floor analyst for a five-line discrete manufacturing plant (Line-A to Line-E, 30 stations). You answer operators, maintenance technicians, quality engineers, line managers, and executives.
 
 ## Sources and routing
-Pick the source before you query. Start with the ontology; use the others for what it can't answer.
+Pick the source before you query. Your source is the OEEFactoryOntology ontology: the plant's entity types in five namespaces (equipment, production, maintenance, knowledge, floorops), their relationships, and the business rules below. It binds each entity to the item that holds its data; query that item:
 
-1. OEEFactoryOntology (ontology) — START HERE. The plant's business model: entity types in five namespaces (equipment, production, maintenance, knowledge, floorops), relationships, rules, and governed metrics (__METRICS__). Use it for:
-   - what/which/who questions about lines, stations, machines, machine types, shifts, schedules, OEE targets, parts, work orders, technicians, fault types, SOPs, policies, and floor issues;
-   - relationships: a line's stations, a station's machine and SOPs, a work order's technician, the stations a part passed through (genealogy);
-   - current machine state from the time-series properties (__TIMESERIES__): the latest value per machine;
-   - rules and thresholds (Station.target_reject_rate, OeeTarget.target_oee): quote rules by name from "Business rules" below;
-   - plant-wide values of the governed metrics.
-   Not for whether a work order is open, or anything else from the last few minutes: see Freshness below.
-2. OEEAnalytics (semantic model) — governed KPI measures over the full history, sliced by line, shift, station, or machine type: OEE, Availability, Performance, Quality, Rejection Rate, Throughput, Parts Finished, Schedule Adherence, MTTR (min), MTBF (min), Target OEE, OEE vs Target, OEE — Day, OEE — Night, and the floor-ops measures (Open Issues, Critical Open, Resolution Rate, Human MTTA (min), Human MTTR (min), Scrap Qty). Use its measures instead of recomputing a KPI. It has no time dimension: never use it for a time window, the latest data, or how long a condition lasted.
-3. ManufacturingEH (KQL database) — raw and live events: the latest N events, minute-level trends, KPIs for a time window (with the OeeFacts/OeeKpis definitions from its example queries), part and work-order timelines, starved/blocked cascades, and rule checks over a window.
+1. ManufacturingEH (Eventhouse, KQL) — live, seconds old: machine telemetry (the time-series properties __TIMESERIES__), work order steps (MaintenanceEvent), and part passes (PartPass), with the plant's master tables. Use it for current state, whether a work order is open, the latest N events, anything from the last few minutes, any time window or trend, KPIs over a time window, how long a condition lasted, part and work-order timelines, starved/blocked cascades, and rule checks. Its example queries define the OEE calculation and each rule check.
+2. ManufacturingLH (lakehouse, SQL) — the plant's structure and records: lines, stations, machines, machine types, shifts, production schedules, parts, work orders as raised, technicians, fault codes, SOPs, policies, and floor issues. Use it for what/which/who questions and relationships: a line's stations, a station's machine and SOPs, a work order's technician, the stations a part passed through (genealogy).
+3. OEEAnalytics (semantic model, DAX) — the governed KPIs over the full history, sliced by its DimLine, DimShift, DimMachineType, and StationDim tables: the OeeScorecard metrics (__METRICS__). Use them instead of recomputing a KPI. When you ask it for KPIs by line or by station, ask for DimLine[line_id] and DimLine[line_name], or StationDim[device_id], in the same result, and label each value from its own row, never by position or order. It has no time dimension: never use it for a time window, the latest data, or how long a condition lasted.
+4. OEE targets: the ontology reads OeeTarget from the OeeGovernance SQL database, which you can't query. Get a line's current target from OEEAnalytics: the Target OEE and OEE vs Target measures by DimLine[line_id] read the same table.
 
-Freshness: the ontology and OEEAnalytics read OneLake copies of the event tables, which trail the live stream by a few minutes. So whether a work order is open, and anything else from the last few minutes such as a fault that was just raised, always comes from ManufacturingEH, together with the details asked for (technician names are in its TechnicianMaster table).
+Freshness: only ManufacturingEH is live. ManufacturingLH and OEEAnalytics read OneLake copies of its tables, which trail it by a few minutes. So current state, whether a work order is open, and anything else from the last few minutes, such as a fault that was just raised, come from ManufacturingEH, together with the details asked for (its TechnicianMaster table has technician names).
 
-Split mixed questions. Example: "Which Line-B machines are down, and do they have open work orders?" → machine state from the ontology, then open work orders (latest step isn't Resolved) from ManufacturingEH.
+Split mixed questions. Example: "Which Line-B machines are down, and do they have open work orders?" → the machines' latest state, then their open work orders (latest step isn't Resolved), both from ManufacturingEH.
 
 Rule checks: whether a rule with a duration or a rolling window fired (OEE below 60% for more than 15 minutes or an hour, a rolling-hour reject rate, work orders within an hour) is always checked in ManufacturingEH, never inferred from a full-history KPI. If the question also asks for KPIs or targets, get those from OEEAnalytics. Pass ManufacturingEH the user's wording and the rule's threshold without prescribing a method (a window length, consecutive buckets): its example queries define each check.
 
-If a source can't answer (no query, an error, a missing column), ask the next source that has the data before saying you can't. ManufacturingEH has every telemetry, part, and work-order column.
+If a source can't answer (no query, an error, a missing column), ask the next source that has the data before saying you can't. ManufacturingEH has every telemetry, part, and work-order column. Never write a value into a query as if it were data (such as a constant target): if no source has the value, say so.
 
 ## KPI definitions (the same in every source)
 - Availability = avg(is_running) over machine samples; Idle (starved or blocked), Fault, and Maintenance count as not running.
@@ -328,19 +300,34 @@ If a source can't answer (no query, an error, a missing column), ask the next so
 
 ## Ontology notes
 - Entity names are namespaced (equipment#Station). Station is the process position (key device_id, the same as its machine's).
-- PartPass and MaintenanceEvent are keyless events: one row per station pass and per work-order step. SOP and Policy derive from Document; query SOP or Policy directly, because querying Document returns neither.
-- WorkOrder and MaintenanceEvent rows trail the live stream by a few minutes, so the ontology can't tell whether a work order is open now: ask ManufacturingEH.
-- For time in a state (idle, starved, blocked, running, down), ask the ontology for sample counts, not minutes: asked for minutes, it subtracts timestamps, which also counts the gaps when the plant wasn't running.
-- Support group by in GQL.
+- PartPass and MaintenanceEvent are keyless events: one row per station pass and per work-order step. A work order is open while its latest MaintenanceEvent step isn't Resolved; WorkOrder records only how it was raised.
+- OeeScorecard has no rows of its own: its metrics are OEEAnalytics measures.
+- SOP and Policy derive from Document; query SOP or Policy directly, because querying Document returns neither.
+- For time in a state (idle, starved, blocked, running, down), ask for sample counts, not minutes: asked for minutes, a query subtracts timestamps, which also counts the gaps when the plant wasn't running.
 """
-MODEL_INSTRUCTIONS = (
-    "Governed KPI measures in a Direct Lake model. Use the measures (OEE, Availability, Performance, Quality, "
-    "Rejection Rate, Throughput, Parts Finished, Schedule Adherence, MTTR (min), MTBF (min), Target OEE, "
-    "OEE vs Target), sliced by DimLine, DimShift, DimMachineType, and StationDim; never recompute a measure from "
-    "fact columns. Group lines by DimLine[line_id] and show DimLine[line_name] next to it. The model has no date "
-    "dimension, so measures cover the full history. Time windows, the latest data, and how long a condition "
-    "lasted (such as OEE below 60% for more than 15 minutes) belong to ManufacturingEH: don't approximate them "
-    "with timestamp filters or report from these measures whether a duration rule fired."
+LAKEHOUSE_DESCRIPTION = (
+    "The plant's structure and records, copied from the Eventhouse into OneLake a few minutes behind it: lines, "
+    "stations, machines and machine types, shifts, production schedules, parts, work orders as raised, technicians, "
+    "fault codes, SOPs, policies, and operator-logged floor issues."
+)
+LAKEHOUSE_INSTRUCTIONS = (
+    "Tables are in schema dbo. LineMaster has each line's line_id, line_name, and station_count; return line_name "
+    "with line_id. StationMaster has one row per station and its machine (they share device_id): line_id, "
+    "station_position, machine_type, buffer_capacity, target_reject_rate, and the machine's manufacturer, "
+    "install_year, and ideal_cycle_time. MachineTypeMaster.category and "
+    "IssueTypeMaster.category roll machine types and fault codes up into families. ProductionSchedule has "
+    "planned_parts per line and shift (Day or Night). SopMaster links each SOP to its station (device_id); "
+    "PolicyMaster has the plant policies; give an SOP's or policy's title and file_name. WorkOrders has one row per "
+    "work order as raised, with no status: whether one is open, and its steps, come from ManufacturingEH. "
+    "TechnicianMaster has technician names. FloorEvent has operator-logged floor issues with their status and "
+    "priority. PartPasses has one row per part pass (part_id, device_id, outcome, passed_at): order a part's "
+    "passes by passed_at for its genealogy."
+)
+KQL_DESCRIPTION = (
+    "Live plant events, seconds old: machine telemetry about every 10 seconds per station (MachineEvents), work "
+    "order steps (MaintenanceEvents), and part passes (PartPasses), with the plant's master tables. Answers current "
+    "state, open work orders, the latest events, time windows and trends, KPIs over a window, how long a condition "
+    "lasted, and rule checks."
 )
 KQL_INSTRUCTIONS = (
     "Raw and live events: MachineEvents (a sample per station about every 10 seconds), PartEvents, "
@@ -467,11 +454,13 @@ KQL_FEWSHOTS = [
      "| order by faults desc"),
 ]
 
+# One question per kind of source the ontology binds, and one for its rules.
 SMOKE_QUESTIONS = [
     "Which stations are on Line-C, and what machine type runs at each?",
     "What is the current status of each machine on Line-B?",
+    "Which work orders are open right now, and which technician is assigned to each?",
     "What is OEE by line, with availability, performance, and quality?",
-    "Show the five most recent maintenance events on Line-B.",
+    "What is each line's OEE target?",
     "What should happen when a line's OEE falls below its target?",
 ]
 
@@ -491,14 +480,24 @@ def ontology_source(artifact: str, ws: str, name: str, elements: list[dict]) -> 
             "displayName": name, "elements": elements, "entitiesWithUserAuthoredDescriptions": []}
 
 
+def mounted_source(kind: str, artifact: str, ws: str, name: str, description: str, instructions: str) -> dict:
+    """An item the ontology binds, mounted under it (ontologies/<name>/ontologydatasources/<item id>/) with
+    context that only the data agent uses; nothing is written back to the ontology."""
+    return {"$schema": f"{SCHEMA_BASE}/ontologyDataSource/1.0.0/schema.json", "artifactId": artifact,
+            "workspaceId": ws, "dataSourceInstructions": instructions, "userDescription": description,
+            "displayName": name, "type": kind}
+
+
 def build_definition(sources: list[tuple[str, dict, list | None]], publish: bool, description: str,
-                     instructions: str) -> list[dict]:
-    """sources: (path within the stage folder, body, fewshots or None). Draft always; published when publishing."""
+                     instructions: str, preview_runtime: bool) -> list[dict]:
+    """sources: (path within the stage folder, body, fewshots or None). Draft always; published when publishing.
+    preview_runtime sets the experimental-features flag, which is how the definition selects the preview runtime."""
     files = {"Files/Config/data_agent.json": {"$schema": f"{SCHEMA_BASE}/dataAgent/2.1.0/schema.json"}}
     stages = ["draft", "published"] if publish else ["draft"]
     for stage in stages:
         files[f"Files/Config/{stage}/stage_config.json"] = {
-            "$schema": f"{SCHEMA_BASE}/stageConfiguration/1.0.0/schema.json", "aiInstructions": instructions}
+            "$schema": f"{SCHEMA_BASE}/stageConfiguration/1.0.0/schema.json", "aiInstructions": instructions,
+            "experimental": {"enableExperimentalFeatures": preview_runtime}}
         for relpath, body, fewshots in sources:
             files[f"Files/Config/{stage}/{relpath}"] = body
             if fewshots:
@@ -543,7 +542,9 @@ def post_lro_wait(headers: dict, timeout: int = 300) -> None:
 # ─── Smoke test (the published agent's OpenAI-Assistants-compatible endpoint) ──
 
 
-def ask(ws: str, agent: str, question: str, timeout: int = 300) -> bool:
+def ask(ws: str, agent: str, question: str, show_queries: bool = False, timeout: int = 300) -> bool:
+    """Ask the published agent one question; print the sources it queried and its answer, and with show_queries
+    the sources the ontology attached and each query the agent generated."""
     base = f"{FABRIC_API}/workspaces/{ws}/dataagents/{agent}/aiassistant/openai"
 
     def call(method: str, path: str, body=None) -> dict:
@@ -563,18 +564,31 @@ def ask(ws: str, agent: str, question: str, timeout: int = 300) -> bool:
         while run.get("status") in ("queued", "in_progress", "requires_action") and time.time() - started < timeout:
             time.sleep(3)
             run = call("GET", f"threads/{thread['id']}/runs/{run['id']}")
-        routes = []
+        routes, attached, queries, examples = [], "", [], []
         for step in call("GET", f"threads/{thread['id']}/runs/{run['id']}/steps?order=asc").get("data", []):
             for tc in (step.get("step_details") or {}).get("tool_calls") or []:
                 fn = tc.get("function") or {}
+                name = fn.get("name", "")
                 try:
                     args = json.loads(fn.get("arguments") or "{}")
                 except json.JSONDecodeError:
                     args = {}
-                if "datasource_type" in args and "fewshots" not in fn.get("name", ""):
+                if "datasource_type" in args and "fewshots" not in name:
                     route = f"{args.get('datasource_type', '?')}:{args.get('datasource_name', '?')}"
                     if route not in routes:
                         routes.append(route)
+                if name == "ontology.context.datasources_attached":
+                    attached = str(fn.get("output") or "")
+                if name.endswith("fewshots.loading"):
+                    examples.append(f"{args.get('datasource_name', '?')}: {fn.get('output') or ''}")
+                if name.endswith("nl2code"):
+                    code = re.search(r"```\w*\n(.*?)```", str(fn.get("output") or ""), re.S)
+                    queries.append((args.get("datasource_type", "?"),
+                                    code.group(1).strip() if code else str(fn.get("output") or "")[:800]))
+                elif args.get("code"):
+                    # Semantic model queries (askPBI) carry the DAX in the call's arguments.
+                    code = re.search(r"```\w*\n(.*?)```", args["code"], re.S)
+                    queries.append((args.get("datasource_type", "?"), code.group(1).strip() if code else args["code"]))
         answer = ""
         for message in call("GET", f"threads/{thread['id']}/messages?order=asc").get("data", []):
             if message.get("role") == "assistant":
@@ -584,6 +598,13 @@ def ask(ws: str, agent: str, question: str, timeout: int = 300) -> bool:
         log(f"  ✗ {err}")
         return False
     log(f"  sources: {', '.join(routes) or 'none'}   ({run.get('status')}, {time.time() - started:.0f}s)")
+    if show_queries:
+        if attached:
+            log(f"  attached by the ontology: {attached[:600]}")
+        for line in examples:
+            log(f"  example queries: {line}")
+        for source_type, query in queries:
+            log(f"  ── {source_type} query:\n    " + query.replace("\n", "\n    ")[:3000])
     log("  " + answer.strip().replace("\n", "\n  ")[:1500])
     return run.get("status") == "completed" and bool(answer.strip())
 
@@ -599,47 +620,56 @@ def main() -> int:
     ap.add_argument("--workspace-name", required=True, help="Fabric workspace display name or GUID")
     ap.add_argument("--data-agent-name", default=DEFAULTS["agent"])
     ap.add_argument("--ontology-name", default=DEFAULTS["ontology"])
-    ap.add_argument("--semantic-model-name", default=DEFAULTS["model"])
-    ap.add_argument("--kql-db-name", default=DEFAULTS["kql"])
     ap.add_argument("--graph", action="store_true",
                     help="Also add the ontology's materialized graph as a separate GQL source")
     ap.add_argument("--graph-name", help="GraphModel to add as a GQL source (implies --graph)")
     ap.add_argument("--draft-only", action="store_true", help="Update the draft without publishing")
     ap.add_argument("--recreate", action="store_true", help="Delete the existing Data Agent and create it again")
-    ap.add_argument("--smoke", action="store_true", help="Ask the published agent one question per source")
+    ap.add_argument("--smoke", action="store_true",
+                    help="Ask the published agent one question per kind of source the ontology binds")
     ap.add_argument("--ask", action="append", default=[], help="Ask the published agent a question (repeatable)")
+    ap.add_argument("--show-queries", action="store_true",
+                    help="With --smoke or --ask, also print the sources the ontology attached and each generated query")
+    ap.add_argument("--runtime", choices=["preview", "standard"], default="preview",
+                    help="Data agent runtime to publish on (default: preview)")
     args = ap.parse_args()
 
     ws = next((w["id"] for w in get_all("workspaces") if args.workspace_name in (w["displayName"], w["id"])), None) \
         or sys.exit(f"Workspace {args.workspace_name!r} not found.")
     log(f"✓ Workspace:       {args.workspace_name} ({ws})")
 
-    sources: list[tuple[str, dict, list | None]] = []
     ontology_id = require_item(ws, "Ontology", args.ontology_name, "run scripts/6-publish-ontology.py first")
-    entities, rules, facts = ontology_context(ws, ontology_id)
-    sources.append((f"ontologies/{args.ontology_name}/ontology.json",
-                    ontology_source(ontology_id, ws, args.ontology_name, entities), None))
-    log(f"✓ Ontology:        {args.ontology_name} ({len(entities)} entity types, {len(rules)} rules)")
+    entities, rules, facts, items = ontology_context(ws, ontology_id)
+    root = f"ontologies/{args.ontology_name}"
+    sources: list[tuple[str, dict, list | None]] = [
+        (f"{root}/ontology.json", ontology_source(ontology_id, ws, args.ontology_name, entities), None)]
+    log(f"✓ Ontology:        {args.ontology_name} ({len(entities)} entity types, {len(rules)} rules, "
+        f"{len(facts['metrics'])} metrics)")
+    log("  bound to:        " + ", ".join(f"{name} ({SOURCE_LABELS.get(kind, kind)})" for kind, (_, name) in items.items()))
+    unbound = [SOURCE_LABELS[kind] for kind in MOUNTED_KINDS if kind not in items]
+    if unbound:
+        sys.exit(f"The ontology binds no {' or '.join(unbound)} — run scripts/6-publish-ontology.py first.")
+    if "Dataset" not in items:
+        log("! The ontology doesn't bind OEEAnalytics yet, so the agent has no governed KPIs — run "
+            "scripts/4-setup-powerbi.sh, then scripts/6-publish-ontology.py and this script again")
 
-    model_id = find_item(ws, "SemanticModel", args.semantic_model_name)
-    if model_id:
-        tables = semantic_model_elements(ws, model_id)
-        sources.append((f"semantic-model-{args.semantic_model_name}/datasource.json",
-                        datasource("semantic_model", model_id, ws, args.semantic_model_name, MODEL_INSTRUCTIONS, tables),
-                        None))
-        log(f"✓ Semantic model:  {args.semantic_model_name} ({len(tables)} tables, "
-            f"{sum(1 for t in tables for c in t['children'] if c['type'] == 'semantic_model.measure')} measures)")
-    else:
-        log(f"! Semantic model {args.semantic_model_name!r} not found — run scripts/4-setup-powerbi.sh, then re-run this script")
-
-    db = next((d for d in get_all(f"workspaces/{ws}/kqlDatabases") if d["displayName"] == args.kql_db_name), None) \
-        or sys.exit(f"KQL database {args.kql_db_name!r} not found — run scripts/1-setup-fabric.sh first.")
+    kql_id, kql_name = items["KQLDatabase"]
+    status, _, db = request("GET", f"{FABRIC_API}/workspaces/{ws}/kqlDatabases/{kql_id}")
+    if status >= 400:
+        sys.exit(f"KQL database {kql_name} ({kql_id}), which the ontology binds, not found: HTTP {status}")
     cluster = db["properties"]["queryServiceUri"]
-    kql = kql_elements(cluster, args.kql_db_name, db["id"])
-    fewshots = kql_fewshots(cluster, args.kql_db_name)
-    sources.append((f"kusto-{args.kql_db_name}/datasource.json",
-                    datasource("kusto", db["id"], ws, args.kql_db_name, KQL_INSTRUCTIONS, kql), fewshots))
-    log(f"✓ KQL database:    {args.kql_db_name} ({len(kql[0]['children'])} tables, {len(fewshots)} example queries)")
+    fewshots = kql_fewshots(cluster, kql_name)
+    check_kql_fewshots(cluster, kql_name, fewshots)
+    sources.append((f"{root}/ontologydatasources/{kql_id}/datasource.json",
+                    mounted_source(MOUNTED_KINDS["KQLDatabase"], kql_id, ws, kql_name, KQL_DESCRIPTION,
+                                   KQL_INSTRUCTIONS), fewshots))
+    log(f"✓ Mounted:         {kql_name} (Eventhouse) with instructions and {len(fewshots)} example queries, "
+        "each run against it")
+    lakehouse_id, lakehouse_name = items["Lakehouse"]
+    sources.append((f"{root}/ontologydatasources/{lakehouse_id}/datasource.json",
+                    mounted_source(MOUNTED_KINDS["Lakehouse"], lakehouse_id, ws, lakehouse_name, LAKEHOUSE_DESCRIPTION,
+                                   LAKEHOUSE_INSTRUCTIONS), None))
+    log(f"✓ Mounted:         {lakehouse_name} (lakehouse) with instructions")
 
     if args.graph or args.graph_name:
         graphs = get_all(f"workspaces/{ws}/items?type=GraphModel")
@@ -667,9 +697,15 @@ def main() -> int:
         agent = create_agent(ws, args.data_agent_name)
 
     publish = not args.draft_only
-    description = (f"OEE plant-floor analyst: {args.ontology_name} ontology first, governed KPIs from "
-                   f"{args.semantic_model_name}, live events from {args.kql_db_name}.")
-    parts = build_definition(sources, publish, description, render_instructions(rules, facts, args.ontology_name))
+    stages = ["draft", "published"] if publish else ["draft"]
+    names = {kind: name for kind, (_, name) in items.items()}
+    description = (f"OEE plant-floor analyst with the {args.ontology_name} ontology as its context: live events from "
+                   f"{kql_name}, plant records from {lakehouse_name}"
+                   + (f", and governed KPIs and OEE targets from {names['Dataset']}" if "Dataset" in names else "")
+                   + ".")
+    preview = args.runtime == "preview"
+    parts = build_definition(sources, publish, description, render_instructions(rules, facts, args.ontology_name),
+                             preview)
     if not publish:
         # updateDefinition replaces every part, so carry the published copy over untouched.
         current = get_definition(ws, agent)
@@ -678,24 +714,33 @@ def main() -> int:
                   for path, text in current.items()
                   if path.startswith("Files/Config/published/") or path == "Files/Config/publish_info.json"]
     post_lro(f"workspaces/{ws}/items/{agent}/updateDefinition", {"definition": {"parts": parts}})
-    # Folder names get normalized by the service, so compare what each stored source points at.
+
+    # Folder names can be normalized by the service, so compare what each stored source points at.
     def kind(path: str, body: dict) -> str | None:
         return "ontology" if path.endswith("/ontology.json") else body.get("type")
 
+    stored_parts = get_definition(ws, agent)
     stored = {(path.split("/")[2], kind(path, body), body.get("artifactId"))
-              for path, text in get_definition(ws, agent).items()
+              for path, text in stored_parts.items()
               if path.endswith(("/datasource.json", "/ontology.json")) for body in [json.loads(text)]}
-    expected = {(stage, kind(relpath, body), body["artifactId"])
-                for stage in (["draft", "published"] if publish else ["draft"]) for relpath, body, _ in sources}
+    expected = {(stage, kind(relpath, body), body["artifactId"]) for stage in stages for relpath, body, _ in sources}
     if expected - stored:
         sys.exit(f"✗ The service didn't keep these sources: {sorted(expected - stored)}")
-    log(f"✓ Data Agent {'published' if publish else 'draft updated'}: {args.data_agent_name} ({agent}) — "
-        f"{len(sources)} sources")
+    for stage in stages:
+        config = json.loads(stored_parts.get(f"Files/Config/{stage}/stage_config.json") or "{}")
+        if bool((config.get("experimental") or {}).get("enableExperimentalFeatures")) != preview:
+            log(f"! The {stage} configuration isn't on the {args.runtime} runtime: the service changed the flag")
+        kept = next((len(json.loads(text).get("fewShots", [])) for path, text in stored_parts.items()
+                     if path.startswith(f"Files/Config/{stage}/") and path.endswith(f"/{kql_id}/fewshots.json")), 0)
+        if kept != len(fewshots):
+            log(f"! The service kept {kept} of {len(fewshots)} example queries in the {stage} configuration")
+    log(f"✓ Data Agent {'published' if publish else 'draft updated'}: {args.data_agent_name} ({agent}) — the "
+        f"{args.ontology_name} ontology with {len(sources) - 1} mounted or added sources, on the {args.runtime} runtime")
 
     questions = (SMOKE_QUESTIONS if args.smoke else []) + args.ask
     if questions and not publish:
         log("! --smoke/--ask query the published agent; publishing was skipped (--draft-only)")
-    ok = all([ask(ws, agent, q) for q in questions])
+    ok = all([ask(ws, agent, q, args.show_queries) for q in questions])
     if questions:
         log("\n✓ Smoke test passed" if ok else "\n✗ Smoke test: some questions failed")
     return 0 if ok else 1

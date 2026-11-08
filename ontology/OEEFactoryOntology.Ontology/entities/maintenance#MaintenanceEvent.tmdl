@@ -1,4 +1,4 @@
-/// One lifecycle step of a work order: Created, Acknowledged, InProgress, or Resolved. MTTR is Resolved minus Created.
+/// One lifecycle step of a work order: Created, Acknowledged, InProgress, or Resolved. Live from the ManufacturingEH Eventhouse, so a work order's latest step shows whether it's open right now. MTTR is Resolved minus Created.
 entity maintenance#MaintenanceEvent
 	lineageTag: 86a62063-74b1-5996-954c-5d9b74fb22c8
 	backingTable: MaintenanceEvents

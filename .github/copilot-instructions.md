@@ -74,7 +74,7 @@ All setup scripts are meant to be **idempotent** — re‑running is the normal 
 The live pipeline is cheap (about 92K CU-s over two weeks). The Fabric IQ items are billed per use
 and were 96% of the usage while the demo was built (Capacity Metrics app → Compute → Items):
 
-- **Data agent:** about 66K uncached prompt tokens per question, about 7K CU-s. A full script 12 run is
+- **Data agent:** about 65K–100K uncached prompt tokens per question, about 7K–10K CU-s. A full script 12 run is
   30–40 of them, about a third of an F8 day. Run `--case`/`--persona` subsets; don't loop full runs.
 - **Operations agent:** a playbook generation is a long reasoning run at four times Copilot token rates.
   The generations made while building it cost about 625K CU-s. Generate once, with nothing else running.
@@ -222,37 +222,72 @@ Root cause: a legacy PBIR format. Use the **modern** schema versions everywhere 
 - **The ontology is the new TMDL experience** (`ontology/OEEFactoryOntology.Ontology/`, `.platform`
   `config.version` 2.0), published by `6-publish-ontology.py`. The old JSON entity‑type experience
   retires 2027‑01‑31 — don't author JSON parts.
-- **Bindings:** each table partition uses a `Sql.Database("<sql-endpoint>", "ManufacturingLH")`
-  expression plus the 8 `ONT_*` annotations script 6 adds. With `AzureStorage.DataLake` the service
-  strips 7 of them and the graph and the data agent can't resolve the source. One
-  `additionalBackingTable` per entity.
+- **Bindings (four sources, recognized by script 6 from each table's partition):**
+  - lakehouse: `Sql.Database("<sql-endpoint>", "ManufacturingLH")` expression + directLake partition + the 8
+    `ONT_*` annotations script 6 adds (with `AzureStorage.DataLake` the service strips 7 of them and the graph
+    and the agents can't resolve the source);
+  - Eventhouse (`MachineTelemetry`, `MaintenanceEvents`, `PartPassResults`): `= m` directQuery partition with
+    `AzureDataExplorer.Contents(<query URI>, <db>, <table>)`, 6 `ONT_*` partition annotations
+    (`ONT_ItemKind = KQLDatabase`, `ONT_ItemId` = the KQL database id) and a table-level `ONT_SourceSchema`;
+    the lakehouse key column it joins to gets `isKey`;
+  - SQL database (`OeeTarget` on `OeeGovernance`): the lakehouse shape on the database's SQL analytics
+    endpoint, with `ONT_ItemKind = SQLDatabase`;
+  - semantic model (`_Measures`): an expression named `DirectQuery to AS - <ws id>/<model id>`
+    (`AnalysisServices.Database(...)` + cube navigation), an `entity` directQuery partition, 6 annotations
+    with `ONT_ItemKind = Dataset`, and `measure 'X' = EXTERNALMEASURE("X", DOUBLE|INTEGER, "<expression>")`.
+    Script 6 copies each measure's description, format, and `sourceLineageTag` from the model's TMDL and
+    stops if the deployed model lacks one (needs Read and Build on the model). One `additionalBackingTable`
+    per entity.
+- **`OeeScorecard` must keep its `Value` property** (bound to `_Measures.Value`): a data agent attaches a
+  source only through entity properties bound to it. The service accepts a property-less entity, but then the
+  data agent never reaches the model (run step `ontology.context.datasources_attached` lists only
+  LakehouseTables and Kusto).
 - **Modeling limits:** one `keyProperty` per entity (no composite keys — derive a single key column).
   Inheritance: `baseEntityType: ns#Base`; `redefines: ns#Base.prop` on the property line;
   `overriddenMetadataField description` after the scalar properties. A derived entity that sets
   synonyms needs `overriddenMetadataField synonyms`.
 - **Graph:** materialize it with the portal's **Manage graph**; it doesn't pick up new properties
   until you do that again (the ontology definition has no projection setting, and the graph item
-  itself is read-only). Then `6-publish-ontology.py --refresh-graph`. Only keyed entities with
-  one backing table are graph‑eligible: keyless `PartPass`/`MaintenanceEvent`, the abstract
-  `Document`, and `Machine` (its telemetry is a second backing table) are left out. GQL labels are
+  itself is read-only). Then `6-publish-ontology.py --refresh-graph`. The graph keeps the data
+  sources it was materialized with (OneLake Delta paths in the GraphModel's `dataSources.json`) until the
+  next Manage graph, so a binding change doesn't reach it before then. Entities bound to the
+  Eventhouse or the semantic model aren't graph‑eligible (Microsoft documents lakehouse and
+  mirrored-database Delta tables as the graph's sources), so `Machine` (telemetry), `PartPass`,
+  `MaintenanceEvent`, `OeeScorecard`, and the abstract `Document` are left out. The current graph
+  (materialized Nov 3) still loads `OeeTarget` from the lakehouse's `OeeTarget` shortcut; whether
+  Manage graph keeps it now that it's bound to the `OeeGovernance` SQL database is unverified (no
+  saved query uses it). GQL labels are
   `<ns>_<Entity>`; edges are `<ns>_<ns>_<Relationship>`. GQL status `02000` right after a refresh
   is transient.
 - **Identity:** the ontology MCP endpoint and the ontology knowledge source accept user identities
   only (no service principals).
-- **Data agent (script 7):** NL2KQL can't see stored functions, so script 7 inlines
-  `OeeFacts`/`OeeKpis` as `let` statements in its example queries. "Latest hour of data" windows end
+- **Data agent (script 7) — ontology as context:** the ontology is the agent's only source
+  (`ontologies/<name>/ontology.json`; a `datasource.json` of type `ontology` is rejected). The agent writes
+  KQL, SQL, or DAX against the item each entity is bound to. Script 7 mounts the Eventhouse and the
+  lakehouse under the ontology (`ontologies/<name>/ontologydatasources/<item id>/datasource.json`, type
+  `Eventhouse`/`Lakehouse`, with `fewshots.json` beside it), taking the item ids from the deployed ontology's
+  `ONT_*` annotations, and publishes on the preview runtime (`stage_config.experimental.enableExperimentalFeatures`;
+  `--runtime standard` for the GA runtime) — no portal step. A mounted Eventhouse exposes the whole KQL
+  database, not just the bound tables. Semantic models take no data-agent context, so the model guidance
+  (group by `DimLine[line_id]`/`StationDim[device_id]` and label from each row) is in the agent instructions.
+  Data agents don't query SQL database-bound entities and the service rejects mounting one
+  (updateDefinition "unknown error"), so OEE targets come from the model's `Target OEE` measure. Never write
+  values into a query as data: without a reachable source the preview runtime once emitted
+  `project target_OEE = 0.85`. NL2KQL can't see stored functions, so script 7 inlines
+  `OeeFacts`/`OeeKpis` as `let` statements in its example queries and runs each example against the
+  Eventhouse before publishing. "Latest hour of data" windows end
   at `max(timestamp)` (or `max(passed_at)` for `PartPasses`) because `ago()` windows are empty when
-  the simulator isn't streaming. Script 7 attaches the ontology (an `ontologies/<name>/ontology.json`
-  part; a `datasource.json` of type `ontology` is rejected) and publishes — no portal step. The
-  ontology source exposes entity data but not rules, so script 7 renders the ontology's rules,
-  metric names, and time-series properties into the agent's instructions at publish time.
+  the simulator isn't streaming. The agent's ontology context carries entities, properties, relationships,
+  and bindings but not rules, so script 7 renders the ontology's rules, metric names, and time-series
+  properties into the agent's instructions at publish time (the readback TMDL is CRLF: normalize before
+  regex parsing, or the lists come out empty). The data agent refreshes the ontology context every 10 minutes.
   The orchestrator rewrites each question for the source it picks; when it prescribes a method
   ("four consecutive buckets in the latest hour"), the generator improvises and gets duration rules
   wrong. So the instructions route every duration or rolling-window rule check to the Eventhouse
   in the user's words, and its example query measures minutes since the last 5-minute bucket at or
   above 60%. Time in a state is samples × 10 s, never timestamp differences (telemetry has gaps).
-  Debug a wrong answer from the run steps' tool calls (`analyze.database.nl2code` holds the generated
-  query); a newly published ontology property can take a few minutes to reach the agent's context.
+  Debug a wrong answer with `--ask "<question>" --show-queries` (attached sources, example queries loaded, and
+  the KQL/SQL/DAX it ran; DAX is in the `askPBI.tool.execute` call's `code` argument).
 - **Foundry IQ knowledge base (script 10, api‑version `2026-08-01-preview`):** the `fabricOntology`
   source runs a live NL query over the ontology's data per request and gives up after its own 100 s
   timeout. The agent's MCP retrieve sets no runtime, so the 90 s service default failed whole agent
@@ -315,14 +350,17 @@ Root cause: a legacy PBIR format. Use the **modern** schema versions everywhere 
   enrich per row from the payload (script 1).
 - **OneLake mirror reseed gap:** each script 1 run reseeds the reference tables; their OneLake
   copies are empty for about 7 minutes, so the ontology and the model briefly show no reference data.
-- **The ontology reads through the lakehouse SQL analytics endpoint** (`Sql.Database` binding), so its
-  data trails the Eventhouse by the OneLake export (`TargetLatencyInMinutes` 5) plus the endpoint's
-  metadata sync. The legacy sync stops after 15 minutes without queries; the next query reads tables
-  as of the last sync (hours old was seen for `MaintenanceEvents`/`PartEvents`) while it catches up
-  over about a minute. `POST .../sqlEndpoints/{id}/refreshMetadata?preview=true` or the portal's
-  **Refresh** wakes it. So script 7 routes "is a work order open" and anything from the last few
-  minutes to ManufacturingEH, stated in the ontology's own entry (not only in a separate paragraph):
-  the orchestrator otherwise followed "START HERE" for work orders with technician names.
+- **The ontology reads its lakehouse-bound entities through the lakehouse SQL analytics endpoint**
+  (`Sql.Database` binding), so the plant's records trail the Eventhouse by the OneLake export
+  (`TargetLatencyInMinutes` 5) plus the endpoint's metadata sync; telemetry, work order steps, and part
+  passes are Eventhouse-bound and live. The legacy sync stops after 15 minutes without queries; the next
+  query reads tables as of the last sync (hours old was seen for `MaintenanceEvents`/`PartEvents`) while it
+  catches up over about a minute. `POST .../sqlEndpoints/{id}/refreshMetadata?preview=true` or the portal's
+  **Refresh** wakes it. `WorkOrder` (lakehouse) records only how a work order was raised; "is it open"
+  comes from its latest `MaintenanceEvent` step, which the instructions route to ManufacturingEH.
+- **OEEAnalytics can stop framing after throttling.** Direct Lake auto-framing failed during a throttled
+  window and didn't retry, so the report and the model's KPIs went stale for days. Script 4 reframes;
+  check the model's row counts against KQL when KPIs look old.
 
 ## Agent evaluation (`12-evaluate-agent.py`)
 

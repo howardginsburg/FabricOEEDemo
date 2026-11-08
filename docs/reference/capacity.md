@@ -15,7 +15,7 @@ Over two weeks, the [Capacity Metrics app](https://learn.microsoft.com/fabric/en
 
 | Item | How it's billed | Measured here |
 |---|---|---|
-| OEE Data Agent | AI tokens, 100 CU-s per 1,000 input tokens | About 66,000 prompt tokens per question, about 7,000 CU-s |
+| OEE Data Agent | AI tokens, 100 CU-s per 1,000 input tokens | About 65,000 to 100,000 prompt tokens per question, about 7,000 to 10,000 CU-s |
 | OEE Operations Agent | Reasoning tokens at four times the data agent's rates | About 625,000 CU-s, nearly all from the playbook generations made while building it |
 | Ontology graph | 10 CU-s per second of graph compute | About 565,000 CU-s for about 2¼ hours of ingestion and queries |
 | OEEFactoryOntology | Discovery (1,000 CU-s per definition read) and AI reasoning: preview, not billable yet. Its child graph and Eventhouse: billable | About 578,000 CU-s, mostly not billable |

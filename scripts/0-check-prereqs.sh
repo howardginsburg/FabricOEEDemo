@@ -15,7 +15,7 @@
 #                     → az (logged in), jq, curl, base64, sed
 #   FABRIC IQ       scripts/6-publish-ontology.py, scripts/7-setup-data-agent.py
 #                     → python3 (standard library); optional pyodbc + ODBC Driver 18
-#                       for 6-publish-ontology.py --check-metrics
+#                       for the SQL fallbacks in 2a-apply-oee-target-schema.py and 3a-seed-floor-events.py
 #   FOUNDRY/SEARCH  scripts/8-setup-foundry.sh, scripts/9-setup-aisearch.sh
 #                     → Azure CLI 2.67+ (Foundry project management), plus
 #                       consumption (GlobalStandard) model quota in your region
@@ -139,9 +139,9 @@ if [[ -n "$PY" ]]; then
   PY_VER="$($PY -c 'import sys; print(".".join(map(str, sys.version_info[:3])))' 2>/dev/null || echo '?')"
   pass "Python present ($PY $PY_VER)"
   if $PY -c 'import pyodbc, sys; sys.exit(0 if any("ODBC Driver 18" in d for d in pyodbc.drivers()) else 1)' >/dev/null 2>&1; then
-    pass "pyodbc + ODBC Driver 18 present (6-publish-ontology.py --check-metrics)"
+    pass "pyodbc + ODBC Driver 18 present (SQL fallbacks in 2a-apply-oee-target-schema.py, 3a-seed-floor-events.py)"
   else
-    warn "pyodbc / ODBC Driver 18 not found (only needed for 6-publish-ontology.py --check-metrics)"
+    warn "pyodbc / ODBC Driver 18 not found (only needed for the SQL fallbacks in scripts 2a and 3a)"
   fi
 else
   fail "Python 3 not found"

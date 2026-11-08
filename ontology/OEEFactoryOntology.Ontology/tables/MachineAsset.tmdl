@@ -2,6 +2,7 @@ table MachineAsset
 	lineageTag: 1371e895-4730-55c6-839a-affd64e34635
 
 	column device_id
+		isKey
 		dataType: string
 		lineageTag: ecf539aa-eccf-5ff6-b9a0-db43863016b2
 		sourceColumn: device_id

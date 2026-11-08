@@ -22,8 +22,11 @@ Two knowledge modes (`--knowledge`):
 | `tools` | **AI Search** on `oee-sops`, **`oee-ontology`** (the ontology through Fabric IQ), and **`oee-data-agent`**. |
 
 The OEE Data Agent ([scripts/7-setup-data-agent.py](../scripts/7-setup-data-agent.py), which
-holds its instructions and example queries) has three sources: the ontology, the
-`OEEAnalytics` Direct Lake semantic model, and the `ManufacturingEH` Eventhouse.
+holds its instructions and example queries) uses the `OEEFactoryOntology` ontology as its
+context. The ontology binds the `ManufacturingLH` lakehouse, the `ManufacturingEH` Eventhouse, and
+the `OEEAnalytics` semantic model, and the agent queries each one directly: SQL, KQL, or DAX. The
+Eventhouse and the lakehouse are mounted under the ontology with their own instructions, and the
+Eventhouse has the example queries.
 
 Routing in short: numbers, rankings, trends, and recent events go to the data agent; meaning,
 rules, procedures, and plant design facts (bottlenecks, targets, thresholds) go to the knowledge
@@ -41,8 +44,10 @@ budget so a slow ontology query degrades to an SOP-only answer instead of failin
 
 The Fabric IQ tools and the knowledge base's ontology source act on behalf of the signed-in
 user (Agent Service passes the user's token), so every user needs read access to the ontology,
-the data agent, and their sources. The ontology endpoint doesn't accept service principals. The
-knowledge base reads the SOP index with the project's managed identity.
+the data agent, and the sources the ontology binds: `ManufacturingLH`, `ManufacturingEH`, the
+`OeeGovernance` SQL database, and Read and Build permissions on `OEEAnalytics`. The ontology
+endpoint doesn't accept service principals. The knowledge base reads the SOP index with the
+project's managed identity.
 
 ## Try it
 

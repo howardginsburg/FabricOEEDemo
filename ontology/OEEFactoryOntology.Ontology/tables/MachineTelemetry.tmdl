@@ -62,9 +62,10 @@ table MachineTelemetry
 		lineageTag: ff92d539-fa39-5ba4-83d9-60fe103ab8cc
 		sourceColumn: timestamp
 
-	partition MachineTelemetry = entity
-		mode: directLake
-		source
-			entityName: MachineEvents
-			schemaName: dbo
-			expressionSource: 'DirectLake - ManufacturingLH'
+	partition MachineTelemetry = m
+		mode: directQuery
+		source =
+				let
+				  Source = AzureDataExplorer.Contents("__KQL_CLUSTER_URI__", "__KQL_DATABASE__", "MachineEvents")
+				in
+				  Source

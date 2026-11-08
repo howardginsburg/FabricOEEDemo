@@ -9,15 +9,16 @@ maintenance work orders into Fabric. Everything downstream works from that live 
 - A **Direct Lake** Power BI report analyzes OEE by line, shift, and station. Managers set each line's OEE
   target from the report itself, and operators log floor issues in a **Fabric App** that feeds the same report.
 - A **Fabric IQ ontology** models the plant: its equipment, parts, work orders, SOPs, business rules, and
-  governed metrics, with a graph you can query.
+  governed metrics. It reads each part from the source that holds it (the lakehouse, live events from the
+  Eventhouse, targets from a SQL database, and KPIs from the semantic model), with a graph you can query.
 - A **Fabric data agent** and a **Foundry agent** answer questions from the ontology, the data, and 36 SOPs and
   policies. An **operations agent** checks the ontology's alert rules every five minutes and alerts ops when one
   fires.
 
 ![The Executive OEE page of the Power BI report](assets/screenshots/demo/report-executive.png)
 
-OEE is **Availability × Performance × Quality**. It's defined once in each layer (KQL functions, DAX measures,
-and ontology metrics), all with the same definition, and computed at query time.
+OEE is **Availability × Performance × Quality**. It's computed at query time from one definition per layer: KQL
+functions in the Eventhouse and DAX measures in the semantic model, which the ontology's metrics reference.
 
 ## Start here
 

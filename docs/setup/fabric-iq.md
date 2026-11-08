@@ -6,16 +6,23 @@ with what steps 3 to 5 added, and loads the ontology's graph.
 ## Update the ontology and the data agent
 
 ```bash
-python3 scripts/6-publish-ontology.py --workspace-name "<FABRIC_WORKSPACE>" --check-metrics
+python3 scripts/6-publish-ontology.py --workspace-name "<FABRIC_WORKSPACE>"
 python3 scripts/7-setup-data-agent.py --workspace-name "<FABRIC_WORKSPACE>" --smoke
 ```
 
 - **Script 6** publishes the ontology from the TMDL in `ontology/OEEFactoryOntology.Ontology/`. This time it
-  includes the entities whose tables steps 3 and 4 created, `OeeTarget` and `FloorIssue`, and the ontology's
-  links to the Power BI report and the Real-Time Dashboard. `--check-metrics` runs each ontology metric's SQL
-  against the lakehouse and its DAX twin against the semantic model, and reports any difference.
-- **Script 7** adds the `OEEAnalytics` semantic model to the data agent's sources and publishes it again.
-  `--smoke` asks the published agent one question per source.
+  includes what steps 3 to 5 created: `OeeTarget`, bound to the `OeeGovernance` SQL database; `FloorIssue`; the
+  `OeeScorecard` KPIs, which reference the `OEEAnalytics` semantic model's measures; and the ontology's links to
+  the Power BI report and the Real-Time Dashboard. It checks that every measure the ontology references exists
+  in the model.
+- **Script 7** publishes the data agent again, with the ontology as its context. It mounts the Eventhouse and
+  the lakehouse under the ontology with their own instructions, runs each of the Eventhouse's example queries to
+  check that it still works, and renders the ontology's rules and metric names into the agent's instructions.
+  `--smoke` asks one question per kind of source; add `--show-queries` to see the KQL, SQL, or DAX behind each
+  answer.
+
+Binding the semantic model, and the agents' queries against it, need Read and Build permissions on
+`OEEAnalytics` for whoever runs the scripts and asks the questions.
 
 ## Materialize the graph
 
@@ -26,10 +33,10 @@ The ontology's graph starts empty, and loading it is a portal step:
    out (see below). Select **Continue**.
 3. On **Projection Summary**, select **Materialize**.
 
-Loading takes a few minutes. When it's done, **Manage graph** shows the graph's status: 13 entity types
-materialized, and the 4 that can't be in the graph (see below) unused.
+Loading takes a few minutes. When it's done, **Manage graph** shows the graph's status: the entity types it
+materialized, and the ones that can't be in the graph (see below) as unused.
 
-![Manage graph after loading: 13 entity types materialized and 4 unused](../assets/screenshots/setup/manage-graph.png)
+![Manage graph after loading: the materialized and unused entity types](../assets/screenshots/setup/manage-graph.png)
 
 Then run script 6 again, without options: it checks the GQL queries in
 `ontology/graph-queries.json` against the graph and saves the ones that pass as the **OEE Graph Queries**
@@ -43,9 +50,13 @@ These entities can't be in the graph:
 
 | Entity | Why |
 |---|---|
-| `Machine` | Its telemetry comes from a second, time-series table. `Station` carries the plant structure in the graph. |
-| `PartPass`, `MaintenanceEvent` | Events without a key |
+| `Machine` | Its telemetry is a time series from the Eventhouse. `Station` carries the plant structure in the graph. |
+| `PartPass`, `MaintenanceEvent` | Events without a key, read live from the Eventhouse |
+| `OeeScorecard` | Its metrics come from the semantic model, which the graph doesn't load |
 | `Document` | Abstract: `SOP` and `Policy` inherit from it |
+
+The graph loads lakehouse and mirrored-database tables. `OeeTarget` reads the `OeeGovernance` SQL database, so
+**Manage graph** shows whether it can be in the graph; no saved graph query uses it.
 
 !!! warning "The graph is billed per use"
     Graph compute is billed by the second, and loading data is the expensive part. Each publish that changes
@@ -55,9 +66,11 @@ These entities can't be in the graph:
 
 ## Verify
 
-- `OEEFactoryOntology` shows 17 entity types. Select `Station` and preview its data.
+- `OEEFactoryOntology` shows 18 entity types. Select `Station` and preview its data.
 - The workspace has the **OEE Graph Queries** queryset, and its queries return rows.
-- Script 7's `--smoke` output shows an answer for each source.
+- Script 7's `--smoke` output shows an answer for each question, from the source the ontology binds: the
+  lakehouse for stations, the Eventhouse for machine status and open work orders, and the semantic model for
+  OEE and targets.
 
 To learn how the ontology is built, or to change it, see the
 [ontology README](https://github.com/howardginsburg/FabricOEEDemo/blob/main/ontology/README.md).

@@ -33,15 +33,16 @@ table _Measures
 		formatString: 0.0%;-0.0%;0.0%
 		lineageTag: 3f2a9d10-3001-4b7c-9e11-aa0000020004
 
-	measure 'Parts Passed' = SUM(PartEvents[is_pass])
+	/// Passes at a station that passed quality (completed passes).
+	measure 'Parts Passed' = SUM(PartPasses[is_pass])
 		formatString: #,0
 		lineageTag: 3f2a9d10-3001-4b7c-9e11-aa0000020005
 
-	measure 'Parts Completed' = SUM(PartEvents[is_completed])
+	measure 'Parts Completed' = SUM(PartPasses[is_completed])
 		formatString: #,0
 		lineageTag: 3f2a9d10-3001-4b7c-9e11-aa0000020006
 
-	measure 'Parts Rejected' = SUM(PartEvents[is_rejected])
+	measure 'Parts Rejected' = SUM(PartPasses[is_rejected])
 		formatString: #,0
 		lineageTag: 3f2a9d10-3001-4b7c-9e11-aa0000020007
 
@@ -49,9 +50,8 @@ table _Measures
 		formatString: #,0
 		lineageTag: 3f2a9d10-3001-4b7c-9e11-aa0000020008
 
-	/// Quality = good parts ÷ total parts produced (First-Pass Yield).
-	/// good = completed; total = completed + rejected. (is_pass fires on multiple
-	/// part events per part, so it is NOT used here.)
+	/// Quality = good parts ÷ total parts produced (First-Pass Yield): completed passes ÷
+	/// (completed + rejected passes). Passes relate to their station, so Quality slices by station.
 	measure Quality = DIVIDE([Parts Completed], [Parts Produced])
 		formatString: 0.0%;-0.0%;0.0%
 		lineageTag: 3f2a9d10-3001-4b7c-9e11-aa0000020009
@@ -77,7 +77,7 @@ table _Measures
 			    VALUES ( DimLine[line_id] ),
 			    VAR LastStation = CALCULATE ( MAX ( DimLine[station_count] ) )
 			    RETURN
-			        CALCULATE ( SUM ( PartEvents[is_completed] ), PartEvents[station_position] = LastStation )
+			        CALCULATE ( SUM ( PartPasses[is_completed] ), PartPasses[station_position] = LastStation )
 			)
 			```
 		formatString: #,0

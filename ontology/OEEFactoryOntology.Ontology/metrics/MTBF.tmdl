@@ -1,9 +1,0 @@
-/// Mean time between failures in minutes: running minutes (10-second samples) divided by work orders. Same definition as the OEEAnalytics semantic model measure [MTBF (min)].
-metric MTBF
-	lineageTag: c50fdad0-e83d-5cbb-a55d-78a88b010f64
-
-	expression
-		dialect: SQL
-		expression: SELECT (CAST(SUM(is_running) AS FLOAT) / 6) / NULLIF((SELECT COUNT(DISTINCT work_order_id) FROM dbo.MaintenanceEvents), 0) FROM dbo.MachineEvents
-
-	synonym 'mean time between failures'

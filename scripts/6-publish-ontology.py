@@ -1,37 +1,43 @@
 #!/usr/bin/env python3
 """Publish the OEE factory ontology (Fabric IQ, new experience) from its TMDL folder.
 
-The checked-in TMDL under ontology/OEEFactoryOntology.Ontology/ is the source of truth.
+The checked-in TMDL under ontology/OEEFactoryOntology.Ontology/ is the source of truth. Its tables bind
+four kinds of source, recognized by their partitions:
+  • the ManufacturingLH lakehouse (Direct Lake through its SQL analytics endpoint): the plant's structure
+    and records, everything the graph loads;
+  • the ManufacturingEH Eventhouse (DirectQuery, AzureDataExplorer.Contents): machine telemetry, work order
+    steps, and part passes, live;
+  • the OeeGovernance SQL database (Direct Lake through its SQL analytics endpoint): the OEE targets the
+    report's write-back button sets;
+  • the OEEAnalytics semantic model (DirectQuery to the model): its DAX measures, referenced with
+    EXTERNALMEASURE, are the ontology's metrics, so each KPI is defined once, in the model.
+
 This publisher:
-  1. Resolves the workspace, the ManufacturingLH lakehouse (and its SQL analytics
-     endpoint), and the optional resource-link targets (OEEAnalytics report, OEE
-     Real-Time Dashboard).
-  2. Leaves out optional entities whose source table isn't in the lakehouse yet
-     (OeeTarget from scripts/2-setup-translytical.sh, FloorEvent from
-     scripts/3-setup-floor-ops.sh), everything that references them, and resource
-     links whose item doesn't exist. Re-run after those scripts to add them.
-  3. Injects the SQL endpoint and adds the ONT_* partition annotations that identify
-     the lakehouse item behind every table. Without them the ontology accepts the
-     definition but the graph and the Data Agent can't resolve the source.
-  4. Creates or updates the Ontology item, polling the long-running operation by
-     x-ms-operation-id, then reads the definition back to prove nothing was dropped.
-     An unchanged definition isn't sent again: every publish re-ingests the data
-     bound to the materialized graph, which is billed per second of graph compute.
-  5. Optionally (--check-metrics) runs every SQL metric against the lakehouse and its
-     DAX twin against the OEEAnalytics semantic model, and reports any drift.
-  6. Once the ontology's graph is materialized (a portal step: ontology → Manage graph),
-     validates the GQL in ontology/graph-queries.json against it and saves the passing
-     queries as the "OEE Graph Queries" queryset, when the saved queryset doesn't match
-     the file. --refresh-graph reloads the graph's data and re-validates the queries.
-  7. --export-ttl writes the ontology as RDF Turtle (OWL classes, datatype and object
-     properties, labels, descriptions, synonyms, inheritance) with the same concept
-     mapping as the portal's Export, for RDF and knowledge-graph tools. It's generated
-     from the TMDL on demand, so it isn't checked in.
+  1. Resolves the workspace and every source item, and the optional resource-link targets (OEEAnalytics
+     report, OEE Real-Time Dashboard).
+  2. Leaves out entities whose source doesn't exist yet (OeeTarget until scripts/2-setup-translytical.sh
+     creates OeeGovernance, the KPI scorecard until scripts/4-setup-powerbi.sh deploys OEEAnalytics, FloorEvent
+     until scripts/3-setup-floor-ops.sh), everything that references them, and resource links whose item
+     doesn't exist. Re-run after those scripts to add them.
+  3. Checks that every measure the ontology references exists in OEEAnalytics with the same data type, and
+     copies each one's description, format, and lineage tag from the model's TMDL.
+  4. Injects each source's connection and adds the ONT_* partition annotations that identify the item behind
+     every table. Without them the ontology accepts the definition but the graph and the agents can't
+     resolve the source.
+  5. Creates or updates the Ontology item, polling the long-running operation by x-ms-operation-id, then
+     reads the definition back to prove nothing was dropped. An unchanged definition isn't sent again: every
+     publish re-ingests the data bound to the materialized graph, which is billed per second of graph compute.
+  6. Once the ontology's graph is materialized (a portal step: ontology → Manage graph), validates the GQL in
+     ontology/graph-queries.json against it and saves the passing queries as the "OEE Graph Queries"
+     queryset, when the saved queryset doesn't match the file. --refresh-graph reloads the graph's data and
+     re-validates the queries.
+  7. --export-ttl writes the ontology as RDF Turtle (OWL classes, datatype and object properties, labels,
+     descriptions, synonyms, inheritance) with the same concept mapping as the portal's Export, for RDF and
+     knowledge-graph tools. It's generated from the TMDL on demand, so it isn't checked in.
 
 Usage
 -----
     python scripts/6-publish-ontology.py --workspace-name "OEE Demo"
-    python scripts/6-publish-ontology.py --workspace-name "OEE Demo" --check-metrics
     python scripts/6-publish-ontology.py --workspace-name "OEE Demo" --refresh-graph
     python scripts/6-publish-ontology.py --dry-run --out .tmp/ontology-parts
     python scripts/6-publish-ontology.py --export-ttl ontology/OEEFactoryOntology.ttl   # RDF/OWL, offline
@@ -46,7 +52,6 @@ import datetime
 import http.client
 import json
 import re
-import struct
 import subprocess
 import sys
 import time
@@ -59,15 +64,17 @@ FABRIC_API = "https://api.fabric.microsoft.com/v1"
 FABRIC_RESOURCE = "https://api.fabric.microsoft.com"
 PBI_API = "https://api.powerbi.com/v1.0/myorg"
 PBI_RESOURCE = "https://analysis.windows.net/powerbi/api"
-SQL_RESOURCE = "https://database.windows.net/"
-SQL_COPT_SS_ACCESS_TOKEN = 1256
 
 REPO = Path(__file__).resolve().parent.parent
 DEFAULT_DEFINITION = REPO / "ontology" / "OEEFactoryOntology.Ontology"
 # Kept outside the definition folder: every file in that folder is sent as an ontology part.
 GRAPH_QUERIES = REPO / "ontology" / "graph-queries.json"
+# The model's measures, whose descriptions, formats, and lineage tags the ontology's metrics take.
+MODEL_MEASURES_TMDL = REPO / "powerbi" / "OEEAnalytics.SemanticModel" / "definition" / "tables" / "_Measures.tmdl"
 QUERYSET_NAME = "OEE Graph Queries"
 LAKEHOUSE_NAME = "ManufacturingLH"
+KQL_DATABASE_NAME = "ManufacturingEH"
+SQL_DATABASE_NAME = "OeeGovernance"
 SEMANTIC_MODEL_NAME = "OEEAnalytics"
 LINK_TARGETS = {  # placeholder -> (item type, display name)
     "__REPORT_ID__": ("Report", "OEEAnalytics"),
@@ -75,9 +82,18 @@ LINK_TARGETS = {  # placeholder -> (item type, display name)
 }
 # Lakehouse tables created by optional setup scripts; their entities wait until present.
 OPTIONAL_SOURCES = {
-    "OeeTarget": "scripts/2-setup-translytical.sh",
     "FloorEvent": "scripts/3-setup-floor-ops.sh",
 }
+# Source items created by later setup scripts; the entities bound to them wait until the item exists.
+OPTIONAL_ITEMS = {
+    "sqldb": ("SQLDatabase", SQL_DATABASE_NAME, "scripts/2-setup-translytical.sh"),
+    "model": ("SemanticModel", SEMANTIC_MODEL_NAME, "scripts/4-setup-powerbi.sh"),
+}
+# ONT_* annotations the service keeps on a table of each kind (Eventhouse tables add ONT_SourceSchema).
+EXPECTED_ANNOTATIONS = {"lakehouse": 8, "sqldb": 8, "eventhouse": 7, "model": 6}
+# Model measure data types (INFO.VIEW.MEASURES) as EXTERNALMEASURE spells them.
+EXTERNAL_TYPES = {"Integer": "INTEGER", "Number": "DOUBLE", "Decimal": "DOUBLE", "Currency": "CURRENCY",
+                  "Text": "STRING", "Boolean": "BOOLEAN", "DateTime": "DATETIME"}
 INHERITANCE_ERRORS = ("inherit", "baseentitytype", "redefines", "overriddenmetadatafield")
 
 
@@ -237,12 +253,24 @@ def remove_children(text: str, drop) -> str:
     return "\n".join(out).rstrip("\n") + "\n"
 
 
-def table_sources(files: dict[str, str]) -> dict[str, str]:
-    """TOM table name -> Delta table it reads."""
+def table_bindings(files: dict[str, str]) -> dict[str, tuple[str, str]]:
+    """TOM table name -> (source kind, source table). Kinds: lakehouse, sqldb, eventhouse, model."""
     out = {}
     for path, text in files.items():
-        if path.startswith("tables/"):
-            out[re.search(r"^table (\S+)", text, re.M).group(1)] = re.search(r"entityName:\s*(\S+)", text).group(1)
+        if not path.startswith("tables/"):
+            continue
+        table = re.search(r"^table (\S+)", text, re.M).group(1)
+        kql = re.search(r'AzureDataExplorer\.Contents\("[^"]*",\s*"[^"]*",\s*"([^"]+)"\)', text)
+        entity = re.search(r"entityName:\s*(\S+)", text)
+        expression = re.search(r"expressionSource:\s*'([^']+)'", text)
+        if kql:
+            out[table] = ("eventhouse", kql.group(1))
+        elif expression and expression.group(1).startswith("DirectQuery to AS"):
+            out[table] = ("model", entity.group(1))
+        elif expression and expression.group(1) == f"DirectLake - {SQL_DATABASE_NAME}":
+            out[table] = ("sqldb", entity.group(1))
+        else:
+            out[table] = ("lakehouse", entity.group(1))
     return out
 
 
@@ -309,13 +337,20 @@ def prune(files: dict[str, str], drop_tables: set[str], drop_entities: set[str])
     return removed
 
 
-def drop_metrics_on(files: dict[str, str], deltas: set[str]) -> list[str]:
-    gone = []
-    for path in [p for p in files if p.startswith("metrics/")]:
-        if any(re.search(rf"\bdbo\.{re.escape(d)}\b", files[path]) for d in deltas):
-            gone.append(path)
-            files.pop(path)
-    return gone
+def drop_unused_expressions(files: dict[str, str]) -> list[str]:
+    """Remove shared expressions no remaining table reads (a pruned source's connection would still be resolved)."""
+    used = {m for path, text in files.items() if path.startswith("tables/")
+            for m in re.findall(r"expressionSource:\s*'([^']+)'", text)}
+    kept, dropped = [], []
+    for header, block in top_level_blocks(files.get("expressions.tmdl", "")):
+        name = re.match(r"expression '([^']+)'", header)
+        if name and name.group(1) not in used:
+            dropped.append(name.group(1))
+        else:
+            kept.append(block)
+    if dropped:
+        files["expressions.tmdl"] = join_blocks(kept)
+    return dropped
 
 
 def strip_inheritance(files: dict[str, str]) -> list[str]:
@@ -351,17 +386,106 @@ def resolve_links(files: dict[str, str], workspace_id: str, link_ids: dict[str, 
     return dropped
 
 
-def bind_source(files: dict[str, str], *, sql_endpoint: str, workspace_id: str, workspace_name: str,
-                lakehouse_id: str) -> None:
-    """Point the shared expression at the lakehouse and annotate every partition with its item."""
-    files["expressions.tmdl"] = files["expressions.tmdl"].replace("__SQL_ENDPOINT__", sql_endpoint)
-    pinned = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
-    annotations = [("ONT_WorkspaceId", workspace_id), ("ONT_ItemId", lakehouse_id), ("ONT_ItemKind", "Lakehouse"),
-                   ("ONT_ItemName", LAKEHOUSE_NAME), ("ONT_WorkspaceName", workspace_name),
-                   ("ONT_SqlEndpoint", sql_endpoint), ("ONT_SqlDatabase", LAKEHOUSE_NAME), ("ONT_PinnedAtUtc", pinned)]
+def table_columns(text: str) -> list[tuple[str, str]]:
+    """(column, data type) of a TOM table."""
+    return re.findall(r"^\tcolumn (\S+)\n(?:\t\t.*\n)*?\t\tdataType: (\S+)", text, re.M)
+
+
+def model_measure_docs() -> dict[str, dict]:
+    """Measure name -> description, format string, and lineage tag, from the OEEAnalytics model's TMDL."""
+    text = MODEL_MEASURES_TMDL.read_text(encoding="utf-8").replace("\r\n", "\n")
+    out = {}
+    for m in re.finditer(r"((?:^\t///.*\n)*)^\tmeasure ('(?:[^']|'')+'|[^\s=]+) = [\s\S]*?(?=^\t(?:measure|column|partition|///)|\Z)",
+                         text, re.M):
+        block = m.group(0)
+        tag = re.search(r"^\t\tlineageTag: (\S+)", block, re.M)
+        fmt = re.search(r"^\t\tformatString: (.+)$", block, re.M)
+        doc = [line.strip()[3:].strip() for line in m.group(1).splitlines()]
+        out[_unquote(m.group(2))] = {"lineageTag": tag.group(1) if tag else None,
+                                     "formatString": fmt.group(1).strip() if fmt else None,
+                                     "doc": " ".join(d for d in doc if d and not d.startswith("──"))}
+    return out
+
+
+def model_column_tags() -> dict[str, str]:
+    """Column name -> lineage tag of the OEEAnalytics measures table's columns, from the model's TMDL."""
+    text = MODEL_MEASURES_TMDL.read_text(encoding="utf-8").replace("\r\n", "\n")
+    return {_unquote(name): tag for name, tag in
+            re.findall(r"^\tcolumn ('[^']+'|\S+)\n(?:\t\t.*\n)*?\t\tlineageTag: (\S+)", text, re.M)}
+
+
+def enrich_measures(files: dict[str, str]) -> list[str]:
+    """Give each EXTERNALMEASURE the model measure's description, format, and source lineage tag, and each column
+    of a model-bound table its model column's source lineage tag, so they're defined once, in the model. Returns
+    the referenced measures and columns the model's TMDL doesn't have."""
+    docs, columns, missing = model_measure_docs(), model_column_tags(), []
+
+    def add(m: re.Match) -> str:
+        info = docs.get(m.group("name"))
+        if not info:
+            missing.append(m.group("name"))
+            return m.group(0)
+        return ((f"\t/// {info['doc']}\n" if info["doc"] else "") + m.group("head")
+                + (f"\t\tformatString: {info['formatString']}\n" if info["formatString"] else "") + m.group("tag")
+                + (f"\t\tsourceLineageTag: {info['lineageTag']}\n" if info["lineageTag"] else ""))
+
+    def add_column(m: re.Match) -> str:
+        tag = columns.get(_unquote(m.group("name")))
+        if not tag:
+            missing.append(m.group("name"))
+            return m.group(0)
+        return m.group(0) + f"\t\tsourceLineageTag: {tag}\n"
     for path in [p for p in files if p.startswith("tables/")]:
-        files[path] = (files[path].rstrip("\n") + "\n\n"
-                       + "\n".join(f"\t\tannotation {k} = {v}" for k, v in annotations) + "\n")
+        files[path] = re.sub(r'(?P<head>^\tmeasure .+ = EXTERNALMEASURE\("(?P<name>[^"]+)",[^\n]*\n)(?P<tag>\t\tlineageTag: \S+\n)',
+                             add, files[path], flags=re.M)
+        if "expressionSource: 'DirectQuery to AS - " in files[path]:
+            files[path] = re.sub(r"^\tcolumn (?P<name>'[^']+'|\S+)\n(?:\t\t.*\n)*?\t\tlineageTag: \S+\n", add_column,
+                                 files[path], flags=re.M)
+    return missing
+
+
+def bind_sources(files: dict[str, str], *, workspace_id: str, workspace_name: str, lakehouse: tuple[str, str],
+                 kql: tuple[str, str, str], sqldb: tuple[str, str] | None, model: str | None) -> None:
+    """Inject each source's connection and annotate every partition with the item behind it.
+
+    lakehouse: (item id, SQL analytics endpoint); kql: (database id, database name, cluster query URI);
+    sqldb: (item id, SQL analytics endpoint); model: semantic model id. A pruned source is None.
+    """
+    pinned = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+    kinds = table_bindings(files)
+    item = {
+        "lakehouse": [("ONT_ItemId", lakehouse[0]), ("ONT_ItemKind", "Lakehouse"), ("ONT_ItemName", LAKEHOUSE_NAME),
+                      ("ONT_WorkspaceName", workspace_name), ("ONT_SqlEndpoint", lakehouse[1]),
+                      ("ONT_SqlDatabase", LAKEHOUSE_NAME)],
+        "eventhouse": [("ONT_ItemId", kql[0]), ("ONT_ItemKind", "KQLDatabase"), ("ONT_ItemName", kql[1]),
+                       ("ONT_WorkspaceName", workspace_name)],
+    }
+    expressions = files["expressions.tmdl"].replace("__SQL_ENDPOINT__", lakehouse[1])
+    if sqldb:
+        item["sqldb"] = [("ONT_ItemId", sqldb[0]), ("ONT_ItemKind", "SQLDatabase"), ("ONT_ItemName", SQL_DATABASE_NAME),
+                         ("ONT_WorkspaceName", workspace_name), ("ONT_SqlEndpoint", sqldb[1]),
+                         ("ONT_SqlDatabase", SQL_DATABASE_NAME)]
+        expressions = expressions.replace("__OEEGOVERNANCE_SQL_ENDPOINT__", sqldb[1])
+    if model:
+        item["model"] = [("ONT_ItemId", model), ("ONT_ItemKind", "Dataset"), ("ONT_ItemName", SEMANTIC_MODEL_NAME),
+                         ("ONT_WorkspaceName", workspace_name)]
+        expressions = (expressions.replace("__WORKSPACE_ID__", workspace_id).replace("__SEMANTIC_MODEL_ID__", model)
+                       .replace("__WORKSPACE_NAME__", workspace_name))
+    files["expressions.tmdl"] = expressions
+    for path in [p for p in files if p.startswith("tables/")]:
+        kind = kinds[re.search(r"^table (\S+)", files[path], re.M).group(1)][0]
+        text = files[path]
+        if kind == "eventhouse":
+            text = text.replace("__KQL_CLUSTER_URI__", kql[2]).replace("__KQL_DATABASE__", kql[1])
+        if kind == "model":
+            text = text.replace("__WORKSPACE_ID__", workspace_id).replace("__SEMANTIC_MODEL_ID__", model)
+        pairs = [("ONT_WorkspaceId", workspace_id)] + item[kind] + [("ONT_PinnedAtUtc", pinned)]
+        text = text.rstrip("\n") + "\n\n" + "\n".join(f"\t\tannotation {k} = {v}" for k, v in pairs) + "\n"
+        if kind == "eventhouse":
+            # The portal's Eventhouse binding records the source columns on the table.
+            schema = {"version": 1, "columns": [{"name": n, "dataType": t} for n, t in table_columns(text)]}
+            text += f"\n\tannotation ONT_SourceSchema = {json.dumps(schema, separators=(',', ':'))}\n"
+        files[path] = text
 
 
 def to_parts(files: dict[str, str]) -> list[dict]:
@@ -417,51 +541,59 @@ def lakehouse_tables(ws: str, lakehouse_id: str) -> set[str]:
             if s.get("path", "").strip("/") == "Tables/dbo"}
 
 
-# ─── Metric drift check ───────────────────────────────────────────────────────
+def resolve_kql(ws: str) -> tuple[str, str, str]:
+    """(database id, database name, cluster query URI) of the ManufacturingEH KQL database."""
+    db = next((d for d in get_all(f"workspaces/{ws}/kqlDatabases") if d["displayName"] == KQL_DATABASE_NAME), None)
+    if not db:
+        sys.exit(f"KQL database {KQL_DATABASE_NAME!r} not found — run scripts/1-setup-fabric.sh first.")
+    return db["id"], db["displayName"], db["properties"]["queryServiceUri"]
 
 
-def check_metrics(files: dict[str, str], ws: str, sql_endpoint: str) -> bool:
-    """Run each SQL metric on the lakehouse and its DAX twin on the semantic model; compare."""
-    try:
-        import pyodbc  # noqa: PLC0415
-    except ImportError:
-        log("   ! --check-metrics needs pyodbc + 'ODBC Driver 18 for SQL Server' — skipped.")
-        return True
-    model = find_item(ws, "SemanticModel", SEMANTIC_MODEL_NAME)
-    if not model:
-        log(f"   ! Semantic model {SEMANTIC_MODEL_NAME!r} not found — run scripts/4-setup-powerbi.sh; skipped.")
-        return True
-    raw = token(SQL_RESOURCE).encode("utf-16-le")
-    conn = pyodbc.connect(
-        f"Driver={{ODBC Driver 18 for SQL Server}};Server={sql_endpoint};Database={LAKEHOUSE_NAME};"
-        "Encrypt=yes;TrustServerCertificate=no;",
-        attrs_before={SQL_COPT_SS_ACCESS_TOKEN: struct.pack(f"<I{len(raw)}s", len(raw), raw)})
-    cursor = conn.cursor()
-    ok = True
-    log(f"   {'metric':<18} {'SQL (lakehouse)':>16} {'DAX (model)':>16}  result")
-    for path in sorted(p for p in files if p.startswith("metrics/")):
-        text = files[path]
-        name = re.search(r"^metric (\S+)", text, re.M).group(1)
-        sql = re.search(r"^\t\texpression: (.+)$", text, re.M).group(1)
-        twin = re.search(r"measure \[([^\]]+)\]", text)
-        sql_value = cursor.execute(sql).fetchone()[0]
-        dax_value = None
-        if twin:
-            st, _, body = request("POST", f"{PBI_API}/datasets/{model}/executeQueries", PBI_RESOURCE,
-                                  {"queries": [{"query": f'EVALUATE ROW("v", [{twin.group(1)}])'}],
-                                   "serializerSettings": {"includeNulls": True}})
-            if st < 400:
-                dax_value = body["results"][0]["tables"][0]["rows"][0].get("[v]")
-        # Engines round datetimes differently at second boundaries (MTTR), so allow 0.01%;
-        # a changed definition moves a metric by whole percentage points.
-        same = (sql_value is None and dax_value is None) or (
-            sql_value is not None and dax_value is not None
-            and abs(float(sql_value) - float(dax_value)) <= 1e-4 * max(1.0, abs(float(dax_value))))
-        ok &= same
-        fmt = lambda v: "—" if v is None else f"{float(v):.6f}"  # noqa: E731
-        log(f"   {name:<18} {fmt(sql_value):>16} {fmt(dax_value):>16}  {'match' if same else 'DRIFT'}")
-    conn.close()
-    return ok
+def kql_tables(cluster: str, database: str) -> set[str] | None:
+    """Tables in the KQL database, or None when they can't be listed."""
+    status, _, body = request("POST", f"{cluster}/v1/rest/mgmt", cluster,
+                              {"db": database, "csl": ".show tables | project TableName"})
+    if status >= 400 or not body.get("Tables"):
+        return None
+    return {row[0] for row in body["Tables"][0]["Rows"]}
+
+
+def resolve_sql_database(ws: str) -> tuple[str, str, str] | None:
+    """(item id, SQL analytics endpoint, endpoint id) of the OeeGovernance SQL database; None until it exists.
+    Fabric names a SQL database's SQL analytics endpoint after the database. A database whose endpoint can't be
+    resolved stops the publish instead: treating it as absent would publish the ontology without OeeTarget."""
+    database = find_item(ws, "SQLDatabase", SQL_DATABASE_NAME)
+    if not database:
+        return None
+    endpoint = find_item(ws, "SQLEndpoint", SQL_DATABASE_NAME)
+    if not endpoint:
+        sys.exit(f"{SQL_DATABASE_NAME}'s SQL analytics endpoint isn't provisioned yet — retry in a minute.")
+    status, _, body = request("GET", f"{FABRIC_API}/workspaces/{ws}/sqlEndpoints/{endpoint}/connectionString")
+    if status >= 400 or not body.get("connectionString"):
+        sys.exit(f"Couldn't read {SQL_DATABASE_NAME}'s SQL analytics endpoint (HTTP {status}) — retry in a minute.")
+    return database, body["connectionString"], endpoint
+
+
+def check_model_measures(files: dict[str, str], model: str) -> list[str]:
+    """Measures the ontology references that the deployed model lacks or types differently."""
+    refs = {m.group(1): m.group(2) for path, text in files.items() if path.startswith("tables/")
+            for m in re.finditer(r'EXTERNALMEASURE\("([^"]+)",\s*(\w+),', text)}
+    if not refs:
+        return []
+    status, _, body = request("POST", f"{PBI_API}/datasets/{model}/executeQueries", PBI_RESOURCE,
+                              {"queries": [{"query": 'EVALUATE SELECTCOLUMNS(INFO.VIEW.MEASURES(), "n", [Name], '
+                                                     '"t", [DataType])'}]})
+    if status >= 400:
+        log(f"! Couldn't list {SEMANTIC_MODEL_NAME}'s measures (HTTP {status}) — measure references not checked")
+        return []
+    types = {row["[n]"]: row["[t]"] for row in body["results"][0]["tables"][0]["rows"]}
+    problems = []
+    for name, data_type in sorted(refs.items()):
+        if name not in types:
+            problems.append(f"{name}: not in {SEMANTIC_MODEL_NAME}")
+        elif EXTERNAL_TYPES.get(types[name]) != data_type:
+            problems.append(f"{name}: {data_type} in the ontology, {types[name]} in {SEMANTIC_MODEL_NAME}")
+    return problems
 
 
 # ─── Deploy ───────────────────────────────────────────────────────────────────
@@ -510,9 +642,10 @@ SERVICE_PARTS = {".platform", "model.tmdl"}  # written by the service; never com
 def canonical_tmdl(text: str) -> list:
     """TMDL as an order-insensitive tree (each object with its /// doc lines, children sorted). The service
     re-serializes what it stores: blank lines between synonyms, synonyms moved after overriddenMetadataField,
-    enum casing (dialect: sQL), and ALM placeholders for the Sql.Database arguments (the ONT_* annotations
-    still carry the binding). Those all compare equal, as does ONT_PinnedAtUtc, which bind_source stamps with
-    the publish time; any added, removed, or edited line doesn't."""
+    enum casing (dialect: sQL), ALM placeholders for the Sql.Database arguments and for the workspace in the
+    semantic model connection (the ONT_* annotations still carry the binding), and quotes on object names.
+    Those all compare equal, as does ONT_PinnedAtUtc, which bind_sources stamps with the publish time (the
+    service re-stamps it on Eventhouse tables); any added, removed, or edited line doesn't."""
     root: list = []
     stack: list = [(-1, root)]
     doc: list[str] = []
@@ -522,6 +655,8 @@ def canonical_tmdl(text: str) -> list:
         depth = len(raw) - len(raw.lstrip("\t"))
         line = re.sub(r"^(dialect:\s*)(\S+)$", lambda m: m.group(1) + m.group(2).lower(), raw.strip())
         line = re.sub(r'Sql\.Database\("[^"]*", "[^"]*"\)', "Sql.Database()", line)
+        line = re.sub(r'(AnalysisServices\.Database\("powerbi://api\.powerbi\.com/v1\.0/myorg/)[^"]*"', r'\1"', line)
+        line = re.sub(r"^(partition|table|measure|column) '([\w.-]+)'", r"\1 \2", line)
         line = re.sub(r"^(annotation ONT_PinnedAtUtc\s*=).*$", r"\1", line)
         if line.startswith("///"):
             doc.append(line)
@@ -547,8 +682,10 @@ def changed_parts(files: dict[str, str], deployed: dict[str, str]) -> list[str]:
 def summarize(files: dict[str, str]) -> str:
     count = lambda prefix: sum(1 for p in files if p.startswith(prefix))  # noqa: E731
     rels = len(top_level_blocks(files.get("entityRelationships.tmdl", "")))
+    metrics = sum(text.count("EXTERNALMEASURE(") for path, text in files.items() if path.startswith("tables/"))
+    kinds = sorted({kind for kind, _ in table_bindings(files).values()})
     return (f"{count('entities/')} entity types, {rels} relationship types, {count('rules/')} rules, "
-            f"{count('metrics/')} metrics, {count('tables/')} backing tables")
+            f"{metrics} model metrics, {count('tables/')} backing tables ({', '.join(kinds)})")
 
 
 # ─── Ontology graph ───────────────────────────────────────────────────────────
@@ -776,8 +913,6 @@ def main() -> int:
     ap.add_argument("--name", help="Ontology display name (default: .platform displayName)")
     ap.add_argument("--no-inheritance", action="store_true", help="Flatten entity inheritance before publishing")
     ap.add_argument("--recreate", action="store_true", help="Delete the existing ontology and create it again")
-    ap.add_argument("--check-metrics", action="store_true",
-                    help="Compare each SQL metric with its DAX twin in the OEEAnalytics semantic model")
     ap.add_argument("--refresh-graph", action="store_true",
                     help="Reload the materialized ontology graph from the lakehouse and wait for it")
     ap.add_argument("--dry-run", action="store_true", help="Write the final parts to --out; no REST calls")
@@ -809,8 +944,12 @@ def main() -> int:
             sys.exit("--dry-run requires --out DIR")
         resolve_links(files, "00000000-0000-0000-0000-000000000000",
                       {ph: "00000000-0000-0000-0000-000000000001" for ph in LINK_TARGETS})
-        bind_source(files, sql_endpoint="example.datawarehouse.fabric.microsoft.com", workspace_id="00000000-0000-0000-0000-000000000000",
-                    workspace_name="Example", lakehouse_id="00000000-0000-0000-0000-000000000002")
+        enrich_measures(files)
+        bind_sources(files, workspace_id="00000000-0000-0000-0000-000000000000", workspace_name="Example",
+                     lakehouse=("00000000-0000-0000-0000-000000000002", "example.datawarehouse.fabric.microsoft.com"),
+                     kql=("00000000-0000-0000-0000-000000000003", KQL_DATABASE_NAME, "https://example.kusto.fabric.microsoft.com"),
+                     sqldb=("00000000-0000-0000-0000-000000000004", "example.datawarehouse.fabric.microsoft.com"),
+                     model="00000000-0000-0000-0000-000000000005")
         out = Path(args.out)
         for path, text in files.items():
             target = out / path
@@ -826,26 +965,55 @@ def main() -> int:
     lakehouse_id, sql_endpoint, sql_endpoint_id = resolve_lakehouse(ws)
     log(f"✓ Lakehouse:  {LAKEHOUSE_NAME} ({lakehouse_id}) @ {sql_endpoint}")
     refresh_sql_endpoint(ws, sql_endpoint_id)
+    kql = resolve_kql(ws)
+    log(f"✓ Eventhouse: {kql[1]} ({kql[0]}) @ {kql[2]}")
 
-    sources = table_sources(files)
-    available = lakehouse_tables(ws, lakehouse_id)
-    missing = set(sources.values()) - available
+    bindings = table_bindings(files)
+    sources = {t: s for t, (kind, s) in bindings.items() if kind == "lakehouse"}
+    missing = set(sources.values()) - lakehouse_tables(ws, lakehouse_id)
     core = missing - set(OPTIONAL_SOURCES)
     if core:
         sys.exit(f"Lakehouse tables missing: {sorted(core)} — re-run scripts/1-setup-fabric.sh "
                  "(after enabling OneLake availability) and try again.")
     for delta in sorted(missing):
         removed = prune(files, {t for t, d in sources.items() if d == delta}, set())
-        removed["metrics"] = drop_metrics_on(files, {delta})
         log(f"! {delta} isn't in {LAKEHOUSE_NAME} yet — leaving out {', '.join(removed['entities']) or 'its tables'}"
             f" (run {OPTIONAL_SOURCES[delta]}, then re-run this script)")
+    live = kql_tables(kql[2], kql[1])
+    absent = {s for kind, s in bindings.values() if kind == "eventhouse"} - (live or set())
+    if live is not None and absent:
+        sys.exit(f"Eventhouse tables missing from {kql[1]}: {sorted(absent)} — re-run scripts/1-setup-fabric.sh.")
+
+    sqldb = resolve_sql_database(ws)
+    model = find_item(ws, "SemanticModel", SEMANTIC_MODEL_NAME)
+    for kind, present in (("sqldb", sqldb), ("model", model)):
+        if not present:
+            item_type, title, script = OPTIONAL_ITEMS[kind]
+            removed = prune(files, {t for t, (k, _) in bindings.items() if k == kind}, set())
+            log(f"! {item_type} {title!r} not found — leaving out {', '.join(removed['entities']) or 'its tables'}"
+                f" (run {script}, then re-run this script)")
+    if sqldb:
+        log(f"✓ SQL database: {SQL_DATABASE_NAME} ({sqldb[0]}) @ {sqldb[1]}")
+        refresh_sql_endpoint(ws, sqldb[2])
+    if model and any(kind == "model" for kind, _ in table_bindings(files).values()):
+        problems = check_model_measures(files, model)
+        if problems:
+            sys.exit(f"✗ The ontology references {SEMANTIC_MODEL_NAME} measures it doesn't have — fix "
+                     "tables/_Measures.tmdl or redeploy the model (scripts/4-setup-powerbi.sh):\n    "
+                     + "\n    ".join(problems))
+        unknown = enrich_measures(files)
+        if unknown:
+            sys.exit(f"✗ Not in {MODEL_MEASURES_TMDL.relative_to(REPO)}: {', '.join(unknown)}")
+        log(f"✓ Semantic model: {SEMANTIC_MODEL_NAME} ({model}); every referenced measure exists")
+    drop_unused_expressions(files)
 
     link_ids = {ph: find_item(ws, kind, title) for ph, (kind, title) in LINK_TARGETS.items()}
     for ph, (kind, title) in LINK_TARGETS.items():
         if not link_ids[ph]:
             log(f"! {kind} {title!r} not found — its resource links are left out until it exists")
     resolve_links(files, ws, link_ids)
-    bind_source(files, sql_endpoint=sql_endpoint, workspace_id=ws, workspace_name=ws_name, lakehouse_id=lakehouse_id)
+    bind_sources(files, workspace_id=ws, workspace_name=ws_name, lakehouse=(lakehouse_id, sql_endpoint), kql=kql,
+                 sqldb=sqldb[:2] if sqldb else None, model=model)
     log(f"✓ Definition: {summarize(files)}")
 
     # Publishing re-ingests every table bound to the materialized graph, which is billed per second of graph
@@ -877,16 +1045,12 @@ def main() -> int:
         dropped = sorted(set(files) - set(returned) - {".platform"})
         if dropped:
             sys.exit(f"✗ The service dropped parts it didn't accept: {dropped}")
-        annotated = [p for p in returned if p.startswith("tables/") and returned[p].count("annotation ONT_") < 8]
-        if annotated:
-            log(f"! ONT_* annotations not fully retained on {len(annotated)} tables — graph eligibility may be affected")
+        thin = [table for table, (kind, _) in table_bindings(files).items()
+                if returned.get(f"tables/{table}.tmdl", "").count("annotation ONT_") < EXPECTED_ANNOTATIONS[kind]]
+        if thin:
+            log(f"! ONT_* annotations not fully retained on {', '.join(sorted(thin))} — the graph and the agents may"
+                " not resolve their source")
         log(f"✓ Read back:  {summarize(returned)}; nothing dropped")
-
-    if args.check_metrics:
-        log("… Comparing metrics with the OEEAnalytics semantic model")
-        if not check_metrics(files, ws, sql_endpoint):
-            sys.exit("✗ Metric drift: an ontology metric no longer matches its DAX twin.")
-        log("✓ Every metric matches its DAX twin")
 
     graph = ontology_graph(ws, item, name)
     labels = graph_labels(ws, graph) if graph else None

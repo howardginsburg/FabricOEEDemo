@@ -1,4 +1,4 @@
-/// Direct Lake source for every backing table: the ManufacturingLH lakehouse SQL analytics endpoint.
+/// Direct Lake source for the lakehouse-bound tables: the ManufacturingLH lakehouse SQL analytics endpoint.
 /// scripts/6-publish-ontology.py injects the endpoint and adds the ONT_* partition annotations.
 expression 'DirectLake - ManufacturingLH' =
 		let
@@ -6,3 +6,23 @@ expression 'DirectLake - ManufacturingLH' =
 		in
 		    Source
 	lineageTag: 5cbe18d5-2a7e-53a6-8066-3e7f3fb3f5f3
+
+/// The OeeGovernance Fabric SQL database, the report's write-back store, through its SQL analytics endpoint.
+/// scripts/6-publish-ontology.py injects the endpoint and adds the ONT_* partition annotations.
+expression 'DirectLake - OeeGovernance' =
+		let
+		    Source = Sql.Database("__OEEGOVERNANCE_SQL_ENDPOINT__", "OeeGovernance")
+		in
+		    Source
+	lineageTag: 2c3c1f36-7c38-5e0a-9a51-0f3b5d2a8e41
+
+/// The OEEAnalytics Power BI semantic model, queried live: its DAX measures are the ontology's metrics.
+/// scripts/6-publish-ontology.py injects the workspace and the model.
+expression 'DirectQuery to AS - __WORKSPACE_ID__/__SEMANTIC_MODEL_ID__' =
+		let
+		    Source = AnalysisServices.Database("powerbi://api.powerbi.com/v1.0/myorg/__WORKSPACE_NAME__", "OEEAnalytics"),
+		    Cubes = Table.Combine(Source[Data]),
+		    Cube = Cubes{[Id="Model", Kind="Cube"]}[Data]
+		in
+		    Cube
+	lineageTag: 6a1f9d24-3b8e-5c71-8e02-4d5b7a9c1e63

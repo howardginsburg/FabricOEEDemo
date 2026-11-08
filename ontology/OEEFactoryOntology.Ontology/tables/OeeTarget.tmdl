@@ -33,4 +33,4 @@ table OeeTarget
 		source
 			entityName: OeeTarget
 			schemaName: dbo
-			expressionSource: 'DirectLake - ManufacturingLH'
+			expressionSource: 'DirectLake - OeeGovernance'

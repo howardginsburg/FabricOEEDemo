@@ -1,12 +1,18 @@
-/// Silver part-level events (one row per part action). Quality & throughput signals.
-/// Direct Lake over ManufacturingLH/dbo.PartEvents.
-table PartEvents
+/// Part passes: one row per completed or rejected station pass. Quality and throughput signals.
+/// Direct Lake over ManufacturingLH/dbo.PartPasses; device_id relates each pass to its station.
+table PartPasses
 
 	column part_id
 		dataType: string
 		sourceColumn: part_id
 		summarizeBy: none
 		lineageTag: 3f2a9d10-1002-4b7c-9e11-aa0000002001
+
+	column device_id
+		dataType: string
+		sourceColumn: device_id
+		summarizeBy: none
+		lineageTag: 3f2a9d10-1002-4b7c-9e11-aa0000002012
 
 	column line_id
 		dataType: string
@@ -26,9 +32,10 @@ table PartEvents
 		summarizeBy: none
 		lineageTag: 3f2a9d10-1002-4b7c-9e11-aa0000002004
 
-	column action
+	/// completed or rejected.
+	column outcome
 		dataType: string
-		sourceColumn: action
+		sourceColumn: outcome
 		summarizeBy: none
 		lineageTag: 3f2a9d10-1002-4b7c-9e11-aa0000002005
 
@@ -62,16 +69,16 @@ table PartEvents
 		summarizeBy: none
 		lineageTag: 3f2a9d10-1002-4b7c-9e11-aa0000002010
 
-	column timestamp
+	column passed_at
 		dataType: dateTime
 		formatString: General Date
-		sourceColumn: timestamp
+		sourceColumn: passed_at
 		summarizeBy: none
 		lineageTag: 3f2a9d10-1002-4b7c-9e11-aa0000002011
 
-	partition PartEvents = entity
+	partition PartPasses = entity
 		mode: directLake
 		source
-			entityName: PartEvents
+			entityName: PartPasses
 			schemaName: dbo
 			expressionSource: 'DirectLake - ManufacturingLH'

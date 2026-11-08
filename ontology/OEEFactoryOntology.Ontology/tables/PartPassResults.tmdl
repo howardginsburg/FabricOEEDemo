@@ -52,9 +52,10 @@ table PartPassResults
 		lineageTag: 7dde2ee7-45c0-5a60-91ef-0bbacdf6ccb8
 		sourceColumn: passed_at
 
-	partition PartPassResults = entity
-		mode: directLake
-		source
-			entityName: PartPasses
-			schemaName: dbo
-			expressionSource: 'DirectLake - ManufacturingLH'
+	partition PartPassResults = m
+		mode: directQuery
+		source =
+				let
+				  Source = AzureDataExplorer.Contents("__KQL_CLUSTER_URI__", "__KQL_DATABASE__", "PartPasses")
+				in
+				  Source

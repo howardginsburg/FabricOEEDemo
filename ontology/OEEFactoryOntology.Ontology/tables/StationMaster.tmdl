@@ -2,6 +2,7 @@ table StationMaster
 	lineageTag: b662b2dc-381f-5c66-9dc0-907cdc7bc909
 
 	column device_id
+		isKey
 		dataType: string
 		lineageTag: 194c269f-dfe1-5c37-bfc0-2a7465d4ae0b
 		sourceColumn: device_id

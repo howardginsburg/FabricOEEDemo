@@ -1,4 +1,4 @@
-/// One part passing one station: the result (completed or rejected) and how long it took. Reject rate and first-pass yield by station come from these events.
+/// One part passing one station: the result (completed or rejected) and how long it took. Live from the ManufacturingEH Eventhouse. Reject rate and first-pass yield by station come from these events.
 entity production#PartPass
 	lineageTag: 462594fa-b04f-56d7-9f39-e84b9a1eb2f9
 	backingTable: PartPassResults

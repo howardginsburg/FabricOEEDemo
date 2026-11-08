@@ -1,4 +1,4 @@
-/// The machine asset installed at a station, with its live telemetry: status, buffers, and cycle time every ~10 seconds.
+/// The machine asset installed at a station, with its live telemetry from the ManufacturingEH Eventhouse: status, buffers, and cycle time every ~10 seconds.
 entity equipment#Machine
 	lineageTag: 50d78e42-fd32-5125-bcde-38c37f32ad06
 	backingTable: MachineAsset

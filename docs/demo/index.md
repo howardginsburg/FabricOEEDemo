@@ -11,7 +11,7 @@ in presenting order, with what to show and what to say at each step.
 | [Analytics and write-back](analytics.md) | The Direct Lake report, and setting an OEE target from it | 3, 5 |
 | [Floor Ops Console](floor-ops.md) | Operators logging issues that join the machine data | 4, 5 |
 | [Ontology and graph](ontology.md) | The plant's business model and its graph | 7 |
-| [OEE Data Agent](data-agent.md) | Questions answered from the ontology, the model, and the Eventhouse | 7 |
+| [OEE Data Agent](data-agent.md) | Questions answered with the ontology as context, in KQL, SQL, or DAX | 7 |
 | [Foundry agent](foundry-agent.md) | The OEE Factory IQ agent, its knowledge base over the SOPs and the ontology, procedures and data in one answer, and the evaluations | 9, 10 |
 | [Operations agent](operations-agent.md) | Alerts when the plant breaks its own rules | 8 |
 
@@ -32,8 +32,9 @@ in presenting order, with what to show and what to say at each step.
 - [ ] **Ask each agent one question** beforehand. The first answer of a session is the slowest.
 - [ ] **Wake the lakehouse's SQL analytics endpoint** a few minutes before you show the ontology and the agents:
       open `ManufacturingLH`, switch to its **SQL analytics endpoint**, and select **Refresh**. The endpoint stops
-      syncing after 15 minutes without queries, and the ontology reads its data through it, so until something
-      wakes it the ontology answers from data that can be hours old.
+      syncing after 15 minutes without queries, and the ontology reads the plant's records through it, so until
+      something wakes it those records can be hours old. Telemetry and work order steps come straight from the
+      Eventhouse either way.
 
 ## Run of show
 

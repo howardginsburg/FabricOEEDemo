@@ -78,8 +78,9 @@ script with `--replace` to create a new version of the agent.
 
 !!! info "Every user needs access to the Fabric items"
     The data agent tool and the knowledge base's ontology source act as the signed-in user, so everyone who uses
-    the agent needs read access to the ontology, the data agent, and their sources. The ontology doesn't
-    accept service principals. The knowledge base reads the SOP index with the project's managed identity.
+    the agent needs read access to the ontology, the data agent, and the sources the ontology binds, including
+    Read and Build permissions on the `OEEAnalytics` semantic model. The ontology doesn't accept service
+    principals. The knowledge base reads the SOP index with the project's managed identity.
 
 !!! note "The knowledge base starts on the free agentic retrieval plan"
     Agentic retrieval in Azure AI Search comes with a monthly free token allowance. Once it's used, the knowledge

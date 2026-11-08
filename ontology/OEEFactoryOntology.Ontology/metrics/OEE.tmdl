@@ -1,9 +1,0 @@
-/// Overall Equipment Effectiveness = Availability x Performance x Quality. Same definition as the OEEAnalytics semantic model measure [OEE].
-metric OEE
-	lineageTag: eacaf43e-3a6e-59e9-900b-136809dd5e4d
-
-	expression
-		dialect: SQL
-		expression: SELECT a.v * p.v * q.v FROM (SELECT CAST(SUM(is_running) AS FLOAT) / NULLIF(COUNT(*), 0) FROM dbo.MachineEvents) AS a(v) CROSS JOIN (SELECT CASE WHEN SUM(m.actual_cycle_time) > 0 THEN CASE WHEN SUM(ISNULL(s.ideal_cycle_time, 0)) / SUM(m.actual_cycle_time) > 1 THEN 1.0 ELSE SUM(ISNULL(s.ideal_cycle_time, 0)) / SUM(m.actual_cycle_time) END END FROM dbo.MachineEvents AS m LEFT JOIN dbo.StationMaster AS s ON s.device_id = m.device_id WHERE m.is_running = 1 AND m.actual_cycle_time > 0) AS p(v) CROSS JOIN (SELECT CAST(SUM(is_completed) AS FLOAT) / NULLIF(SUM(is_completed) + SUM(is_rejected), 0) FROM dbo.PartPasses) AS q(v)
-
-	synonym 'overall equipment effectiveness'

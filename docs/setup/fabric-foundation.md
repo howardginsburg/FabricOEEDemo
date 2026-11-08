@@ -22,11 +22,12 @@ do it in [step 2](simulator.md).
 | `ManufacturingLH` | Lakehouse (schema-enabled) | OneLake shortcuts to the mirrored tables, under `Tables/dbo` |
 | OEE Manufacturing Dashboard | Real-Time Dashboard | Live views for five personas |
 | OEE Telemetry Events | Event Schema Set (preview) | The simulator's three event contracts, checked against the landing tables first |
-| `OEEFactoryOntology` | Ontology (preview) | The plant's entities, relationships, rules, and metrics, bound to the lakehouse |
-| OEE Data Agent | Data agent | Answers questions from the ontology and the Eventhouse. It's published. |
+| `OEEFactoryOntology` | Ontology (preview) | The plant's entities, relationships, and rules: the plant's records bound to the lakehouse, and machine telemetry, work order steps, and part passes bound to the Eventhouse |
+| OEE Data Agent | Data agent | Answers questions with the ontology as its context, querying the lakehouse and the Eventhouse. It's published. |
 
-The ontology skips the entities whose tables come from later steps (the OEE targets and floor issues), and
-the data agent adds the semantic model in [step 7](fabric-iq.md).
+The ontology leaves out the entities whose sources come from later steps: the OEE targets (step 3), floor issues
+(step 4), and the KPIs from the semantic model (step 5). [Step 7](fabric-iq.md) adds them to the ontology and the
+data agent.
 
 ## Check the Eventstream
 

@@ -42,7 +42,7 @@ resolves to a wrapper that breaks the scripts' request bodies.
 | `jq`, `curl` | Every step | `sudo apt install jq curl` |
 | Python 3.10+ | Steps 1, 3, 4, 7, 8, 9, 10 | The Fabric scripts use only the standard library. |
 | `azure-ai-projects` (2.2+), `azure-identity`, `openai`, `httpx` | Steps 9 and 10 | Install them in a virtual environment (below). |
-| `pyodbc` and [ODBC Driver 18 for SQL Server](https://learn.microsoft.com/sql/connect/odbc/linux-mac/installing-the-microsoft-odbc-driver-for-sql-server) | Steps 3 and 4, and `--check-metrics` in step 7 | Step 3 uses it only when `sqlcmd` isn't installed. |
+| `pyodbc` and [ODBC Driver 18 for SQL Server](https://learn.microsoft.com/sql/connect/odbc/linux-mac/installing-the-microsoft-odbc-driver-for-sql-server) | Steps 3 and 4 | Step 3 uses it only when `sqlcmd` isn't installed. |
 | .NET 10 SDK | Step 2 | On Windows, outside WSL: the simulator is a Windows desktop app. |
 | Node.js 18+ | Step 4 | The Fabric App's CLI is a project dependency. |
 

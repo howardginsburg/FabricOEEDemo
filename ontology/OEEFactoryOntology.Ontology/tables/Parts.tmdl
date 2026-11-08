@@ -2,6 +2,7 @@ table Parts
 	lineageTag: b6012e30-2d52-5cc0-be81-cc30691879f5
 
 	column part_id
+		isKey
 		dataType: string
 		lineageTag: b9d55291-769e-58e8-96b9-b6c74113fd41
 		sourceColumn: part_id

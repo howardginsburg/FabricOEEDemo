@@ -1,0 +1,102 @@
+/// The OEEAnalytics semantic model's measures table. Each measure here is a reference to the model's DAX
+/// measure of the same name, so the KPI is defined once, in the model. scripts/6-publish-ontology.py adds each
+/// measure's description, format, and source lineage tag from the model's TMDL and checks it exists.
+table _Measures
+	lineageTag: 3d5dd38f-57e2-58e6-8e50-3a9b48f0ab1e
+
+	measure OEE = EXTERNALMEASURE("OEE", DOUBLE, "DirectQuery to AS - __WORKSPACE_ID__/__SEMANTIC_MODEL_ID__")
+		lineageTag: 4c7dc957-e3ec-5dd5-988d-e6ae197244b8
+
+	measure Availability = EXTERNALMEASURE("Availability", DOUBLE, "DirectQuery to AS - __WORKSPACE_ID__/__SEMANTIC_MODEL_ID__")
+		lineageTag: c7009b8c-2c66-524f-8547-da4ca96ad6f9
+
+	measure Performance = EXTERNALMEASURE("Performance", DOUBLE, "DirectQuery to AS - __WORKSPACE_ID__/__SEMANTIC_MODEL_ID__")
+		lineageTag: e920ffbe-1e11-567e-8f34-de1a81d0b9c0
+
+	measure Quality = EXTERNALMEASURE("Quality", DOUBLE, "DirectQuery to AS - __WORKSPACE_ID__/__SEMANTIC_MODEL_ID__")
+		lineageTag: c4d7e1ab-3e19-531c-a522-06b968d79209
+
+	measure 'Rejection Rate' = EXTERNALMEASURE("Rejection Rate", DOUBLE, "DirectQuery to AS - __WORKSPACE_ID__/__SEMANTIC_MODEL_ID__")
+		lineageTag: 0c5c194a-df17-548d-a3ca-8956e805802c
+
+	measure Throughput = EXTERNALMEASURE("Throughput", INTEGER, "DirectQuery to AS - __WORKSPACE_ID__/__SEMANTIC_MODEL_ID__")
+		lineageTag: 74a6baf9-455a-52b7-9a7e-571913905886
+
+	measure 'Parts Finished' = EXTERNALMEASURE("Parts Finished", INTEGER, "DirectQuery to AS - __WORKSPACE_ID__/__SEMANTIC_MODEL_ID__")
+		lineageTag: 844c5cdc-1114-54fd-bdb2-67757f54a835
+
+	measure 'Parts Produced' = EXTERNALMEASURE("Parts Produced", INTEGER, "DirectQuery to AS - __WORKSPACE_ID__/__SEMANTIC_MODEL_ID__")
+		lineageTag: 4ebf881c-f0d5-544c-a1ff-f12b1bcead14
+
+	measure 'Parts Completed' = EXTERNALMEASURE("Parts Completed", INTEGER, "DirectQuery to AS - __WORKSPACE_ID__/__SEMANTIC_MODEL_ID__")
+		lineageTag: aae7bc92-6aec-5b9a-af54-7626a0b404a5
+
+	measure 'Parts Rejected' = EXTERNALMEASURE("Parts Rejected", INTEGER, "DirectQuery to AS - __WORKSPACE_ID__/__SEMANTIC_MODEL_ID__")
+		lineageTag: d4e7080e-8023-5674-83b9-ae76e206d7da
+
+	measure 'Planned Parts' = EXTERNALMEASURE("Planned Parts", INTEGER, "DirectQuery to AS - __WORKSPACE_ID__/__SEMANTIC_MODEL_ID__")
+		lineageTag: 39e0a59d-4578-5927-a55b-97776d4f04fd
+
+	measure 'Expected Parts' = EXTERNALMEASURE("Expected Parts", DOUBLE, "DirectQuery to AS - __WORKSPACE_ID__/__SEMANTIC_MODEL_ID__")
+		lineageTag: 2c6a44b7-215f-586d-9d85-e2ca076bdd06
+
+	measure 'Schedule Adherence' = EXTERNALMEASURE("Schedule Adherence", DOUBLE, "DirectQuery to AS - __WORKSPACE_ID__/__SEMANTIC_MODEL_ID__")
+		lineageTag: 70ceb767-25b2-5db7-90ae-a78d1b186698
+
+	measure 'Work Orders' = EXTERNALMEASURE("Work Orders", INTEGER, "DirectQuery to AS - __WORKSPACE_ID__/__SEMANTIC_MODEL_ID__")
+		lineageTag: 81a315ef-9cfe-5d7b-9ce7-edaf182fb8a2
+
+	measure 'MTTR (min)' = EXTERNALMEASURE("MTTR (min)", DOUBLE, "DirectQuery to AS - __WORKSPACE_ID__/__SEMANTIC_MODEL_ID__")
+		lineageTag: d825357e-67a2-50e8-8efe-c3b9981f07a3
+
+	measure 'MTBF (min)' = EXTERNALMEASURE("MTBF (min)", DOUBLE, "DirectQuery to AS - __WORKSPACE_ID__/__SEMANTIC_MODEL_ID__")
+		lineageTag: 5c24b84d-fde4-533c-9d9a-266303ceec9d
+
+	measure 'OEE — Day' = EXTERNALMEASURE("OEE — Day", DOUBLE, "DirectQuery to AS - __WORKSPACE_ID__/__SEMANTIC_MODEL_ID__")
+		lineageTag: 17fbb975-7b2c-5edd-a52c-9bf1c9ee2575
+
+	measure 'OEE — Night' = EXTERNALMEASURE("OEE — Night", DOUBLE, "DirectQuery to AS - __WORKSPACE_ID__/__SEMANTIC_MODEL_ID__")
+		lineageTag: 049b4940-56af-5040-85ef-115c44af39c5
+
+	measure 'Target OEE' = EXTERNALMEASURE("Target OEE", DOUBLE, "DirectQuery to AS - __WORKSPACE_ID__/__SEMANTIC_MODEL_ID__")
+		lineageTag: 9ab069db-81c2-5b7f-9fde-5c193bf45c2b
+
+	measure 'OEE vs Target' = EXTERNALMEASURE("OEE vs Target", DOUBLE, "DirectQuery to AS - __WORKSPACE_ID__/__SEMANTIC_MODEL_ID__")
+		lineageTag: 1bf70b51-f14f-5455-8e46-3dc91179c2b5
+
+	measure 'Floor Events Logged' = EXTERNALMEASURE("Floor Events Logged", INTEGER, "DirectQuery to AS - __WORKSPACE_ID__/__SEMANTIC_MODEL_ID__")
+		lineageTag: 871bc70f-e121-5d79-808c-e90537c8e3bb
+
+	measure 'Open Issues' = EXTERNALMEASURE("Open Issues", INTEGER, "DirectQuery to AS - __WORKSPACE_ID__/__SEMANTIC_MODEL_ID__")
+		lineageTag: 722d061f-4478-50a8-975e-92d6352ba82e
+
+	measure 'Critical Open' = EXTERNALMEASURE("Critical Open", INTEGER, "DirectQuery to AS - __WORKSPACE_ID__/__SEMANTIC_MODEL_ID__")
+		lineageTag: adecb74d-5d25-521d-b858-582ce34e39ad
+
+	measure 'Resolved Issues' = EXTERNALMEASURE("Resolved Issues", INTEGER, "DirectQuery to AS - __WORKSPACE_ID__/__SEMANTIC_MODEL_ID__")
+		lineageTag: 5d34df20-6a3b-52df-9437-fd48cc3c0a84
+
+	measure 'Resolution Rate' = EXTERNALMEASURE("Resolution Rate", DOUBLE, "DirectQuery to AS - __WORKSPACE_ID__/__SEMANTIC_MODEL_ID__")
+		lineageTag: 8dadf328-7b1b-5717-99ce-eb78d2cfd3b3
+
+	measure 'Human MTTA (min)' = EXTERNALMEASURE("Human MTTA (min)", DOUBLE, "DirectQuery to AS - __WORKSPACE_ID__/__SEMANTIC_MODEL_ID__")
+		lineageTag: 06f235f8-5753-590e-b2ac-ff3f81bb8ddc
+
+	measure 'Human MTTR (min)' = EXTERNALMEASURE("Human MTTR (min)", DOUBLE, "DirectQuery to AS - __WORKSPACE_ID__/__SEMANTIC_MODEL_ID__")
+		lineageTag: 3510f9dd-d2ae-599c-afc2-f8fb3ee7f059
+
+	measure 'Scrap Qty' = EXTERNALMEASURE("Scrap Qty", INTEGER, "DirectQuery to AS - __WORKSPACE_ID__/__SEMANTIC_MODEL_ID__")
+		lineageTag: a993a458-7a25-5c27-8a24-9d6a6cef3449
+
+	/// The model measures table's placeholder column (always blank). OeeScorecard binds it, because the data
+	/// agent reaches a source through the entity properties bound to it.
+	column Value
+		dataType: int64
+		lineageTag: 36cf8ef4-b6b0-57b4-84ec-4aef566c30e9
+		sourceColumn: Value
+
+	partition _Measures = entity
+		mode: directQuery
+		source
+			entityName: _Measures
+			expressionSource: 'DirectQuery to AS - __WORKSPACE_ID__/__SEMANTIC_MODEL_ID__'

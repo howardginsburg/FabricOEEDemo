@@ -1,0 +1,20 @@
+/// The plant's governed KPIs, defined once as DAX measures in the OEEAnalytics semantic model: OEE and its
+/// factors (availability, performance, quality), rejection rate, output and schedule adherence, maintenance (MTTR,
+/// MTBF, work orders), OEE targets, and floor-issue KPIs. Evaluate them by line, shift, station, or machine type
+/// through the model's own tables.
+entity production#OeeScorecard
+	lineageTag: b46d1cfb-4876-5c67-9da3-2cf506db0068
+	backingTable: _Measures
+
+	/// Placeholder column of the model's measures table (always blank). The KPIs are the table's measures.
+	property Value
+		dataType: int64
+		lineageTag: baff538b-fd7c-57bd-9aa8-eb03fbf6f4be
+
+		backingConfiguration
+			valueColumn: _Measures.Value
+
+	synonym 'OEE scorecard'
+	synonym 'KPI scorecard'
+	synonym KPIs
+	synonym 'performance metrics'

@@ -1,4 +1,4 @@
-/// The OEE target a line is held to. Set from the Power BI report's write-back button (translytical task flow) into the OeeGovernance SQL database.
+/// The OEE target a line is held to. Set from the Power BI report's write-back button (translytical task flow) and read straight from the OeeGovernance SQL database it's written to.
 entity production#OeeTarget
 	lineageTag: 881a5e80-fa57-51ca-a5c9-156798232d73
 	backingTable: OeeTarget
